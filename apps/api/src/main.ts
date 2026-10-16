@@ -1,3 +1,5 @@
+import { createTokenVerifier, supabaseKeys } from './auth.ts';
+import { createSupabaseAdmin } from './auth-admin.ts';
 import { loadConfig, ConfigError } from './config.ts';
 import { createDatabase } from './db.ts';
 import { systemClock } from './rate-limit.ts';
@@ -17,7 +19,13 @@ try {
 const db = createDatabase(config.databaseUrl, {
   onIdleError: err => app.log.warn({ kind: err.name }, 'database connection dropped'),
 });
-const app = await buildServer({ config, db, clock: systemClock });
+const app = await buildServer({
+  config,
+  db,
+  clock: systemClock,
+  auth: createTokenVerifier({ issuer: `${config.supabaseUrl}/auth/v1`, keys: supabaseKeys(config.supabaseUrl) }),
+  authAdmin: createSupabaseAdmin({ supabaseUrl: config.supabaseUrl, secretKey: config.supabaseSecretKey }),
+});
 
 // Render sends SIGTERM before replacing or stopping the instance. Finish
 // in-flight requests, then release database connections.

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { AuthError } from '../src/auth.ts';
 import type { Database } from '../src/db.ts';
 import { buildServer, defaultLimits, type Limits } from '../src/server.ts';
 
@@ -24,6 +25,9 @@ async function server(opts: { db?: Database; limits?: Partial<Limits>; hops?: nu
     config: { production: true, webOrigin: ORIGIN, trustProxyHops: opts.hops ?? 0, ipHashKey: Buffer.alloc(32, 1) },
     db: opts.db ?? fakeDb(),
     clock: { now: () => t },
+    // No signed-in routes are exercised here; profile.integration.test.ts covers them.
+    auth: { verify: async () => { throw new AuthError('unused'); } },
+    authAdmin: { deleteUser: async () => {} },
     limits: { ...defaultLimits, ...opts.limits },
     logStream: (opts.logs ?? logCollector()).stream,
   });

@@ -1,8 +1,25 @@
 import Fastify, { LogController, type FastifyError } from 'fastify';
 import cors from '@fastify/cors';
+import { AuthError, AuthUnavailableError, subjectHash, type SignedInUser, type TokenVerifier } from './auth.ts';
+import type { AuthAdmin } from './auth-admin.ts';
 import type { Config } from './config.ts';
 import type { Database } from './db.ts';
 import { TokenBuckets, visitorKey, type BucketOptions, type Clock } from './rate-limit.ts';
+import { registerProfileRoutes } from './routes/profile.ts';
+
+declare module 'fastify' {
+  interface FastifyContextConfig {
+    /** 'required': refuse without a valid token. 'optional': identify if present. */
+    auth?: 'required' | 'optional';
+    /** Counts against the person's write allowance. */
+    write?: boolean;
+    /** Accept a deleted account's still-valid token (only for retrying the deletion). */
+    allowRevoked?: boolean;
+  }
+  interface FastifyRequest {
+    user: SignedInUser | null;
+  }
+}
 
 export interface Limits {
   /** Every visitor together. Protects the single free instance. */
@@ -11,12 +28,15 @@ export interface Limits {
   visitor: BucketOptions;
   /** Request body size before sign-in is checked. Routes that need more raise it per route. */
   anonymousBodyBytes: number;
+  /** Changes one signed-in person can make (profile edits, later posts). */
+  userWrites: BucketOptions;
 }
 
 export const defaultLimits: Limits = {
   global: { capacity: 400, refillPerSecond: 100, maxKeys: 1 },
   visitor: { capacity: 60, refillPerSecond: 2, maxKeys: 50_000 },
   anonymousBodyBytes: 4 * 1024,
+  userWrites: { capacity: 20, refillPerSecond: 1 / 30, maxKeys: 50_000 },
 };
 
 /** Everything the server needs from outside, so tests can swap any of it. */
@@ -24,6 +44,8 @@ export interface Deps {
   config: Pick<Config, 'production' | 'webOrigin' | 'trustProxyHops' | 'ipHashKey'>;
   db: Database;
   clock: Clock;
+  auth: TokenVerifier;
+  authAdmin: AuthAdmin;
   limits?: Limits;
   /** Where logs go. Defaults to stdout. */
   logStream?: { write(line: string): void };
@@ -37,6 +59,8 @@ const messages = {
   notFound: 'There is nothing at this address.',
   unsupported: 'This kind of request isn’t accepted here.',
   server: 'Something went wrong on our side. Try again in a minute.',
+  signedOut: 'You’re signed out. Sign in again to continue.',
+  authUnavailable: 'Sign-in can’t be checked right now. Try again in a minute.',
 } as const;
 
 const securityHeaders = {
@@ -73,6 +97,11 @@ export async function buildServer(deps: Deps) {
     return503OnClosing: true,
     // A client-supplied request id could be used to inject into logs.
     requestIdHeader: false,
+    ajv: {
+      // Fastify's defaults quietly fix bad input: drop unknown fields, turn
+      // "true" into true. Input that doesn't match the schema is refused instead.
+      customOptions: { removeAdditional: false, coerceTypes: false, useDefaults: false },
+    },
     // Fastify's own per-request lines include the URL; ours below do not.
     logController: new LogController({ disableRequestLogging: true }),
     logger: {
@@ -110,6 +139,48 @@ export async function buildServer(deps: Deps) {
     maxAge: 600,
   });
 
+  // Sign-in check. Runs after the rate limit and before the body is read, so
+  // nobody can make the server parse a body without passing both.
+  app.decorateRequest('user', null);
+  const userWrites = new TokenBuckets(limits.userWrites, clock);
+  app.addHook('onRequest', async (req, reply) => {
+    const { auth: mode, write, allowRevoked } = req.routeOptions.config;
+    if (!mode) return;
+    const header = req.headers.authorization;
+    const token = header?.startsWith('Bearer ') ? header.slice(7) : null;
+    if (!token) {
+      if (mode === 'required') return reply.code(401).send({ error: 'signed_out', message: messages.signedOut });
+      return;
+    }
+    try {
+      req.user = await deps.auth.verify(token);
+    } catch (err) {
+      if (err instanceof AuthError) return reply.code(401).send({ error: 'signed_out', message: messages.signedOut });
+      if (err instanceof AuthUnavailableError) {
+        req.log.warn({ kind: err.name }, 'token keys unavailable');
+        return reply.code(503).send({ error: 'auth_unavailable', message: messages.authUnavailable });
+      }
+      throw err;
+    }
+    if (!allowRevoked && (await isRevoked(req.user.id))) {
+      req.user = null;
+      return reply.code(401).send({ error: 'signed_out', message: messages.signedOut });
+    }
+    if (write) {
+      const allowed = userWrites.take(req.user.id);
+      if (!allowed.ok) {
+        reply.header('retry-after', String(allowed.retryAfterSeconds));
+        return reply.code(429).send({ error: 'rate_limited', message: messages.tooMany });
+      }
+    }
+  });
+
+  async function isRevoked(userId: string): Promise<boolean> {
+    return db.withUser(null, async q =>
+      (await q.query('SELECT 1 FROM app.revoked_subjects WHERE subject_hash = $1 AND until > now()',
+        [subjectHash(userId, config.ipHashKey)])).rowCount === 1);
+  }
+
   // One line per request: which route pattern (never the raw URL, which may
   // hold a name), the status and the time taken.
   app.addHook('onResponse', async (req, reply) => {
@@ -142,6 +213,8 @@ export async function buildServer(deps: Deps) {
       return reply.code(503).send({ status: 'unavailable' });
     }
   });
+
+  registerProfileRoutes(app, { db, authAdmin: deps.authAdmin, clock, subjectKey: config.ipHashKey });
 
   return app;
 }

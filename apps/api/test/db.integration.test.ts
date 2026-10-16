@@ -1,63 +1,23 @@
 // Runs against a real Postgres. Each run creates a throwaway database, applies
 // the schema twice, connects as a least-privilege login role exactly as the
 // API does in production, and checks what that role can and cannot do.
-import { randomBytes } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createDatabase, type Database } from '../src/db.ts';
+import type pg from 'pg';
+import type { Database } from '../src/db.ts';
+import { createTestDatabase, schema, type TestDatabase } from './helpers/database.ts';
 
-const adminUrl = process.env.TEST_DATABASE_ADMIN_URL;
-// No silent skipping: a missing database is a failed run, not a passed one.
-if (!adminUrl) throw new Error('TEST_DATABASE_ADMIN_URL is not set. Run `npm run db:start` first.');
-
-const schema = readFileSync(new URL('../../../db/schema.sql', import.meta.url), 'utf8');
-const suffix = randomBytes(4).toString('hex');
-const dbName = `graphinity_test_${suffix}`;
-const loginRole = `graphinity_api_test_${suffix}`;
-const password = randomBytes(18).toString('hex');
-
-const admin = new pg.Client({ connectionString: adminUrl });
+let t: TestDatabase;
 let owner: pg.Client; // the schema owner, connected to the test database
 let api: pg.Client; // the API's login role
 let database: Database;
 
-function urlFor(name: string, user?: string, pass?: string): string {
-  const u = new URL(adminUrl!);
-  u.pathname = `/${name}`;
-  if (user) u.searchParams.set('user', user);
-  if (pass) u.searchParams.set('password', pass);
-  return u.toString();
-}
-
 beforeAll(async () => {
-  await admin.connect();
-  // Supabase has these roles with broad defaults elsewhere; mimic them so the
-  // schema's "never grant to them" rule is tested, not assumed.
-  for (const r of ['anon', 'authenticated']) {
-    await admin.query(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${r}') THEN CREATE ROLE ${r} NOLOGIN; END IF; END $$`);
-  }
-  await admin.query(`CREATE DATABASE ${dbName}`);
-  owner = new pg.Client({ connectionString: urlFor(dbName) });
-  await owner.connect();
-  await owner.query(schema);
-  await owner.query(schema); // must be safe to run twice
-  await admin.query(`CREATE ROLE ${loginRole} LOGIN PASSWORD '${password}' IN ROLE app_api`);
-  await admin.query(`GRANT CONNECT ON DATABASE ${dbName} TO ${loginRole}`);
-
-  const loginUrl = urlFor(dbName, loginRole, password);
-  api = new pg.Client({ connectionString: loginUrl });
-  await api.connect();
-  database = createDatabase(loginUrl);
+  t = await createTestDatabase();
+  ({ owner, api, database } = t);
 });
 
 afterAll(async () => {
-  await database?.close();
-  await api?.end();
-  await owner?.end();
-  await admin.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`);
-  await admin.query(`DROP ROLE IF EXISTS ${loginRole}`);
-  await admin.end();
+  await t?.close();
 });
 
 async function refused(sql: string): Promise<string> {
@@ -73,7 +33,7 @@ describe('schema', () => {
   it('applies a third time without error and records its version', async () => {
     await owner.query(schema);
     const { rows } = await owner.query('SELECT version FROM app.schema_meta');
-    expect(rows).toEqual([{ version: 1 }]);
+    expect(rows).toEqual([{ version: 2 }]);
   });
 
   it('turns on and forces row-level security on every table in app', async () => {
@@ -98,7 +58,7 @@ describe('schema', () => {
 
 describe('the API login role', () => {
   it('can read what it is granted', async () => {
-    expect(await database.ping()).toEqual({ schemaVersion: 1 });
+    expect(await database.ping()).toEqual({ schemaVersion: 2 });
   });
 
   it('is not a superuser, cannot bypass RLS, create roles or databases', async () => {
@@ -144,6 +104,6 @@ describe('withUser', () => {
       throw new Error('fail midway');
     })).rejects.toThrow('fail midway');
     // The connection is still usable afterwards (not left mid-transaction).
-    expect(await database.ping()).toEqual({ schemaVersion: 1 });
+    expect(await database.ping()).toEqual({ schemaVersion: 2 });
   });
 });

@@ -16,8 +16,15 @@ export interface Config {
    * each host before setting it (docs/RUNBOOK.md).
    */
   trustProxyHops: number;
-  /** Key for hashing visitor addresses. Addresses themselves are never stored. */
+  /**
+   * Key for one-way hashes: visitor addresses (rate limits) and deleted
+   * account ids. Neither is ever stored in readable form.
+   */
   ipHashKey: Buffer;
+  /** Supabase project URL, e.g. https://abcd.supabase.co. Tokens must be issued by it. */
+  supabaseUrl: string;
+  /** Supabase secret key, used only to delete a person's sign-in. */
+  supabaseSecretKey: string;
 }
 
 export class ConfigError extends Error {
@@ -49,6 +56,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const keyHex = env.IP_HASH_KEY ?? '';
   if (!/^[0-9a-f]{64,}$/i.test(keyHex)) problems.push('IP_HASH_KEY must be at least 32 random bytes in hex (openssl rand -hex 32)');
 
+  const supabaseUrl = env.SUPABASE_URL ?? (production ? '' : 'http://localhost:54321');
+  if (!isOrigin(supabaseUrl)) problems.push('SUPABASE_URL must be an origin like https://abcd.supabase.co');
+  else if (production && !supabaseUrl.startsWith('https://')) problems.push('SUPABASE_URL must use https in production');
+
+  const supabaseSecretKey = env.SUPABASE_SECRET_KEY ?? '';
+  if (supabaseSecretKey.length < 20) problems.push('SUPABASE_SECRET_KEY must be set (Supabase: Project Settings → API Keys → secret)');
+
   // Values are never echoed: they may be secrets.
   if (problems.length) throw new ConfigError(`Configuration problems:\n  - ${problems.join('\n  - ')}`);
 
@@ -60,6 +74,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     webOrigin,
     trustProxyHops,
     ipHashKey: Buffer.from(keyHex, 'hex'),
+    supabaseUrl,
+    supabaseSecretKey,
   };
 }
 
