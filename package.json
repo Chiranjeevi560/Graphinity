@@ -17,6 +17,7 @@
     "dev:web": "npm --workspace apps/web run dev",
     "typecheck": "npm --workspaces run typecheck",
     "test": "npm --workspaces --if-present run test",
-    "build": "npm --workspaces run build"
+    "build": "npm --workspaces run build",
+    "dev:auth": "node scripts/dev-auth.mjs"
   }
 }

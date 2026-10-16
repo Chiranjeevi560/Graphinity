@@ -71,6 +71,15 @@ ensure_login_role() {
     } > "$LOCAL/api.env"
     echo "Wrote .local/api.env"
   fi
+  # Local stand-in for Supabase Auth (npm run dev:auth). Added separately so
+  # older .local/api.env files gain it too.
+  if ! grep -q '^SUPABASE_SECRET_KEY=' "$LOCAL/api.env"; then
+    umask 077
+    {
+      echo "SUPABASE_URL=http://localhost:54321"
+      echo "SUPABASE_SECRET_KEY=dev_secret_$(openssl rand -hex 24)"
+    } >> "$LOCAL/api.env"
+  fi
   # Integration tests create and drop their own throwaway databases as the owner.
   echo "TEST_DATABASE_ADMIN_URL=postgres:///postgres?host=$LOCAL&port=$PORT&user=$OWNER" > "$LOCAL/test.env"
 }

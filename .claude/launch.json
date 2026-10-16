@@ -1,7 +1,9 @@
 {
   "version": "0.0.1",
   "configurations": [
+    { "name": "web-dev", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev:web"], "port": 5173 },
     { "name": "web-preview", "runtimeExecutable": "npm", "runtimeArgs": ["--workspace", "apps/web", "run", "preview"], "port": 4173 },
-    { "name": "web-dev", "runtimeExecutable": "npm", "runtimeArgs": ["--workspace", "apps/web", "run", "dev"], "port": 5173 }
+    { "name": "api", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev:api"], "port": 3000 },
+    { "name": "auth", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev:auth"], "port": 54321 }
   ]
 }
