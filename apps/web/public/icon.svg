@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <style>
+    .bg { fill: #5856d6; }
+    @media (prefers-color-scheme: dark) { .bg { fill: #5e5ce6; } }
+  </style>
+  <!-- Squircle from src/lib/squircle.ts: squirclePath(64, 64, 14.4) -->
+  <path class="bg" d="M 40.96 0 c 8.065 0 12.097 0 15.177 1.57 a 14.4 14.4 0 0 1 6.293 6.293 c 1.57 3.08 1.57 7.113 1.57 15.177 L 64 40.96 c 0 8.065 0 12.097 -1.57 15.177 a 14.4 14.4 0 0 1 -6.293 6.293 c -3.08 1.57 -7.113 1.57 -15.177 1.57 L 23.04 64 c -8.065 0 -12.097 0 -15.177 -1.57 a 14.4 14.4 0 0 1 -6.293 -6.293 c -1.57 -3.08 -1.57 -7.113 -1.57 -15.177 L 0 23.04 c 0 -8.065 0 -12.097 1.57 -15.177 a 14.4 14.4 0 0 1 6.293 -6.293 c 3.08 -1.57 7.113 -1.57 15.177 -1.57 Z"/>
+  <path d="M19 23 L45 23 L32 45" fill="none" stroke="#fff" stroke-width="3" stroke-linejoin="round"/>
+  <circle cx="19" cy="23" r="6" fill="#fff"/>
+  <circle cx="45" cy="23" r="6" fill="#fff"/>
+  <circle cx="32" cy="45" r="6" fill="#fff"/>
+</svg>

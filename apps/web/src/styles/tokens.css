@@ -1,0 +1,144 @@
+/*
+ * Design tokens. Every colour, size and timing in the app comes from here.
+ *
+ * Colours are Apple's system colours. Light and dark are both resolved by
+ * CSS alone from the system setting, so the first paint is already right:
+ * there is no script to wait for and nothing to flash.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* Type: the system font, so Apple devices get SF Pro with its optical
+     sizes, and everyone else gets their platform's own UI face. */
+  --font: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  /* Sizes in rem so the person's own text-size setting scales everything.
+     Tracking is size-specific (approximately Apple's SF tables, in em):
+     body text is pulled in slightly, the largest titles opened up. */
+  --text-large-size: 2.125rem;   --text-large-leading: 1.206;   --text-large-tracking: 0.011em;
+  --text-title1-size: 1.75rem;   --text-title1-leading: 1.214;  --text-title1-tracking: 0.013em;
+  --text-title2-size: 1.375rem;  --text-title2-leading: 1.273;  --text-title2-tracking: -0.012em;
+  --text-title3-size: 1.25rem;   --text-title3-leading: 1.25;   --text-title3-tracking: -0.022em;
+  --text-body-size: 1.0625rem;   --text-body-leading: 1.294;    --text-body-tracking: -0.025em;
+  --text-callout-size: 1rem;     --text-callout-leading: 1.3125; --text-callout-tracking: -0.019em;
+  --text-subhead-size: 0.9375rem; --text-subhead-leading: 1.333; --text-subhead-tracking: -0.016em;
+  --text-footnote-size: 0.8125rem; --text-footnote-leading: 1.385; --text-footnote-tracking: -0.006em;
+  --text-caption-size: 0.75rem;  --text-caption-leading: 1.333;  --text-caption-tracking: 0em;
+
+  /* Spacing on a 4pt grid, in rem. */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --gutter: 1rem;
+  --measure: 40rem;
+
+  /* Smallest comfortable touch target (Apple: 44pt). */
+  --tap: 2.75rem;
+
+  /* Corner radii for squircles. */
+  --radius-control: 0.75rem;
+  --radius-card: 1.25rem;
+
+  /* One device pixel on high-density screens, one CSS pixel elsewhere. */
+  --hairline: 1px;
+
+  /* Springs, sampled from src/lib/spring.ts. A test fails if these drift
+     from the physics; regenerate them rather than editing by hand. */
+  --spring-smooth: linear(0, 0.043, 0.1397, 0.2568, 0.3755, 0.4857, 0.583, 0.666, 0.7351, 0.7917, 0.8372, 0.8736, 0.9023, 0.9249, 0.9424, 0.956, 0.9665, 0.9746, 0.9808, 0.9855, 0.989, 0.9917, 0.9938, 0.9953, 0.9965, 0.9974, 0.9981, 0.9985, 0.9989, 0.9992, 1);
+  --spring-smooth-duration: 546ms;
+  --spring-move: linear(0, 0.0422, 0.1372, 0.2527, 0.3702, 0.4797, 0.5768, 0.6599, 0.7293, 0.7864, 0.8325, 0.8695, 0.8988, 0.9219, 0.9399, 0.9539, 0.9648, 0.9732, 0.9796, 0.9845, 0.9883, 0.9912, 0.9933, 0.995, 0.9962, 0.9972, 0.9979, 0.9984, 0.9988, 0.9991, 1);
+  --spring-move-duration: 617ms;
+  --spring-sheet: linear(0, 0.0424, 0.1428, 0.2703, 0.4041, 0.5313, 0.6445, 0.7405, 0.8185, 0.8797, 0.926, 0.9596, 0.983, 0.9985, 1.0079, 1.0129, 1.0149, 1.015, 1.0139, 1.0121, 1.0101, 1.0081, 1.0062, 1.0046, 1.0033, 1.0023, 1.0015, 1.0009, 1.0004, 1.0001, 1);
+  --spring-sheet-duration: 454ms;
+  /* Press feedback must land within a frame or two of touch-down. */
+  --press-duration: 90ms;
+
+  /* Light */
+  --bg: #ffffff;
+  --bg-grouped: #f2f2f7;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --label: #000000;
+  --label-secondary: rgb(60 60 67 / 0.6);
+  --label-tertiary: rgb(60 60 67 / 0.3);
+  --separator: rgb(60 60 67 / 0.29);
+  --fill: rgb(120 120 128 / 0.2);
+  --fill-secondary: rgb(120 120 128 / 0.16);
+  --fill-tertiary: rgb(118 118 128 / 0.12);
+  --accent: #5856d6;
+  --on-accent: #ffffff;
+  --red: #ff3b30;
+  --red-text: #d70015;
+  --green-text: #248a3d;
+  --material: rgb(255 255 255 / 0.72);
+  --material-solid: #f9f9f9;
+  --shadow-card: 0 0.5px 0 rgb(0 0 0 / 0.04), 0 2px 12px rgb(0 0 0 / 0.04);
+}
+
+@media (min-resolution: 2dppx) {
+  :root { --hairline: 0.5px; }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #000000;
+    --bg-grouped: #000000;
+    --surface: #1c1c1e;
+    --surface-raised: #2c2c2e;
+    --label: #ffffff;
+    --label-secondary: rgb(235 235 245 / 0.6);
+    --label-tertiary: rgb(235 235 245 / 0.3);
+    --separator: rgb(84 84 88 / 0.65);
+    --fill: rgb(120 120 128 / 0.36);
+    --fill-secondary: rgb(120 120 128 / 0.32);
+    --fill-tertiary: rgb(118 118 128 / 0.24);
+    --accent: #5e5ce6;
+    --on-accent: #ffffff;
+    --red: #ff453a;
+    --red-text: #ff6961;
+    --green-text: #30d158;
+    --material: rgb(30 30 30 / 0.72);
+    --material-solid: #1c1c1e;
+    --shadow-card: none;
+  }
+}
+
+/* Reduced motion: no travel, no overshoot. Springs collapse to a short
+   cross-fade timing so state changes stay visible but nothing moves. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --spring-smooth: ease;
+    --spring-move: ease;
+    --spring-sheet: ease;
+    --spring-smooth-duration: 150ms;
+    --spring-move-duration: 150ms;
+    --spring-sheet-duration: 150ms;
+    --press-duration: 0ms;
+  }
+}
+
+/* Reduced transparency: materials become solid. */
+@media (prefers-reduced-transparency: reduce) {
+  :root { --material: var(--material-solid); }
+}
+
+/* Increased contrast: stronger separators and secondary text. */
+@media (prefers-contrast: more) {
+  :root {
+    --separator: rgb(60 60 67 / 0.6);
+    --label-secondary: rgb(60 60 67 / 0.85);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --separator: rgb(235 235 245 / 0.5);
+      --label-secondary: rgb(235 235 245 / 0.85);
+    }
+  }
+}

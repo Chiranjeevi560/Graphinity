@@ -1,0 +1,28 @@
+.home {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-10);
+}
+
+.stack-message {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding-top: var(--space-10);
+}
+
+/* Design gallery (development only) */
+.design { display: flex; flex-direction: column; gap: var(--space-8); padding-top: var(--space-6); }
+.design-label { text-transform: uppercase; margin-bottom: var(--space-2); }
+.design-row { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.design .card { display: flex; flex-direction: column; gap: var(--space-1); }
+.design-input {
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--fill-tertiary);
+}
