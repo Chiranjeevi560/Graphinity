@@ -56,6 +56,16 @@ describe('TokenBuckets', () => {
   });
 });
 
+describe('TokenBuckets when the clock steps backwards', () => {
+  it('does not lock a visitor out', () => {
+    const clock = fakeClock();
+    const b = new TokenBuckets({ capacity: 2, refillPerSecond: 1, maxKeys: 10 }, clock);
+    b.take('a');
+    clock.advance(-7 * 24 * 3600 * 1000); // e.g. a time sync correction
+    expect(b.take('a').ok).toBe(true);
+  });
+});
+
 describe('visitorKey', () => {
   const key = Buffer.alloc(32, 7);
 

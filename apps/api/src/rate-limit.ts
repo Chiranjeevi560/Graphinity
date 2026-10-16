@@ -45,7 +45,9 @@ export class TokenBuckets {
     const prev = this.#buckets.get(key);
     let tokens = capacity;
     if (prev) {
-      tokens = Math.min(capacity, prev.tokens + ((now - prev.at) / 1000) * refillPerSecond);
+      // A wall clock can step backwards (time sync); never let that drain a bucket.
+      const elapsed = Math.max(0, now - prev.at);
+      tokens = Math.min(capacity, prev.tokens + (elapsed / 1000) * refillPerSecond);
       this.#buckets.delete(key);
     }
     if (tokens < cost) {
