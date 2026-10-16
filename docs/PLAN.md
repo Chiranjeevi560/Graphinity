@@ -47,8 +47,9 @@ Render or Supabase.** Limits checked on the services' own pages on 2026-10-17 ar
 - **Database**: Supabase Postgres (Singapore). One idempotent schema file. Tables live in schema
   `app`, which Supabase's public data API does not expose. The server connects as a login role that
   is a member of `app_api`: no table ownership, row-level security forced on every table.
-- **Sign-in**: Supabase Auth with Google (PKCE). Token kept in sessionStorage, never localStorage.
-  The server verifies the token itself; all data goes through the server.
+- **Sign-in**: Supabase Auth with Google (PKCE), called directly without Supabase's client library.
+  Access token in memory, refresh token in sessionStorage, never localStorage. The server verifies
+  every token itself; all data goes through the server.
 - **Keep-awake**: a Cloudflare Worker cron hits `/health` every 10 minutes. `/health` touches the
   database, so neither the server sleeps nor the database pauses.
 - **Matching**: Postgres full-text search plus trigram similarity, ranked by field, country,
@@ -60,8 +61,9 @@ Render or Supabase.** Limits checked on the services' own pages on 2026-10-17 ar
 
 ## Build order
 
-1. Foundations: repo, CI, schema base, server factory, design system, app shell.
-2. Sign-in and profile: Google, display name, country, fields, delete account.
+1. ✅ Foundations: repo, CI, schema base, server factory, design system, app shell.
+2. ✅ Sign-in and profile: Google, display name, country, fields, delete account (built and tested
+   locally; first real Google sign-in pending accounts, see SETUP-ACCOUNTS.md).
 3. Ask, answer, read: public reading, live matching while typing.
 4. Select, helpful, points, medals, trust, change-with-reason, pair cap.
 5. Routing waves, live updates, web push.

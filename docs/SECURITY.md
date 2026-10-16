@@ -20,8 +20,17 @@ These must stay true. If one stops being true, revisit everything that depends o
    the Supabase data API doesn't expose, and roles `anon` and `authenticated` get no grants there
    (tested).
 4. **Secrets live only in host environment settings and `.local/`.** Never in git, chat or logs.
+5. **Supabase access tokens live at most one hour** (Supabase's default). The verifier refuses any
+   token whose lifetime is longer than 1 hour plus 60 seconds, because deleted accounts are locked
+   out for 2 hours: a longer-lived token could outlast that. Don't raise the expiry in Supabase.
+6. **Supabase signs tokens with an asymmetric key (ES256 or RS256).** Tokens signed with the legacy
+   shared secret (HS256) are refused. That fails closed: if the project still uses the legacy
+   secret, nobody can sign in until it's migrated (SETUP-ACCOUNTS.md).
+7. **The Supabase secret key is the most powerful secret we hold.** It can do anything in the
+   project. It is used for exactly one call (deleting a person's sign-in), sent only to Supabase,
+   and lives only in Render's environment. Supabase also refuses secret keys sent from browsers.
 
-## What is in place (step 1)
+## What is in place (steps 1–2)
 
 | Area | Defence | Proven by |
 |---|---|---|
@@ -37,6 +46,14 @@ These must stay true. If one stops being true, revisit everything that depends o
 | Script injection on the site | CSP `script-src 'self'`, no `unsafe-inline`; build fails on inline scripts | `headers.test.ts`, browser check |
 | Data in logs | Route pattern, status, time only; no addresses, headers, query, bodies, error messages, hostnames | `server.test.ts` |
 | Weak configuration | Server refuses to start without https origin, proxy count, 32-byte key | `config.test.ts` |
+| Forged or stolen tokens | Server verifies every token against Supabase's public keys: ES256/RS256 only (no `none`, no HS256 with the public key), issuer, audience, role, not anonymous, user id shape, max 1 h lifetime | `auth.test.ts` |
+| Login CSRF (someone feeds you their sign-in) | Our own random `state` in the return address, checked against this tab before exchanging the code; PKCE verifier never leaves the browser | `apps/web/test/auth.test.ts`; fails when the check is removed |
+| Code left in the address bar | Read and wiped with `history.replaceState` before any request | Browser check: address is `/auth/callback` with no query by the time setup shows |
+| Token theft from storage | Access token in memory only; refresh token in sessionStorage; localStorage never used | Web test with a localStorage that throws on access; fails 7 tests when broken |
+| One person editing another | RLS: insert/update/delete only where `id = app.current_user_id()` | `profile.integration.test.ts`; fails with `USING (true)` |
+| Deleted account's live token | Keyed hash of the id remembered for 2 h and checked on every signed-in request | Integration test; fails when the check is removed |
+| Input "fixed" instead of refused | Fastify's coercion and property-stripping turned off | Integration test; fails with the defaults |
+| Identity in the database | Only a chosen name, country, fields, 18+ time. No Google name or email copied | Integration test checks the stored row |
 | Supply chain | Install scripts disabled, exact versions, lockfile, versions over 2 weeks old, audit in CI, actions pinned to commits, read-only CI token | `.npmrc`, `ci.yml` |
 
 ## Threat model
@@ -50,8 +67,8 @@ Each line answers: *if a hostile researcher spent a day on this, what would they
 | T3 | Flood the server so it is slow or suspended | Global + per-visitor limits; durable per-account daily limits later | Partly in place (step 6 adds per-account limits) |
 | T4 | Forge their address to dodge limits | Measured hop count; HMAC key | In place; hop count must be measured at deploy |
 | T5 | Inject script into pages (XSS) | React escapes text; strict CSP; plain-text posts | CSP in place; posts arrive in step 3 |
-| T6 | Steal a sign-in token | Token in sessionStorage only; CSP; no third-party scripts | Step 2 |
-| T7 | Forge the OAuth return (login CSRF) | PKCE + state + nonce checked | Step 2 |
+| T6 | Steal a sign-in token | Access token in memory, refresh token in sessionStorage; CSP with no inline or third-party scripts | In place |
+| T7 | Forge the OAuth return (login CSRF) | PKCE (s256) + our own state checked in the tab that started it. There's no OIDC nonce on our side: Supabase, not our site, receives Google's ID token | In place |
 | T8 | Farm points with a second account | Pair cap, trust counted once per asker, shared-network flags | Step 4 |
 | T9 | Flood people with notifications | Daily per-person budget, waves | Step 5 |
 | T10 | Post abuse, spam or private info | Reports, auto-hide after 3, owner review, new-account limits | Step 6 |
@@ -60,10 +77,17 @@ Each line answers: *if a hostile researcher spent a day on this, what would they
 | T13 | Slip malicious code in through a dependency | See supply chain row above | In place |
 | T14 | Learn who someone is from logs or error messages | Log policy; generic errors | In place, tested |
 
+| T15 | Impersonate staff or another person by name | Reserved names, no all-digit names, one name change per week, unique names regardless of capitals | In place |
+| T16 | List all members by probing names | Name availability needs sign-in; public profiles are one-at-a-time by exact name | In place; per-account read limits come with step 6 |
+
 ## Known gaps
 
 - Rate-limit counts live in memory and reset when Render restarts the server. That only ever errs
   towards letting people in. Durable limits come in step 6.
 - The 15-second timeouts are configured but not tested under load.
+- Closing the tab signs you out: the refresh token lives in sessionStorage by design (the brief
+  rules out localStorage). Opening a link in a new tab means signing in again.
+- Not yet checked against the real Supabase project and Google: the local stand-in mirrors
+  Supabase's requests as read from supabase-js, but the first real sign-in is the real test.
 - Not yet checked: CI on GitHub (no repository yet), and headers on the real Cloudflare and Render
   hosts.

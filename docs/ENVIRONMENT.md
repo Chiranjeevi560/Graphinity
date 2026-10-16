@@ -12,15 +12,22 @@ Every setting, where it lives, and the free-tier limits it runs under.
 | `DATABASE_URL` | yes | `postgres://graphinity_api:…@…/postgres` | The **restricted** login role, never the owner. Secret |
 | `WEB_ORIGIN` | production | `https://graphinity.pages.dev` | The one origin allowed by CORS. Must be https |
 | `TRUST_PROXY_HOPS` | production | `1` | **Measured** at deploy (SECURITY.md). No default in production |
-| `IP_HASH_KEY` | yes | 64 hex chars | `openssl rand -hex 32`. Secret. Changing it resets rate-limit identities |
+| `IP_HASH_KEY` | yes | 64 hex chars | `openssl rand -hex 32`. Secret. Also hashes deleted-account ids. Changing it resets rate-limit identities and forgets the 2-hour deleted-account lockout |
+| `SUPABASE_URL` | production | `https://abcd.supabase.co` | Tokens must be issued by `<this>/auth/v1`. Must be https in production. Local default: the stand-in at `http://localhost:54321` |
+| `SUPABASE_SECRET_KEY` | yes | `sb_secret_…` | **Most powerful secret.** Used only to delete a person's sign-in. Never in git, chat, logs or the website |
 
-Locally, `npm run db:start` generates `DATABASE_URL` and `IP_HASH_KEY` into `.local/api.env`.
+Locally, `npm run db:start` generates `DATABASE_URL`, `IP_HASH_KEY`, a local `SUPABASE_URL` and a
+random dev `SUPABASE_SECRET_KEY` into `.local/api.env`.
 
 ## Website (`apps/web`)
 
 | Variable | Required | Example | Notes |
 |---|---|---|---|
 | `VITE_API_ORIGIN` | for deploys | `https://graphinity-api.onrender.com` | Goes into the CSP `connect-src`. Cloudflare builds refuse http |
+| `VITE_SUPABASE_URL` | for deploys | `https://abcd.supabase.co` | Where sign-in happens; also in `connect-src`. Cloudflare builds refuse http |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | for deploys | `sb_publishable_…` | Public by design: identifies the project, grants nothing (our tables aren't exposed). Cloudflare builds refuse anything else |
+
+Locally these default to the local API and the sign-in stand-in.
 
 `VITE_` variables are baked into the public website. **Never put a secret in one.**
 

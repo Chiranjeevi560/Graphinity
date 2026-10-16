@@ -20,6 +20,7 @@ in the same commit.
 |---|---|
 | Start the local database (creates it the first time) | `npm run db:start` |
 | Re-apply the schema after editing `db/schema.sql` | `npm run db:apply` |
+| Run the local sign-in stand-in (replaces Google + Supabase Auth) | `npm run dev:auth` |
 | Run the API on http://localhost:3000 | `npm run dev:api` |
 | Run the website on http://localhost:5173 | `npm run dev:web` |
 | Design gallery (development only) | http://localhost:5173/design |
@@ -31,6 +32,13 @@ in the same commit.
 
 `npm run db:start` writes two private files in `.local/` (git-ignored, readable only by you):
 `api.env` (the API's database login and hashing key) and `test.env` (for integration tests).
+
+To try sign-in locally, run `db:start`, then `dev:auth`, `dev:api` and `dev:web` in three
+terminals, and open http://localhost:5173. "Continue with Google" opens a local page where you pick
+a test person. To try the production build with its strict security headers, run
+`npm --workspace apps/web run build`, then `preview`, and start the API with
+`WEB_ORIGIN=http://localhost:4173`. Restart `preview` after changing headers: it computes them once
+at startup.
 
 ## Tests
 
@@ -46,7 +54,7 @@ When adding a rule that matters, break it on purpose, confirm a test fails, and 
 
 - Edit `db/schema.sql`. It must stay safe to run twice and additive only: add, never rename or
   drop in the same release as the code that stops using something.
-- Bump the version in the `INSERT INTO app.schema_meta` line.
+- Bump the version in the `INSERT INTO app.schema_meta` line (now 2).
 - Every new table needs `ENABLE` and `FORCE ROW LEVEL SECURITY`, explicit grants to `app_api`,
   and policies. The integration test fails if RLS is missing.
 
