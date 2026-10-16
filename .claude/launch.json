@@ -1,0 +1,7 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "web-preview", "runtimeExecutable": "npm", "runtimeArgs": ["--workspace", "apps/web", "run", "preview"], "port": 4173 },
+    { "name": "web-dev", "runtimeExecutable": "npm", "runtimeArgs": ["--workspace", "apps/web", "run", "dev"], "port": 5173 }
+  ]
+}
