@@ -76,6 +76,8 @@
   --on-accent: #ffffff;
   --red: #ff3b30;
   --red-text: #d70015;
+  /* Red text on a grey fill (destructive buttons); checked at 4.5:1 or more. */
+  --red-on-fill: #d70015;
   --green-text: #248a3d;
   --material: rgb(255 255 255 / 0.72);
   --material-solid: #f9f9f9;
@@ -103,6 +105,7 @@
     --on-accent: #ffffff;
     --red: #ff453a;
     --red-text: #ff6961;
+    --red-on-fill: #ff8078;
     --green-text: #30d158;
     --material: rgb(30 30 30 / 0.72);
     --material-solid: #1c1c1e;

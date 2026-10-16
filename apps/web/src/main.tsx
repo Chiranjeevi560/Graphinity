@@ -1,9 +1,11 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App.tsx';
+import { SessionProvider } from './session.tsx';
 import './styles/tokens.css';
 import './styles/base.css';
 import './components/components.css';
+import './components/forms.css';
 import './routes/routes.css';
 
 // A deploy replaces the hashed files this page was built against, so the
@@ -26,6 +28,8 @@ document.addEventListener('touchstart', () => {}, { passive: true });
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <SessionProvider>
+      <App />
+    </SessionProvider>
   </StrictMode>,
 );

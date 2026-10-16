@@ -26,3 +26,30 @@
   border-radius: var(--radius-control);
   background: var(--fill-tertiary);
 }
+
+.home-action { display: flex; flex-direction: column; gap: var(--space-3); margin-top: var(--space-4); }
+.home-action .btn { align-self: stretch; }
+@media (min-width: 30rem) { .home-action .btn { align-self: flex-start; min-width: 18rem; } }
+
+/* Header avatar sits at the trailing edge, with a full 44pt target. */
+.bar-inner { justify-content: space-between; }
+.bar-avatar { display: grid; place-items: center; min-width: var(--tap); min-height: var(--tap); margin-right: calc(-1 * (var(--tap) - 2rem) / 2); }
+.bar-avatar:hover { text-decoration: none; }
+
+/* Onboarding and edit forms: one column, one primary action at the end. */
+.onboarding, .edit-form { display: flex; flex-direction: column; }
+.onboarding-top { display: flex; align-items: center; justify-content: space-between; min-height: var(--tap); margin: var(--space-2) 0 var(--space-4); margin-left: calc(-1 * var(--space-2)); }
+.onboarding-step, .edit-form { display: flex; flex-direction: column; gap: var(--space-4); }
+.onboarding-step h1:focus, .edit-form h1:focus { outline: none; }
+.onboarding-step > p { margin-top: calc(-1 * var(--space-2)); }
+.onboarding-step .btn-block, .edit-form .btn-block { margin-top: var(--space-2); }
+
+/* Profile */
+.profile { display: flex; flex-direction: column; gap: var(--space-6); padding-top: var(--space-6); }
+.profile-head { display: flex; align-items: center; gap: var(--space-4); }
+.profile-names { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.profile-names h1 { overflow-wrap: anywhere; }
+.profile-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+.profile-section { display: flex; flex-direction: column; gap: var(--space-3); }
+.profile-footer { display: flex; flex-direction: column; align-items: center; gap: 0; margin-top: var(--space-4); }
+.link-button:hover { text-decoration: none; }

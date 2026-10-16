@@ -1,21 +1,56 @@
-import { Component, lazy, Suspense, type ReactNode } from 'react';
+import { Component, lazy, Suspense, useEffect, type ReactNode } from 'react';
 import { Button } from './components/Button.tsx';
-import { Link, usePath } from './lib/router.ts';
+import { Avatar } from './components/Identity.tsx';
+import { Link, navigate, usePath } from './lib/router.ts';
+import { useSession, type SessionState } from './session.tsx';
 
 // Each screen is its own chunk, so a phone downloads only what it shows.
 const Home = lazy(() => import('./routes/Home.tsx'));
+const AuthCallback = lazy(() => import('./routes/AuthCallback.tsx'));
+const Welcome = lazy(() => import('./routes/Welcome.tsx'));
+const Me = lazy(() => import('./routes/Me.tsx'));
+const EditProfile = lazy(() => import('./routes/EditProfile.tsx'));
+const PublicProfile = lazy(() => import('./routes/PublicProfile.tsx'));
+const Goodbye = lazy(() => import('./routes/Goodbye.tsx'));
 const NotFound = lazy(() => import('./routes/NotFound.tsx'));
 // A gallery of the design system for reviewing it; never part of a production build.
 const Design = import.meta.env.DEV ? lazy(() => import('./routes/Design.tsx')) : null;
 
-function route(path: string) {
-  if (path === '/') return <Home />;
+/** Sends people where they belong: no setup screen once set up, no profile pages when signed out. */
+function Redirect({ to }: { to: string }) {
+  useEffect(() => { navigate(to, { replace: true }); }, [to]);
+  return null;
+}
+
+function route(path: string, state: SessionState): ReactNode {
+  if (path === '/auth/callback') return <AuthCallback />;
+  if (path === '/goodbye') return <Goodbye />;
+  const profileMatch = path.match(/^\/u\/([^/]+)$/);
+  if (profileMatch) return <PublicProfile handle={decodeURIComponent(profileMatch[1]!)} />;
   if (Design && path === '/design') return <Design />;
-  return <NotFound />;
+
+  // Everything below depends on who is signed in.
+  if (state.status === 'loading') return null;
+  if (state.status === 'needsProfile' && path !== '/welcome') return <Redirect to="/welcome" />;
+
+  switch (path) {
+    case '/':
+      return <Home />;
+    case '/welcome':
+      if (state.status === 'needsProfile') return <Welcome />;
+      return <Redirect to="/" />;
+    case '/me':
+      return state.status === 'ready' ? <Me profile={state.profile} /> : <Redirect to="/" />;
+    case '/me/edit':
+      return state.status === 'ready' ? <EditProfile profile={state.profile} /> : <Redirect to="/" />;
+    default:
+      return <NotFound />;
+  }
 }
 
 export function App() {
   const path = usePath();
+  const { state } = useSession();
   return (
     <>
       <header className="bar">
@@ -24,12 +59,17 @@ export function App() {
             <Glyph />
             <span>Graphinity</span>
           </Link>
+          {state.status === 'ready' && (
+            <Link to="/me" className="bar-avatar" aria-label={`Your profile, @${state.profile.handle}`}>
+              <Avatar handle={state.profile.handle} />
+            </Link>
+          )}
         </div>
       </header>
       <ErrorBoundary>
         {/* No spinner: screens are small, and a flash of one is worse than a blank frame. */}
         <Suspense fallback={null}>
-          <div className="route" key={path}>{route(path)}</div>
+          <div className="route" key={path}>{route(path, state)}</div>
         </Suspense>
       </ErrorBoundary>
     </>
