@@ -123,7 +123,8 @@ describe('the API login role', () => {
   });
 
   it('cannot become the owner role', async () => {
-    expect(await refused('SET ROLE graphinity_owner')).toBe('42501');
+    const { rows } = await owner.query('SELECT current_user AS name');
+    expect(await refused(`SET ROLE ${rows[0].name}`)).toBe('42501');
   });
 });
 
