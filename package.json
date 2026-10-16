@@ -1,0 +1,22 @@
+{
+  "name": "graphinity",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/api",
+    "apps/web"
+  ],
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "db:start": "sh scripts/db.sh start",
+    "db:stop": "sh scripts/db.sh stop",
+    "db:apply": "sh scripts/db.sh apply",
+    "dev:api": "npm --workspace apps/api run dev",
+    "dev:web": "npm --workspace apps/web run dev",
+    "typecheck": "npm --workspaces run typecheck",
+    "test": "npm --workspaces --if-present run test",
+    "build": "npm --workspaces run build"
+  }
+}
