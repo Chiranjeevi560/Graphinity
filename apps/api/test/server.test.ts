@@ -163,7 +163,7 @@ describe('logging', () => {
     const text = logs.lines.join('');
     expect(text).toContain('"route":"/health"');
     expect(text).toContain('"status":200');
-    for (const leak of ['203.0.113.77', 'SecretBrowser', 'someone@example.com', 'tok_abc', 'remoteAddress']) {
+    for (const leak of ['203.0.113.77', 'SecretBrowser', 'someone@example.com', 'tok_abc', 'remoteAddress', '"hostname"']) {
       expect(text).not.toContain(leak);
     }
   });

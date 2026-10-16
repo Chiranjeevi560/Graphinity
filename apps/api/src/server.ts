@@ -78,6 +78,8 @@ export async function buildServer(deps: Deps) {
     logger: {
       level: config.production ? 'info' : 'debug',
       ...(deps.logStream ? { stream: deps.logStream } : {}),
+      // No machine name or process id either: a hostname can hold a person's name.
+      base: null,
       // Log lines carry no addresses, headers, query strings or bodies.
       serializers: { req: () => ({}), res: () => ({}) },
     },
