@@ -17,8 +17,14 @@ try {
   throw err;
 }
 
+// Declared before the database so its error listener never touches an
+// uninitialised variable; until the server exists, warnings go to stderr.
+const logger: { current?: Awaited<ReturnType<typeof buildServer>>['log'] } = {};
 const db = createDatabase(config.databaseUrl, {
-  onIdleError: err => app.log.warn({ kind: err.name }, 'database connection dropped'),
+  onIdleError: err => {
+    if (logger.current) logger.current.warn({ kind: err.name }, 'database connection dropped');
+    else console.warn('database connection dropped');
+  },
 });
 // Refuse to start as an all-powerful database login: row-level security
 // would be silently skipped.
@@ -30,18 +36,18 @@ try {
   process.exit(1);
 }
 
+const authAdmin = createSupabaseAdmin({ supabaseUrl: config.supabaseUrl, secretKey: config.supabaseSecretKey });
 const app = await buildServer({
   config,
   db,
   clock: systemClock,
   auth: createTokenVerifier({ issuer: `${config.supabaseUrl}/auth/v1`, keys: supabaseKeys(config.supabaseUrl) }),
-  authAdmin: createSupabaseAdmin({ supabaseUrl: config.supabaseUrl, secretKey: config.supabaseSecretKey }),
+  authAdmin,
 });
-
+logger.current = app.log;
 
 // Finish any account deletions Supabase couldn't complete at the time: now,
 // then every 5 minutes. The keep-awake ping keeps this instance running.
-const authAdmin = createSupabaseAdmin({ supabaseUrl: config.supabaseUrl, secretKey: config.supabaseSecretKey });
 const runDeletions = () => {
   completePendingDeletions({ db, authAdmin, subjectKey: config.ipHashKey, log: app.log })
     .then(r => { if (r.completed || r.failed) app.log.info(r, 'pending deletions'); })
@@ -53,13 +59,19 @@ deletionTimer.unref();
 app.addHook('onClose', (_instance, done) => { clearInterval(deletionTimer); done(); });
 
 // Render sends SIGTERM before replacing or stopping the instance. Finish
-// in-flight requests, then release database connections.
+// in-flight requests, then release database connections. A failure while
+// closing is logged and still ends the process, and a stuck close can't
+// keep it alive forever.
 for (const signal of ['SIGTERM', 'SIGINT'] as const) {
-  process.once(signal, async () => {
+  process.once(signal, () => {
     app.log.info({ signal }, 'shutting down');
-    await app.close();
-    await db.close();
-    process.exit(0);
+    setTimeout(() => process.exit(1), 25_000).unref();
+    app.close()
+      .then(() => db.close())
+      .then(() => process.exit(0), (err: unknown) => {
+        app.log.error({ kind: err instanceof Error ? err.name : 'unknown' }, 'shutdown failed');
+        process.exit(1);
+      });
   });
 }
 
