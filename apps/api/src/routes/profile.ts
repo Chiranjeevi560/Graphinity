@@ -99,14 +99,16 @@ async function replaceFields(q: Queryable, userId: string, fields: string[]) {
 export function registerProfileRoutes(app: FastifyInstance, deps: ProfileDeps) {
   const { db, clock, subjectKey } = deps;
 
-  // Lists for the profile form. Same for everyone, so caches may keep them.
+  // Lists for the profile form. They only change when db/schema.sql is
+  // applied (and the server redeployed), so they are read once and kept.
+  let meta: Promise<{ fields: unknown[]; countries: unknown[] }> | null = null;
   app.get('/meta', async (_req, reply) => {
-    const result = await db.withUser(null, async q => ({
+    meta ??= db.withUser(null, async q => ({
       fields: (await q.query('SELECT slug, name FROM app.fields ORDER BY position')).rows,
       countries: (await q.query('SELECT code, name FROM app.countries ORDER BY name')).rows,
-    }));
+    })).catch((err: unknown) => { meta = null; throw err; });
     reply.header('cache-control', 'public, max-age=3600');
-    return result;
+    return meta;
   });
 
   app.get('/me', { config: { auth: 'required' } }, async req => {

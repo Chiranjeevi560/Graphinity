@@ -187,11 +187,11 @@ export async function buildServer(deps: Deps) {
   // Refused: an account deleted in the last two hours, or one whose sign-in
   // removal at Supabase is still pending (its tokens keep refreshing until then).
   async function isRevoked(userId: string): Promise<boolean> {
-    return db.withUser(null, async q =>
-      (await q.query<{ revoked: boolean }>(
-        `SELECT EXISTS (SELECT 1 FROM app.revoked_subjects WHERE subject_hash = $1 AND until > now())
-             OR EXISTS (SELECT 1 FROM app.pending_auth_deletions WHERE user_id = $2) AS revoked`,
-        [subjectHash(userId, config.ipHashKey), userId])).rows[0]?.revoked === true);
+    const { rows } = await db.query<{ revoked: boolean }>(
+      `SELECT EXISTS (SELECT 1 FROM app.revoked_subjects WHERE subject_hash = $1 AND until > now())
+           OR EXISTS (SELECT 1 FROM app.pending_auth_deletions WHERE user_id = $2) AS revoked`,
+      [subjectHash(userId, config.ipHashKey), userId]);
+    return rows[0]?.revoked === true;
   }
 
   // One line per request: which route pattern (never the raw URL, which may

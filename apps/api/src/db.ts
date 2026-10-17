@@ -14,6 +14,12 @@ export interface Database {
    */
   withUser<T>(userId: string | null, fn: (q: Queryable) => Promise<T>): Promise<T>;
   /**
+   * One statement with no signed-in identity and no transaction: for reads
+   * that every visitor may make (row-level security still applies, as
+   * anonymous). One round trip instead of four.
+   */
+  query: Queryable['query'];
+  /**
    * Throws unless we are connected as the restricted role. An owner or
    * superuser login silently skips every row-level security policy, so the
    * server must refuse to start with one.
@@ -77,6 +83,8 @@ export function createDatabase(connectionString: string, options: DatabaseOption
         client.release(broken);
       }
     },
+
+    query: (text, values) => pool.query(text, values),
 
     async assertRestricted() {
       const { rows } = await pool.query<{ rolsuper: boolean; rolbypassrls: boolean; owned: number }>(

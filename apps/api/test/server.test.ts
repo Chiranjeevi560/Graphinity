@@ -9,6 +9,7 @@ function fakeDb(overrides: Partial<Database> = {}): Database {
   return {
     ping: async () => ({ schemaVersion: 7 }),
     withUser: async () => { throw new Error('not used'); },
+    query: () => Promise.reject(new Error('not used')),
     assertRestricted: async () => {},
     close: async () => {},
     ...overrides,
@@ -48,6 +49,21 @@ describe('health', () => {
     const res = await app.inject('/health');
     expect(res.statusCode).toBe(503);
     expect(res.body).not.toContain('password');
+  });
+});
+
+describe('/meta', () => {
+  it('reads the field and country lists once, not on every visit', async () => {
+    let reads = 0;
+    const db = fakeDb({
+      withUser: (_user, fn) => {
+        reads++;
+        return fn({ query: () => Promise.resolve({ rows: [{ x: 1 }] }) } as never);
+      },
+    });
+    const app = await server({ db });
+    for (let i = 0; i < 5; i++) expect((await app.inject('/meta')).statusCode).toBe(200);
+    expect(reads).toBe(1);
   });
 });
 
