@@ -3,6 +3,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createTokenVerifier, subjectHash } from '../src/auth.ts';
+import { completePendingDeletions } from '../src/deletions.ts';
 import { HANDLE_COOLDOWN_MS } from '../src/routes/profile.ts';
 import { buildServer, defaultLimits } from '../src/server.ts';
 import { createTestDatabase, type TestDatabase } from './helpers/database.ts';
@@ -226,15 +227,82 @@ describe('deleting an account', () => {
     expect(JSON.stringify(revoked.rows)).not.toContain(p.id);
   });
 
-  it('can be retried when removing the sign-in fails the first time', async () => {
+  it('leaves nothing pending when Supabase removes the sign-in straight away', async () => {
     const p = await person();
-    await call('POST', '/me/profile', p.token, { ...valid, handle: 'retry.delete' });
+    await call('POST', '/me/profile', p.token, { ...valid, handle: 'clean.exit' });
+    expect((await call('DELETE', '/me', p.token, { confirm: true })).statusCode).toBe(204);
+    const { rows } = await t.owner.query('SELECT 1 FROM app.pending_auth_deletions WHERE user_id = $1', [p.id]);
+    expect(rows).toHaveLength(0);
+  });
+});
+
+describe('when Supabase fails to remove the sign-in', () => {
+  async function deleteWithFailure() {
+    const p = await person();
+    await call('POST', '/me/profile', p.token, { ...valid, handle: `fail.${p.id.slice(0, 6)}` });
     admin.failNextDelete();
-    const first = await call('DELETE', '/me', p.token, { confirm: true });
-    expect(first.statusCode).toBe(502);
-    expect(first.json().message).toMatch(/Try again in a minute/);
+    const res = await call('DELETE', '/me', p.token, { confirm: true });
+    return { p, res };
+  }
+  const job = () => completePendingDeletions({ db: t.database, authAdmin: admin, subjectKey: KEY, log: { warn: () => {} } });
+  // Each test starts with nothing pending, so the job's counts are this test's alone.
+  beforeEach(async () => { await t.owner.query('DELETE FROM app.pending_auth_deletions'); });
+
+  it('still tells the person their account is deleted, and records the sign-in as pending', async () => {
+    const { p, res } = await deleteWithFailure();
+    expect(res.statusCode).toBe(202);
+    expect(res.json()).toEqual({ status: 'finishing', message: 'Your account is deleted. Removing your sign-in is taking longer than usual; it will finish automatically.' });
+    expect(admin.deleted).not.toContain(p.id);
+    const { rows } = await t.owner.query('SELECT attempts FROM app.pending_auth_deletions WHERE user_id = $1', [p.id]);
+    expect(rows).toEqual([{ attempts: 0 }]);
+  });
+
+  it('keeps refusing the account while removal is pending, even after the 2-hour lockout ends', async () => {
+    const { p } = await deleteWithFailure();
+    await t.owner.query('DELETE FROM app.revoked_subjects WHERE subject_hash = $1', [subjectHash(p.id, KEY)]);
+    // A fresh token for the same person, as a refresh would give while Supabase still has them.
+    const fresh = await issuer.sign({}, { sub: p.id });
+    expect((await call('GET', '/me', fresh)).statusCode).toBe(401);
+    expect((await call('POST', '/me/profile', fresh, { ...valid, handle: 'resurrected' })).statusCode).toBe(401);
+  });
+
+  it('refuses, in the database itself, a profile for a sign-in that is pending removal', async () => {
+    const { p } = await deleteWithFailure();
+    await expect(t.database.withUser(p.id, async q => {
+      await q.query("INSERT INTO app.profiles (id, handle, country, adult_confirmed_at) VALUES ($1, 'sneaky.back', 'IN', now())", [p.id]);
+      await q.query("INSERT INTO app.profile_fields (profile_id, field) VALUES ($1, 'travel')", [p.id]);
+    })).rejects.toMatchObject({ code: '23514' });
+  });
+
+  it('is finished automatically by the retry job, which then forgets the id', async () => {
+    const { p } = await deleteWithFailure();
+    expect(await job()).toEqual({ completed: 1, failed: 0 });
+    expect(admin.deleted).toContain(p.id);
+    const pending = await t.owner.query('SELECT 1 FROM app.pending_auth_deletions WHERE user_id = $1', [p.id]);
+    expect(pending.rows).toHaveLength(0);
+    // Tokens issued before Supabase removed the person are still refused for the next 2 hours.
+    const revoked = await t.owner.query("SELECT until > now() + interval '110 minutes' AS fresh FROM app.revoked_subjects WHERE subject_hash = $1", [subjectHash(p.id, KEY)]);
+    expect(revoked.rows).toEqual([{ fresh: true }]);
+    expect((await call('GET', '/me', p.token)).statusCode).toBe(401);
+  });
+
+  it('backs off after a failed retry instead of hammering Supabase', async () => {
+    const { p } = await deleteWithFailure();
+    admin.failNextDelete();
+    expect(await job()).toEqual({ completed: 0, failed: 1 });
+    const { rows } = await t.owner.query("SELECT attempts, next_attempt_at > now() AS later FROM app.pending_auth_deletions WHERE user_id = $1", [p.id]);
+    expect(rows).toEqual([{ attempts: 1, later: true }]);
+    // Not due yet: running the job again does nothing.
+    expect(await job()).toEqual({ completed: 0, failed: 0 });
+    expect(admin.deleted).not.toContain(p.id);
+  });
+
+  it('can also be finished by the person retrying the deletion themselves', async () => {
+    const { p } = await deleteWithFailure();
     expect((await call('DELETE', '/me', p.token, { confirm: true })).statusCode).toBe(204);
     expect(admin.deleted).toContain(p.id);
+    const { rows } = await t.owner.query('SELECT 1 FROM app.pending_auth_deletions WHERE user_id = $1', [p.id]);
+    expect(rows).toHaveLength(0);
   });
 });
 

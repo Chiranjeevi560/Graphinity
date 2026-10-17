@@ -6,6 +6,9 @@ import type pg from 'pg';
 import type { Database } from '../src/db.ts';
 import { createTestDatabase, schema, type TestDatabase } from './helpers/database.ts';
 
+// The version the schema file says it is, so tests don't need editing on every change.
+const VERSION = Number(/VALUES \(true, (\d+)\)/.exec(schema)?.[1]);
+
 let t: TestDatabase;
 let owner: pg.Client; // the schema owner, connected to the test database
 let api: pg.Client; // the API's login role
@@ -33,7 +36,8 @@ describe('schema', () => {
   it('applies a third time without error and records its version', async () => {
     await owner.query(schema);
     const { rows } = await owner.query('SELECT version FROM app.schema_meta');
-    expect(rows).toEqual([{ version: 2 }]);
+    expect(VERSION).toBeGreaterThan(0);
+    expect(rows).toEqual([{ version: VERSION }]);
   });
 
   it('turns on and forces row-level security on every table in app', async () => {
@@ -58,7 +62,7 @@ describe('schema', () => {
 
 describe('the API login role', () => {
   it('can read what it is granted', async () => {
-    expect(await database.ping()).toEqual({ schemaVersion: 2 });
+    expect(await database.ping()).toEqual({ schemaVersion: VERSION });
   });
 
   it('is not a superuser, cannot bypass RLS, create roles or databases', async () => {
@@ -104,6 +108,6 @@ describe('withUser', () => {
       throw new Error('fail midway');
     })).rejects.toThrow('fail midway');
     // The connection is still usable afterwards (not left mid-transaction).
-    expect(await database.ping()).toEqual({ schemaVersion: 2 });
+    expect(await database.ping()).toEqual({ schemaVersion: VERSION });
   });
 });

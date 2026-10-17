@@ -51,7 +51,8 @@ These must stay true. If one stops being true, revisit everything that depends o
 | Code left in the address bar | Read and wiped with `history.replaceState` before any request | Browser check: address is `/auth/callback` with no query by the time setup shows |
 | Token theft from storage | Access token in memory only; refresh token in sessionStorage; localStorage never used | Web test with a localStorage that throws on access; fails 7 tests when broken |
 | One person editing another | RLS: insert/update/delete only where `id = app.current_user_id()` | `profile.integration.test.ts`; fails with `USING (true)` |
-| Deleted account's live token | Keyed hash of the id remembered for 2 h and checked on every signed-in request | Integration test; fails when the check is removed |
+| Deleted account's live token | Keyed hash of the id remembered for 2 h, refreshed when Supabase confirms the deletion, and checked on every signed-in request | Integration test; fails when the check is removed |
+| Half-finished deletion (Supabase down) | The id is kept in `app.pending_auth_deletions` until Supabase confirms; a job retries with backoff; the account is refused while pending; a deferred database trigger refuses any profile for a pending id (also closes the create/delete race) | Integration tests; each fails when its protection is removed |
 | Input "fixed" instead of refused | Fastify's coercion and property-stripping turned off | Integration test; fails with the defaults |
 | Identity in the database | Only a chosen name, country, fields, 18+ time. No Google name or email copied | Integration test checks the stored row |
 | Supply chain | Install scripts disabled, exact versions, lockfile, versions over 2 weeks old, audit in CI, actions pinned to commits, read-only CI token | `.npmrc`, `ci.yml` |
@@ -79,6 +80,12 @@ Each line answers: *if a hostile researcher spent a day on this, what would they
 
 | T15 | Impersonate staff or another person by name | Reserved names, no all-digit names, one name change per week, unique names regardless of capitals | In place |
 | T16 | List all members by probing names | Name availability needs sign-in; public profiles are one-at-a-time by exact name | In place; per-account read limits come with step 6 |
+
+## Data kept on purpose
+
+- `app.pending_auth_deletions` holds a deleted person's user id **only** while Supabase has not yet
+  confirmed removing their sign-in. It is the one value needed to finish the deletion, and the row is
+  removed the moment Supabase confirms. Normally that is within the same request.
 
 ## Known gaps
 

@@ -521,8 +521,70 @@ DROP POLICY IF EXISTS revoked_cleanup ON app.revoked_subjects;
 CREATE POLICY revoked_cleanup ON app.revoked_subjects FOR DELETE TO app_api
   USING (until < now());
 
+-- ---------------------------------------------------------------------------
+-- Sign-ins still to be removed from Supabase after an account was deleted.
+-- Deleting an account deletes the profile at once, then asks Supabase to
+-- delete the sign-in (which holds the email). If that call fails, the user id
+-- is kept here, and only here, until a retry succeeds: it is the one piece of
+-- data needed to finish the deletion. The row is removed as soon as Supabase
+-- confirms.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS app.pending_auth_deletions (
+  user_id          uuid PRIMARY KEY,
+  requested_at     timestamptz NOT NULL DEFAULT now(),
+  attempts         integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  next_attempt_at  timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE app.pending_auth_deletions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.pending_auth_deletions FORCE ROW LEVEL SECURITY;
+GRANT SELECT, INSERT, DELETE ON app.pending_auth_deletions TO app_api;
+GRANT UPDATE (attempts, next_attempt_at) ON app.pending_auth_deletions TO app_api;
+-- A person may only queue their own deletion. The retry job runs without a
+-- signed-in identity and may read, update and clear every row.
+DROP POLICY IF EXISTS pending_insert_own ON app.pending_auth_deletions;
+CREATE POLICY pending_insert_own ON app.pending_auth_deletions FOR INSERT TO app_api
+  WITH CHECK (user_id = app.current_user_id());
+DROP POLICY IF EXISTS pending_read ON app.pending_auth_deletions;
+CREATE POLICY pending_read ON app.pending_auth_deletions FOR SELECT TO app_api
+  USING (app.current_user_id() IS NULL OR user_id = app.current_user_id());
+DROP POLICY IF EXISTS pending_update_job ON app.pending_auth_deletions;
+CREATE POLICY pending_update_job ON app.pending_auth_deletions FOR UPDATE TO app_api
+  USING (app.current_user_id() IS NULL) WITH CHECK (app.current_user_id() IS NULL);
+DROP POLICY IF EXISTS pending_delete ON app.pending_auth_deletions;
+CREATE POLICY pending_delete ON app.pending_auth_deletions FOR DELETE TO app_api
+  USING (app.current_user_id() IS NULL OR user_id = app.current_user_id());
+CREATE INDEX IF NOT EXISTS pending_auth_deletions_due ON app.pending_auth_deletions (next_attempt_at);
+
+-- No profile may exist for a sign-in that is being deleted. Checked when the
+-- transaction commits, so it also catches a "create profile" that raced a
+-- "delete account" and waited on its lock.
+CREATE OR REPLACE FUNCTION app.check_profile_not_pending_deletion() RETURNS trigger
+  LANGUAGE plpgsql
+  SET search_path = pg_catalog
+AS $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM app.pending_auth_deletions WHERE user_id = NEW.id) THEN
+    RAISE EXCEPTION 'this account is being deleted' USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NULL;
+END
+$$;
+REVOKE ALL ON FUNCTION app.check_profile_not_pending_deletion() FROM PUBLIC;
+DROP TRIGGER IF EXISTS profiles_not_pending_deletion ON app.profiles;
+CREATE CONSTRAINT TRIGGER profiles_not_pending_deletion
+  AFTER INSERT ON app.profiles
+  DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION app.check_profile_not_pending_deletion();
+
+-- The retry job refreshes the lockout when it finishes a deletion, so it may
+-- move an expiry later (never beyond a day).
+GRANT UPDATE (until) ON app.revoked_subjects TO app_api;
+DROP POLICY IF EXISTS revoked_extend ON app.revoked_subjects;
+CREATE POLICY revoked_extend ON app.revoked_subjects FOR UPDATE TO app_api
+  USING (true) WITH CHECK (until <= now() + interval '1 day');
+
 -- Bump on every change to this file.
-INSERT INTO app.schema_meta (id, version) VALUES (true, 2)
+INSERT INTO app.schema_meta (id, version) VALUES (true, 3)
   ON CONFLICT (id) DO UPDATE SET version = EXCLUDED.version, applied_at = now();
 
 COMMIT;

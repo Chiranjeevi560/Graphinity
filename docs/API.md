@@ -29,7 +29,6 @@ Base URL: `http://localhost:3000` locally; the Render URL in production.
 | 415 | `unsupported` | Wrong content type |
 | 429 | `rate_limited` | Too many requests. `Retry-After` gives the seconds to wait |
 | 500 | `server_error` | Our fault. Details are never returned or logged |
-| 502 | `delete_incomplete` | Profile deleted, sign-in removal failed. Retry `DELETE /me` |
 | 503 | `auth_unavailable` | Supabase's signing keys couldn't be loaded. Not the person's fault |
 
 ## The Profile object
@@ -79,6 +78,12 @@ Public. `{ "profile": { handle, country, fields, joined } }`: no id, no timestam
 month joined. 404 `not_found` with "There’s no one with that name."
 
 ### `DELETE /me` (signed in, counts as a write)
-Body: `{ "confirm": true }`. Deletes the profile and everything that cascades from it, remembers a
-keyed hash of the id for 2 hours so live tokens stop working at once, then deletes the sign-in in
-Supabase. `204` · `502 delete_incomplete` (safe to retry with the same token).
+Body: `{ "confirm": true }`. Deletes the profile and everything that cascades from it, records the
+sign-in as pending removal, locks the account out (a keyed hash, 2 hours), then asks Supabase to
+delete the sign-in.
+
+- `204`: done, including the sign-in at Supabase.
+- `202 { "status": "finishing", "message": "Your account is deleted. Removing your sign-in is taking
+  longer than usual; it will finish automatically." }`: Supabase didn't answer. The server retries
+  every 5 minutes at first, backing off to 6 hours, until Supabase confirms. The account is refused
+  everywhere meanwhile, and the database won't accept a new profile for it. Calling again is safe.

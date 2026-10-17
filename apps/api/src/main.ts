@@ -2,6 +2,7 @@ import { createTokenVerifier, supabaseKeys } from './auth.ts';
 import { createSupabaseAdmin } from './auth-admin.ts';
 import { loadConfig, ConfigError } from './config.ts';
 import { createDatabase } from './db.ts';
+import { completePendingDeletions } from './deletions.ts';
 import { systemClock } from './rate-limit.ts';
 import { buildServer } from './server.ts';
 
@@ -26,6 +27,20 @@ const app = await buildServer({
   auth: createTokenVerifier({ issuer: `${config.supabaseUrl}/auth/v1`, keys: supabaseKeys(config.supabaseUrl) }),
   authAdmin: createSupabaseAdmin({ supabaseUrl: config.supabaseUrl, secretKey: config.supabaseSecretKey }),
 });
+
+
+// Finish any account deletions Supabase couldn't complete at the time: now,
+// then every 5 minutes. The keep-awake ping keeps this instance running.
+const authAdmin = createSupabaseAdmin({ supabaseUrl: config.supabaseUrl, secretKey: config.supabaseSecretKey });
+const runDeletions = () => {
+  completePendingDeletions({ db, authAdmin, subjectKey: config.ipHashKey, log: app.log })
+    .then(r => { if (r.completed || r.failed) app.log.info(r, 'pending deletions'); })
+    .catch((err: unknown) => { app.log.warn({ kind: err instanceof Error ? err.name : 'unknown' }, 'pending deletions run failed'); });
+};
+runDeletions();
+const deletionTimer = setInterval(runDeletions, 5 * 60_000);
+deletionTimer.unref();
+app.addHook('onClose', (_instance, done) => { clearInterval(deletionTimer); done(); });
 
 // Render sends SIGTERM before replacing or stopping the instance. Finish
 // in-flight requests, then release database connections.

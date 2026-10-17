@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
-import { subjectHash } from '../auth.ts';
 import type { AuthAdmin } from '../auth-admin.ts';
 import type { Database, Queryable } from '../db.ts';
+import { finishDeletion, lockOut, type DeletionDeps } from '../deletions.ts';
 import { handleProblem, handleProblemMessages, normalizeHandle } from '../handles.ts';
 import type { Clock } from '../rate-limit.ts';
 
@@ -10,15 +10,11 @@ export interface ProfileDeps {
   authAdmin: AuthAdmin;
   clock: Clock;
   subjectKey: Buffer;
+  log: DeletionDeps['log'];
 }
 
 /** A display name can change once a week, so nobody can hop between names to confuse people. */
 export const HANDLE_COOLDOWN_MS = 7 * 24 * 3600 * 1000;
-/**
- * How long a deleted account's id is remembered. Longer than the longest
- * token we accept (auth.ts), so no live token can outlast it.
- */
-const REVOKE_FOR = '2 hours';
 
 interface ProfileRow {
   id: string;
@@ -101,7 +97,7 @@ async function replaceFields(q: Queryable, userId: string, fields: string[]) {
 }
 
 export function registerProfileRoutes(app: FastifyInstance, deps: ProfileDeps) {
-  const { db, authAdmin, clock, subjectKey } = deps;
+  const { db, clock, subjectKey } = deps;
 
   // Lists for the profile form. Same for everyone, so caches may keep them.
   app.get('/meta', async (_req, reply) => {
@@ -225,9 +221,11 @@ export function registerProfileRoutes(app: FastifyInstance, deps: ProfileDeps) {
     return { profile: publicProfile(profile) };
   });
 
-  // Deleting an account really deletes it: profile, fields (and, as later
-  // tables arrive, everything that cascades from the profile), then the
-  // sign-in itself. Safe to retry if the last part fails.
+  // Deleting an account really deletes it: the profile and everything that
+  // cascades from it at once, then the sign-in at Supabase. If Supabase fails,
+  // the deletion is recorded as pending and finished by the retry job
+  // (deletions.ts); until then the account is refused everywhere and the
+  // database won't accept a new profile for it. Safe to call again.
   app.delete('/me', {
     config: { auth: 'required', write: true, allowRevoked: true },
     schema: { body: { type: 'object', additionalProperties: false, required: ['confirm'], properties: { confirm: { const: true } } } },
@@ -236,19 +234,15 @@ export function registerProfileRoutes(app: FastifyInstance, deps: ProfileDeps) {
     await db.withUser(user.id, async q => {
       await q.query('DELETE FROM app.revoked_subjects WHERE until < now()');
       await q.query('DELETE FROM app.profiles WHERE id = $1', [user.id]);
-      await q.query(
-        `INSERT INTO app.revoked_subjects (subject_hash, until) VALUES ($1, now() + interval '${REVOKE_FOR}')
-         ON CONFLICT (subject_hash) DO NOTHING`,
-        [subjectHash(user.id, subjectKey)],
-      );
+      await q.query('INSERT INTO app.pending_auth_deletions (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING', [user.id]);
+      await lockOut(q, user.id, subjectKey);
     });
-    try {
-      await authAdmin.deleteUser(user.id);
-    } catch (err) {
-      req.log.error({ kind: (err as Error).name }, 'auth user delete failed');
-      return fail(reply, 502, 'delete_incomplete',
-        'Your profile is deleted, but your sign-in couldn’t be removed yet. Try again in a minute.');
+    if (await finishDeletion({ db, authAdmin: deps.authAdmin, subjectKey, log: deps.log }, user.id)) {
+      return reply.code(204).send();
     }
-    return reply.code(204).send();
+    return reply.code(202).send({
+      status: 'finishing',
+      message: 'Your account is deleted. Removing your sign-in is taking longer than usual; it will finish automatically.',
+    });
   });
 }
