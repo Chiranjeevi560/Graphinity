@@ -1,6 +1,7 @@
+import { createServer, type Server } from 'node:http';
 import { generateKeyPair, SignJWT, UnsecuredJWT } from 'jose';
-import { beforeAll, describe, expect, it } from 'vitest';
-import { AuthError, AuthUnavailableError, createTokenVerifier, subjectHash, type TokenVerifier } from '../src/auth.ts';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { AuthError, AuthUnavailableError, createTokenVerifier, subjectHash, supabaseKeys, type TokenVerifier } from '../src/auth.ts';
 import { TEST_ISSUER, testIssuer } from './helpers/tokens.ts';
 
 let issuer: Awaited<ReturnType<typeof testIssuer>>;
@@ -82,6 +83,46 @@ describe('createTokenVerifier', () => {
   it('reports key-loading failures as unavailable, not as a bad token', async () => {
     const broken = createTokenVerifier({ issuer: TEST_ISSUER, keys: async () => { throw new TypeError('fetch failed'); } });
     await expect(broken.verify(await issuer.sign())).rejects.toBeInstanceOf(AuthUnavailableError);
+  });
+});
+
+describe('when Supabase\'s key service misbehaves', () => {
+  // A local stand-in for the key endpoint whose answer each test chooses.
+  let respond: (res: import('node:http').ServerResponse) => void = res => res.end();
+  let server: Server;
+  let base: string;
+  beforeAll(async () => {
+    server = createServer((_req, res) => { respond(res); }).listen(0, '127.0.0.1');
+    await new Promise(r => server.once('listening', r));
+    base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  });
+  afterAll(() => { server.close(); });
+
+  // Each case gets a fresh key cache, as a server would after its cache expired.
+  async function verifyAgainst(answer: typeof respond) {
+    respond = answer;
+    const verifier = createTokenVerifier({ issuer: `${base}/auth/v1`, keys: supabaseKeys(base) });
+    return verifier.verify(await issuer.sign({}, { issuer: `${base}/auth/v1` }));
+  }
+
+  it('reports an error status as "can\'t check right now", not as signed out', async () => {
+    await expect(verifyAgainst(res => { res.writeHead(503, { 'content-type': 'text/html' }); res.end('<h1>Service Unavailable</h1>'); }))
+      .rejects.toBeInstanceOf(AuthUnavailableError);
+  });
+
+  it('reports a body that is not JSON the same way', async () => {
+    await expect(verifyAgainst(res => { res.writeHead(200, { 'content-type': 'text/html' }); res.end('<html>maintenance</html>'); }))
+      .rejects.toBeInstanceOf(AuthUnavailableError);
+  });
+
+  it('reports JSON that is not a key set the same way', async () => {
+    await expect(verifyAgainst(res => { res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"hello":"world"}'); }))
+      .rejects.toBeInstanceOf(AuthUnavailableError);
+  });
+
+  it('still treats a token signed by a key the service does not list as a bad token', async () => {
+    await expect(verifyAgainst(res => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ keys: [] })); }))
+      .rejects.toBeInstanceOf(AuthError);
   });
 });
 

@@ -31,6 +31,19 @@ export const MAX_TOKEN_LIFETIME_SECONDS = 3600;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** jose errors that mean the token is forged, malformed, expired or not for us. */
+const TOKEN_PROBLEMS = [
+  errors.JWTExpired,
+  errors.JWTClaimValidationFailed,
+  errors.JWTInvalid,
+  errors.JWSInvalid,
+  errors.JWSSignatureVerificationFailed,
+  errors.JOSEAlgNotAllowed,
+  errors.JOSENotSupported,
+  errors.JWKSNoMatchingKey,
+  errors.JWKSMultipleMatchingKeys,
+];
+
 export interface VerifierOptions {
   /** e.g. https://abcd.supabase.co/auth/v1 */
   issuer: string;
@@ -55,10 +68,12 @@ export function createTokenVerifier({ issuer, keys }: VerifierOptions): TokenVer
           requiredClaims: ['sub', 'exp', 'iat'],
         }));
       } catch (err) {
-        if (err instanceof errors.JWKSTimeout) throw new AuthUnavailableError(err.code);
-        if (err instanceof errors.JOSEError) throw new AuthError(err.code);
-        // Anything else is a failure to fetch keys (network, DNS), not a bad token.
-        throw new AuthUnavailableError((err as Error).name);
+        // Only these mean the token itself is bad. jose reports a key service
+        // that answers with an error page or non-JSON as a plain JOSEError, so
+        // matching JOSEError broadly would sign everyone out during a Supabase
+        // hiccup; anything not listed here is "can't check right now".
+        if (TOKEN_PROBLEMS.some(type => err instanceof type)) throw new AuthError((err as errors.JOSEError).code);
+        throw new AuthUnavailableError(err instanceof Error ? err.name : 'unknown');
       }
       if (typeof payload.exp !== 'number' || typeof payload.iat !== 'number' || payload.exp - payload.iat > MAX_TOKEN_LIFETIME_SECONDS + 60) {
         throw new AuthError('lifetime');
