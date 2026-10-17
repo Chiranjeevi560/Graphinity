@@ -143,6 +143,16 @@ describe('rate limits', () => {
     for (const ip of ['203.0.113.1', '203.0.113.2', '203.0.113.3']) expect((await from(ip)).statusCode).toBe(200);
   });
 
+  it('counts every address in one IPv6 /64 block as the same visitor', async () => {
+    const app = await server({ limits: tight, hops: 1 });
+    const codes = [];
+    for (let i = 1; i <= 3; i++) {
+      codes.push((await app.inject({ url: '/health', headers: { 'x-forwarded-for': `2001:db8:abcd:12::${i}` } })).statusCode);
+    }
+    expect(codes).toEqual([200, 200, 429]);
+    expect((await app.inject({ url: '/health', headers: { 'x-forwarded-for': '2001:db8:abcd:99::1' } })).statusCode).toBe(200);
+  });
+
   it('a global limit protects the server even when every request comes from a new address', async () => {
     const app = await server({ hops: 1, limits: { global: { capacity: 3, refillPerSecond: 0.001, maxKeys: 1 } } });
     const codes = [];

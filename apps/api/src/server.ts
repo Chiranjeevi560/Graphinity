@@ -4,7 +4,7 @@ import { AuthError, AuthUnavailableError, subjectHash, type SignedInUser, type T
 import type { AuthAdmin } from './auth-admin.ts';
 import type { Config } from './config.ts';
 import type { Database } from './db.ts';
-import { TokenBuckets, visitorKey, type BucketOptions, type Clock } from './rate-limit.ts';
+import { TokenBuckets, visitorAddress, visitorKey, type BucketOptions, type Clock } from './rate-limit.ts';
 import { registerProfileRoutes } from './routes/profile.ts';
 
 declare module 'fastify' {
@@ -123,7 +123,7 @@ export async function buildServer(deps: Deps) {
     // The visitor's own allowance first: a request refused here must not
     // spend the shared allowance, or one address could exhaust it and lock
     // everyone else out.
-    const own = visitorBuckets.take(visitorKey(req.ip, config.ipHashKey));
+    const own = visitorBuckets.take(visitorKey(visitorAddress(req.ip), config.ipHashKey));
     const verdict = own.ok ? globalBucket.take('all') : own;
     if (!verdict.ok) {
       reply.header('retry-after', String(verdict.retryAfterSeconds));

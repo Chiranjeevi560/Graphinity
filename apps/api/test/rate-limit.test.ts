@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TokenBuckets, visitorKey } from '../src/rate-limit.ts';
+import { TokenBuckets, visitorAddress, visitorKey } from '../src/rate-limit.ts';
 
 function fakeClock(start = 1_000_000) {
   let t = start;
@@ -80,5 +80,29 @@ describe('visitorKey', () => {
 
   it('depends on the secret key, so it cannot be reversed by hashing every address', () => {
     expect(visitorKey('203.0.113.5', key)).not.toBe(visitorKey('203.0.113.5', Buffer.alloc(32, 8)));
+  });
+});
+
+describe('visitorAddress', () => {
+  it('keeps IPv4 addresses as they are', () => {
+    expect(visitorAddress('203.0.113.5')).toBe('203.0.113.5');
+  });
+
+  it('unwraps IPv4 written as IPv6', () => {
+    expect(visitorAddress('::ffff:203.0.113.5')).toBe('203.0.113.5');
+  });
+
+  it('groups an IPv6 address by its /64 block, which one connection controls', () => {
+    const a = visitorAddress('2001:db8:abcd:12:1111:2222:3333:4444');
+    expect(a).toBe('2001:db8:abcd:12::/64');
+    expect(visitorAddress('2001:db8:abcd:12:ffff:ffff:ffff:ffff')).toBe(a);
+    expect(visitorAddress('2001:db8:abcd:12::1')).toBe(a);
+    expect(visitorAddress('2001:DB8:ABCD:0012::9')).toBe(a);
+  });
+
+  it('keeps different /64 blocks apart, including compressed forms', () => {
+    expect(visitorAddress('2001:db8:abcd:13::1')).not.toBe(visitorAddress('2001:db8:abcd:12::1'));
+    expect(visitorAddress('2001:db8::1')).toBe('2001:db8:0:0::/64');
+    expect(visitorAddress('::1')).toBe('0:0:0:0::/64');
   });
 });

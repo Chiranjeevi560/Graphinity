@@ -1,4 +1,5 @@
 import { createHmac } from 'node:crypto';
+import { isIPv4, isIPv6 } from 'node:net';
 
 export interface Clock {
   /** Milliseconds since the epoch. */
@@ -65,6 +66,23 @@ export class TokenBuckets {
   get size(): number {
     return this.#buckets.size;
   }
+}
+
+/**
+ * The part of an address that identifies one visitor. A single home or
+ * mobile IPv6 connection is handed a whole /64 block (2^64 addresses) and can
+ * use a new one for every request, so IPv6 is grouped by its first 64 bits.
+ * IPv4 addresses, including IPv4 written as IPv6, stay as they are.
+ */
+export function visitorAddress(address: string): string {
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address)?.[1];
+  if (mapped && isIPv4(mapped)) return mapped;
+  if (!isIPv6(address)) return address;
+  const [head = '', tail = ''] = address.toLowerCase().split('::');
+  const left = head ? head.split(':') : [];
+  const right = address.includes('::') ? (tail ? tail.split(':') : []) : [];
+  const groups = address.includes('::') ? [...left, ...Array<string>(8 - left.length - right.length).fill('0'), ...right] : left;
+  return `${groups.slice(0, 4).map(g => parseInt(g, 16).toString(16)).join(':')}::/64`;
 }
 
 /**
