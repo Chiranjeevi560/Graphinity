@@ -66,19 +66,24 @@
   --surface: #ffffff;
   --surface-raised: #ffffff;
   --label: #000000;
-  --label-secondary: rgb(60 60 67 / 0.6);
+  /* Darker than Apple's 60% grey, which measures 3.4:1 on white; text must
+     reach 4.5:1 (test/contrast.test.ts checks every pairing). */
+  --label-secondary: #636366;
   --label-tertiary: rgb(60 60 67 / 0.3);
   --separator: rgb(60 60 67 / 0.29);
   --fill: rgb(120 120 128 / 0.2);
   --fill-secondary: rgb(120 120 128 / 0.16);
   --fill-tertiary: rgb(118 118 128 / 0.12);
+  /* Accent as a fill (buttons, chips) and as text (links, secondary
+     buttons): text needs to be darker to stay readable on grey fills. */
   --accent: #5856d6;
+  --accent-text: #4f4cd0;
   --on-accent: #ffffff;
   --red: #ff3b30;
   --red-text: #d70015;
-  /* Red text on a grey fill (destructive buttons); checked at 4.5:1 or more. */
-  --red-on-fill: #d70015;
-  --green-text: #248a3d;
+  /* Red text on a grey fill (destructive buttons). */
+  --red-on-fill: #c00014;
+  --green-text: #1c7331;
   --material: rgb(255 255 255 / 0.72);
   --material-solid: #f9f9f9;
   --shadow-card: 0 0.5px 0 rgb(0 0 0 / 0.04), 0 2px 12px rgb(0 0 0 / 0.04);
@@ -95,17 +100,18 @@
     --surface: #1c1c1e;
     --surface-raised: #2c2c2e;
     --label: #ffffff;
-    --label-secondary: rgb(235 235 245 / 0.6);
+    --label-secondary: rgb(235 235 245 / 0.7);
     --label-tertiary: rgb(235 235 245 / 0.3);
     --separator: rgb(84 84 88 / 0.65);
     --fill: rgb(120 120 128 / 0.36);
     --fill-secondary: rgb(120 120 128 / 0.32);
     --fill-tertiary: rgb(118 118 128 / 0.24);
     --accent: #5e5ce6;
+    --accent-text: #b4b3ff;
     --on-accent: #ffffff;
     --red: #ff453a;
     --red-text: #ff6961;
-    --red-on-fill: #ff8078;
+    --red-on-fill: #ffa39d;
     --green-text: #30d158;
     --material: rgb(30 30 30 / 0.72);
     --material-solid: #1c1c1e;

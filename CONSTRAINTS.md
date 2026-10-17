@@ -61,7 +61,6 @@ One command per stage: `npm run check:fast` (seconds), `npm run check:task` (abo
 | ID | Rule | Path | Reason | Owner | Expires |
 |---|---|---|---|---|---|
 | E1 | Lint findings that existed before lint was introduced | `eslint-suppressions.json` | Lint was added in the Phase 0 audit; the findings are listed in the audit report and fixed in its fix stage. New findings fail now | Chiranjeevi560 | 2026-10-25 |
-| E2 | Accessibility (colour contrast, links distinguished by colour only) | `apps/web/src/styles`, links | Found by the Phase 0 audit on every screen; the browser test stays red until fixed. Not suppressed | Chiranjeevi560 | 2026-10-25 |
 
 ## Known limits of the checks
 

@@ -104,7 +104,7 @@
 
 /* Red text on a neutral fill, as in Apple's alerts; white on red is too low in contrast. */
 .btn-destructive { --sq-bg: var(--fill-tertiary); color: var(--red-on-fill); }
-.btn-plain { --sq-bg: transparent; color: var(--accent); padding-inline: var(--space-2); font-weight: 400; }
+.btn-plain { --sq-bg: transparent; color: var(--accent-text); padding-inline: var(--space-2); font-weight: 400; }
 .btn-plain.danger { color: var(--red-text); }
 .btn-block { width: 100%; }
 

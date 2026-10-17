@@ -48,7 +48,7 @@
   transition-timing-function: ease-out;
 }
 .btn-primary { --sq-bg: var(--accent); color: var(--on-accent); }
-.btn-secondary { --sq-bg: var(--fill-tertiary); color: var(--accent); }
+.btn-secondary { --sq-bg: var(--fill-tertiary); color: var(--accent-text); }
 .btn:disabled { cursor: default; --sq-bg: var(--fill-tertiary); color: var(--label-tertiary); }
 @media (hover: hover) {
   .btn-primary:hover:not(:disabled) .sq-fill { filter: brightness(1.08); }
