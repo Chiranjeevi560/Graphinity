@@ -165,18 +165,20 @@ export function registerProfileRoutes(app: FastifyInstance, deps: ProfileDeps) {
     }
     try {
       const outcome = await db.withUser(user.id, async q => {
-        // Lock the row so two edits at once can't both pass the cooldown check.
-        const { rows } = await q.query<{ handle: string; handle_changed_at: Date | null }>(
-          'SELECT handle, handle_changed_at FROM app.profiles WHERE id = $1 FOR UPDATE', [user.id]);
+        // Lock the row so two edits at once can't both pass the weekly check.
+        // The database's clock decides (it also enforces the rule itself).
+        const { rows } = await q.query<{ handle: string; available_at: Date | null; too_soon: boolean }>(
+          `SELECT handle, handle_changed_at + interval '7 days' AS available_at,
+                  COALESCE(handle_changed_at + interval '7 days' > now(), false) AS too_soon
+           FROM app.profiles WHERE id = $1 FOR UPDATE`, [user.id]);
         const current = rows[0];
         if (!current) return { kind: 'missing' as const };
         const now = clock.now();
         if (handle !== undefined && handle !== current.handle) {
-          const changed = current.handle_changed_at?.getTime();
-          if (changed !== undefined && now - changed < HANDLE_COOLDOWN_MS) {
-            return { kind: 'too_soon' as const, availableAt: new Date(changed + HANDLE_COOLDOWN_MS).toISOString() };
+          if (current.too_soon && current.available_at) {
+            return { kind: 'too_soon' as const, availableAt: current.available_at.toISOString() };
           }
-          await q.query('UPDATE app.profiles SET handle = $2, handle_changed_at = $3 WHERE id = $1', [user.id, handle, new Date(now)]);
+          await q.query('UPDATE app.profiles SET handle = $2 WHERE id = $1', [user.id, handle]);
         }
         if (body.country !== undefined) {
           await q.query('UPDATE app.profiles SET country = $2 WHERE id = $1', [user.id, body.country]);

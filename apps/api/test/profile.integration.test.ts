@@ -4,7 +4,6 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createTokenVerifier, subjectHash } from '../src/auth.ts';
 import { completePendingDeletions } from '../src/deletions.ts';
-import { HANDLE_COOLDOWN_MS } from '../src/routes/profile.ts';
 import { buildServer, defaultLimits } from '../src/server.ts';
 import { createTestDatabase, type TestDatabase } from './helpers/database.ts';
 import { fakeAuthAdmin, TEST_ISSUER, testIssuer } from './helpers/tokens.ts';
@@ -154,16 +153,35 @@ describe('editing a profile', () => {
     expect(res.json().profile).toMatchObject({ country: { code: 'AE', name: 'United Arab Emirates' }, fields: [{ slug: 'travel', name: 'Travel' }] });
   });
 
-  it('allows a name change once a week', async () => {
+  it('allows a name change once a week, timed by the database clock', async () => {
     const p = await person();
     await call('POST', '/me/profile', p.token, { ...valid, handle: 'first.name' });
     expect((await call('PATCH', '/me/profile', p.token, { handle: 'second.name' })).statusCode).toBe(200);
-    now += HANDLE_COOLDOWN_MS - 60_000;
+    const { rows } = await t.owner.query<{ at: Date }>("SELECT handle_changed_at + interval '7 days' AS at FROM app.profiles WHERE id = $1", [p.id]);
     const tooSoon = await call('PATCH', '/me/profile', p.token, { handle: 'third.name' });
     expect(tooSoon.statusCode).toBe(409);
-    expect(tooSoon.json()).toMatchObject({ error: 'handle_change_too_soon', availableAt: '2026-10-24T10:00:00.000Z' });
-    now += 60_000;
+    expect(tooSoon.json()).toMatchObject({ error: 'handle_change_too_soon', availableAt: rows[0]?.at.toISOString() });
+    // A week (and a minute) later, by moving the recorded change back. The
+    // database's own rule refuses to let anyone edit that time, so the test
+    // skips triggers for this one statement (superuser only).
+    await t.owner.query('BEGIN');
+    await t.owner.query('SET LOCAL session_replication_role = replica');
+    await t.owner.query("UPDATE app.profiles SET handle_changed_at = now() - interval '7 days 1 minute' WHERE id = $1", [p.id]);
+    await t.owner.query('COMMIT');
     expect((await call('PATCH', '/me/profile', p.token, { handle: 'third.name' })).statusCode).toBe(200);
+  });
+
+  it('enforces the weekly name rule in the database too, and stamps the time itself', async () => {
+    const p = await person();
+    await call('POST', '/me/profile', p.token, { ...valid, handle: 'db.first' });
+    const rename = (handle: string, changedAt: string | null) => t.database.withUser(p.id, q =>
+      q.query('UPDATE app.profiles SET handle = $2, handle_changed_at = $3 WHERE id = $1', [p.id, handle, changedAt]));
+    // First change: allowed, and the database ignores the made-up time it was sent.
+    await rename('db.second', '2000-01-01T00:00:00Z');
+    const { rows } = await t.owner.query<{ recent: boolean }>("SELECT handle_changed_at > now() - interval '1 minute' AS recent FROM app.profiles WHERE id = $1", [p.id]);
+    expect(rows[0]?.recent).toBe(true);
+    // Second change the same week: refused even when claiming the last change was long ago.
+    await expect(rename('db.third', '2000-01-01T00:00:00Z')).rejects.toMatchObject({ code: '23514' });
   });
 
   it('says to set up a profile first if there is none', async () => {

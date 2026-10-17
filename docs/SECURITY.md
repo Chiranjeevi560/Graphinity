@@ -78,7 +78,7 @@ Each line answers: *if a hostile researcher spent a day on this, what would they
 | T13 | Slip malicious code in through a dependency | See supply chain row above | In place |
 | T14 | Learn who someone is from logs or error messages | Log policy; generic errors | In place, tested |
 
-| T15 | Impersonate staff or another person by name | Reserved names, no all-digit names, one name change per week, unique names regardless of capitals | In place |
+| T15 | Impersonate staff or another person by name | Reserved names, no all-digit names, unique names regardless of capitals, one name change per week enforced by the database's own clock (it stamps the time and ignores any value sent). Freed names can be taken at once: owner decision pending | In place |
 | T16 | List all members by probing names | Name availability needs sign-in; public profiles are one-at-a-time by exact name | In place; per-account read limits come with step 6 |
 
 ## Data kept on purpose

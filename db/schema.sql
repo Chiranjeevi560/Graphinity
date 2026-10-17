@@ -583,8 +583,38 @@ DROP POLICY IF EXISTS revoked_extend ON app.revoked_subjects;
 CREATE POLICY revoked_extend ON app.revoked_subjects FOR UPDATE TO app_api
   USING (true) WITH CHECK (until <= now() + interval '1 day');
 
+-- ---------------------------------------------------------------------------
+-- A display name can change once every 7 days, so nobody can hop between
+-- names to confuse people. The database's own clock decides: it stamps when
+-- the name changed (any value sent is ignored) and refuses a second change
+-- within the week.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION app.stamp_handle_change() RETURNS trigger
+  LANGUAGE plpgsql
+  SET search_path = pg_catalog
+AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    NEW.handle_changed_at := NULL;
+  ELSIF NEW.handle IS DISTINCT FROM OLD.handle THEN
+    IF OLD.handle_changed_at IS NOT NULL AND OLD.handle_changed_at + interval '7 days' > now() THEN
+      RAISE EXCEPTION 'name changed too recently' USING ERRCODE = 'check_violation';
+    END IF;
+    NEW.handle_changed_at := now();
+  ELSE
+    NEW.handle_changed_at := OLD.handle_changed_at;
+  END IF;
+  RETURN NEW;
+END
+$$;
+REVOKE ALL ON FUNCTION app.stamp_handle_change() FROM PUBLIC;
+DROP TRIGGER IF EXISTS profiles_handle_change ON app.profiles;
+CREATE TRIGGER profiles_handle_change
+  BEFORE INSERT OR UPDATE ON app.profiles
+  FOR EACH ROW EXECUTE FUNCTION app.stamp_handle_change();
+
 -- Bump on every change to this file.
-INSERT INTO app.schema_meta (id, version) VALUES (true, 3)
+INSERT INTO app.schema_meta (id, version) VALUES (true, 4)
   ON CONFLICT (id) DO UPDATE SET version = EXCLUDED.version, applied_at = now();
 
 COMMIT;
