@@ -12,10 +12,11 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Every check here mirrors a row in CONSTRAINTS.md. If they disagree, that file wins.
 jobs:
   test:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
 
     services:
       # Supabase runs Postgres 17; test against the same major version.
@@ -30,11 +31,16 @@ jobs:
           --health-timeout 5s
           --health-retries 10
 
+    env:
+      ADMIN_URL: postgres://postgres:ci-only-password@localhost:5432/postgres
+
     steps:
       # Actions are pinned to full commit hashes; a moved tag cannot change what runs.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # Full history: the secret scan reads every commit, the floor guard diffs against the last push.
+          fetch-depth: 0
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -45,18 +51,74 @@ jobs:
       - name: Install exactly what the lockfile says
         run: npm ci
 
-      - name: Audit dependencies
-        run: npm audit --audit-level=high
-
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Test (unit, server and real-database integration)
-        run: npm test
+      - name: Lint (no new findings)
+        run: npm run lint
+
+      - name: Floor guard (nothing silenced, skipped or left unfinished)
+        run: |
+          BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then BASE=HEAD~1; fi
+          node scripts/floor-guard.mjs --base "$BASE"
+
+      - name: Test with coverage (unit, server, real-database integration)
+        run: npm run test:coverage
         env:
-          TEST_DATABASE_ADMIN_URL: postgres://postgres:ci-only-password@localhost:5432/postgres
+          TEST_DATABASE_ADMIN_URL: ${{ env.ADMIN_URL }}
 
       - name: Build
         run: npm run build
-        env:
-          VITE_API_ORIGIN: https://api.invalid
+
+      - name: Bundle size budget
+        run: npm run check:size
+
+      # Scanners: official release binaries, checked against their published checksums.
+      - name: Install gitleaks and osv-scanner
+        run: |
+          mkdir -p .local/tools && cd .local/tools
+          G=https://github.com/gitleaks/gitleaks/releases/download/v8.30.1
+          curl -sfLO $G/gitleaks_8.30.1_linux_x64.tar.gz && curl -sfLO $G/gitleaks_8.30.1_checksums.txt
+          grep " gitleaks_8.30.1_linux_x64.tar.gz$" gitleaks_8.30.1_checksums.txt | sha256sum -c -
+          tar -xzf gitleaks_8.30.1_linux_x64.tar.gz gitleaks
+          O=https://github.com/google/osv-scanner/releases/download/v2.6.0
+          curl -sfLO $O/osv-scanner_linux_amd64 && curl -sfLO $O/osv-scanner_SHA256SUMS
+          grep " osv-scanner_linux_amd64$" osv-scanner_SHA256SUMS | sha256sum -c -
+          mv osv-scanner_linux_amd64 osv-scanner && chmod +x gitleaks osv-scanner
+
+      - name: Secrets (whole history, values redacted)
+        run: .local/tools/gitleaks git --redact --no-banner .
+
+      - name: Vulnerable dependencies
+        run: npm run check:deps
+
+      - name: Code security (Semgrep)
+        run: |
+          pip install --quiet semgrep==1.178.0
+          semgrep scan --config p/default --config p/owasp-top-ten --config p/typescript --config p/react \
+            --severity ERROR --error --metrics off --quiet apps scripts db
+
+      - name: Prepare the database for browser tests
+        run: |
+          psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE graphinity"
+          psql "${ADMIN_URL%/postgres}/graphinity" -v ON_ERROR_STOP=1 -q -f db/schema.sql
+          psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c "CREATE ROLE graphinity_api LOGIN PASSWORD 'ci-only-api' IN ROLE app_api" -c "GRANT CONNECT ON DATABASE graphinity TO graphinity_api"
+          printf 'DATABASE_URL=postgres://graphinity_api:ci-only-api@localhost:5432/graphinity\nIP_HASH_KEY=%s\nSUPABASE_URL=http://localhost:54321\nSUPABASE_SECRET_KEY=unused_in_ci_0123456789\n' "$(openssl rand -hex 32)" > .local/api.env
+
+      - name: Install browsers (Chromium, WebKit, Firefox)
+        run: npx playwright install --with-deps chromium webkit firefox
+
+      - name: Browser audit (every screen, three engines)
+        run: npx playwright test --project=chromium --project=webkit --project=firefox
+
+      - name: Page speed (Lighthouse)
+        run: npm run check:perf
+
+      - name: Keep the browser audit report
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: browser-audit
+          path: test-results/
+          retention-days: 14

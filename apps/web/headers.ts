@@ -5,9 +5,15 @@
 export interface HeaderOptions {
   /** Origins the page may call: the API, later Supabase Auth. */
   connectSrc: string[];
+  /**
+   * Served over plain http on this computer (vite preview). WebKit applies
+   * upgrade-insecure-requests even to localhost, so every asset would be
+   * fetched over https and fail. Never set for a deploy.
+   */
+  localHttp?: boolean;
 }
 
-export function contentSecurityPolicy({ connectSrc }: HeaderOptions): string {
+export function contentSecurityPolicy({ connectSrc, localHttp = false }: HeaderOptions): string {
   return [
     "default-src 'none'",
     // No inline scripts at all; the build fails if one appears (see vite.config.ts).
@@ -23,7 +29,7 @@ export function contentSecurityPolicy({ connectSrc }: HeaderOptions): string {
     "base-uri 'none'",
     "form-action 'self'",
     "frame-ancestors 'none'",
-    'upgrade-insecure-requests',
+    ...(localHttp ? [] : ['upgrade-insecure-requests']),
   ].join('; ');
 }
 

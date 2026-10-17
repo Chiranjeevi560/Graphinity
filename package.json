@@ -18,6 +18,47 @@
     "typecheck": "npm --workspaces run typecheck",
     "test": "npm --workspaces --if-present run test",
     "build": "npm --workspaces run build",
-    "dev:auth": "node scripts/dev-auth.mjs"
-  }
+    "dev:auth": "node scripts/dev-auth.mjs",
+    "lint": "eslint .",
+    "test:e2e": "playwright test --project=chromium --project=webkit",
+    "test:coverage": "npm --workspaces run test -- --coverage --coverage.reporter=text-summary --coverage.reporter=json-summary --coverage.include=src/**",
+    "check:secrets": ".local/tools/gitleaks git --redact --no-banner . && .local/tools/gitleaks git --pre-commit --redact --no-banner .",
+    "check:deps": ".local/tools/osv-scanner scan source --lockfile package-lock.json && npm audit --audit-level=high",
+    "check:size": "size-limit",
+    "check:perf": "node scripts/lighthouse.mjs",
+    "check:fast": "npm run typecheck && npm run lint && node scripts/floor-guard.mjs",
+    "check:task": "npm run check:fast && npm run test:coverage && npm run build && npm run check:size",
+    "check:full": "npm run check:task && npm run check:secrets && npm run check:deps && npm run test:e2e && npm run check:perf"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@eslint/js": "9.39.5",
+    "@playwright/test": "1.63.0",
+    "@size-limit/file": "14.1.0",
+    "@vitest/coverage-v8": "5.0.3",
+    "eslint": "9.39.5",
+    "eslint-plugin-jsx-a11y": "6.10.2",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "17.13.0",
+    "lighthouse": "13.5.0",
+    "size-limit": "14.1.0",
+    "typescript-eslint": "8.71.0"
+  },
+  "size-limit": [
+    {
+      "name": "main script (brotli)",
+      "path": "apps/web/dist/assets/index-*.js",
+      "limit": "61.2 kB"
+    },
+    {
+      "name": "styles (brotli)",
+      "path": "apps/web/dist/assets/index-*.css",
+      "limit": "3.65 kB"
+    },
+    {
+      "name": "all scripts (brotli)",
+      "path": "apps/web/dist/assets/*.js",
+      "limit": "71.7 kB"
+    }
+  ]
 }

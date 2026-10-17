@@ -1,0 +1,50 @@
+// Browser tests across the three engines people actually use: Chromium
+// (Chrome, Edge, Android), WebKit (Safari, every browser on iPhone) and
+// Firefox. They run against the production build served with the production
+// security headers, the real API and the local sign-in stand-in.
+import { defineConfig, devices } from '@playwright/test';
+
+// A throwaway secret shared by the API and the stand-in during tests, so the
+// real Supabase secret in .local/api.env is never sent anywhere but Supabase.
+const TEST_SECRET = 'test_secret_playwright_only_0123456789';
+
+export default defineConfig({
+  testDir: 'apps/web/e2e',
+  outputDir: 'test-results',
+  fullyParallel: false,
+  workers: 1,
+  retries: 0,
+  reporter: [['list'], ['json', { outputFile: 'test-results/results.json' }]],
+  timeout: 120_000,
+  use: {
+    baseURL: 'http://localhost:4173',
+    trace: 'retain-on-failure',
+  },
+  globalSetup: './apps/web/e2e/global-setup.ts',
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'webkit', use: { ...devices['Desktop Safari'] } },
+    { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
+  ],
+  webServer: [
+    {
+      command: 'node scripts/dev-auth.mjs',
+      url: 'http://localhost:54321/auth/v1/.well-known/jwks.json',
+      reuseExistingServer: false,
+      env: { DEV_AUTH_SECRET_KEY: TEST_SECRET },
+    },
+    {
+      command: 'node --env-file=.local/api.env apps/api/src/main.ts',
+      url: 'http://localhost:3000/health',
+      reuseExistingServer: false,
+      // Variables set here win over the env file.
+      env: { WEB_ORIGIN: 'http://localhost:4173', SUPABASE_URL: 'http://localhost:54321', SUPABASE_SECRET_KEY: TEST_SECRET },
+    },
+    {
+      command: 'npm --workspace apps/web run build && npm --workspace apps/web run preview',
+      url: 'http://localhost:4173',
+      reuseExistingServer: false,
+      timeout: 180_000,
+    },
+  ],
+});

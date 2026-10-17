@@ -31,7 +31,9 @@ const env = Object.fromEntries(
   readFileSync(new URL('../.local/api.env', import.meta.url), 'utf8')
     .split('\n').filter(Boolean).map(l => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]),
 );
-const SECRET_KEY = env.SUPABASE_SECRET_KEY;
+// Tests pass their own throwaway secret, so the real one in .local/api.env
+// never leaves for anywhere but Supabase.
+const SECRET_KEY = process.env.DEV_AUTH_SECRET_KEY ?? env.SUPABASE_SECRET_KEY;
 if (!SECRET_KEY) throw new Error('Run `npm run db:start` first: it writes the dev secret key to .local/api.env');
 
 const { publicKey, privateKey } = await generateKeyPair('ES256');

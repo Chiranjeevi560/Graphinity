@@ -1,0 +1,75 @@
+# Constraints
+
+The quality bar for Graphinity, with numbers. Every number has a reason and a command that checks
+it. **Do not weaken this file to make a change pass.** Tightening is fine; loosening needs the
+owner's agreement in the commit message, and the floor guard flags any changed number.
+
+Last reviewed: 2026-10-18 (Phase 0 audit). Owner: Chiranjeevi560.
+
+Choices behind it (from the owner's brief): enforce everything the audit prompt lists; failing
+checks **block**; where no industry number exists, **measure today and refuse to get worse**
+(ratchet, 0.5% tolerance); fast checks while working, slow ones at task end and in CI.
+
+## Floor (always enforced)
+
+Checked by `node scripts/floor-guard.mjs` on everything changed since `origin/main`.
+
+- No new suppression comments: `@ts-ignore`, `@ts-nocheck`, `@ts-expect-error`, `eslint-disable`,
+  coverage-ignore comments, `nosemgrep`, `gitleaks:allow`.
+- No unfinished work: "not implemented" stubs, empty `catch {}`, `TODO`, `FIXME`.
+- No tests made easier: `.skip`, `.only`, `.todo`, `.fixme`, deleted test files, assertions removed
+  from tests that stayed.
+- No secrets in source (gitleaks, below).
+- No changed numbers or new exceptions in this file without the owner's say-so.
+
+## Enforced with numbers
+
+| Dimension | Rule | Why this number | Checked by | Runs at |
+|---|---|---|---|---|
+| Types | Zero errors, TypeScript strict | Types are free correctness | `npm run typecheck` | every edit |
+| Lint | Zero new findings (type-aware rules, React hooks, jsx-a11y strict) | Existing findings recorded in `eslint-suppressions.json`, see E1 | `npm run lint` | every edit |
+| Floor | Clean | See above | `node scripts/floor-guard.mjs` | every edit |
+| Unit and integration tests | All pass; integration tests run on real Postgres as the restricted role | Tests that skip on missing setup prove nothing | `npm test` | task end, CI |
+| Coverage, server | Lines ≥ 86.89%, branches ≥ 85.33% (today) | Ratchet: hold today's line | `npm run test:coverage` | task end, CI |
+| Coverage, website (unit) | Lines ≥ 35.78% (today) | Ratchet. Screens are covered by browser tests instead | `npm run test:coverage` | task end, CI |
+| Accessibility | Zero serious or critical axe findings (WCAG 2.2 AA) on every screen, light and dark | WCAG AA is the legal and moral minimum. External judge | `npm run test:e2e` | task end, CI |
+| Layout | No sideways scrolling at 320, 375, 430, 1280 px on any screen | Owner's rule | `npm run test:e2e` | task end, CI |
+| Tap targets | ≥ 44 px (inline text links exempt, per WCAG 2.5.8) | Apple's minimum | `npm run test:e2e` | task end, CI |
+| Browser errors | Zero console errors or CSP violations (expected 404s aside) | A CSP violation means something was blocked | `npm run test:e2e` | task end, CI |
+| Engines | Chromium and WebKit locally; plus Firefox in CI | Firefox won't start on macOS 27 (see Known limits) | `npm run test:e2e`, CI | task end, CI |
+| Page speed | Lighthouse mobile: performance ≥ 95, accessibility 100, LCP ≤ 2500 ms, CLS ≤ 0.1, TBT ≤ 200 ms | LCP/CLS are Google's "good" thresholds; 95 holds today's 99 with room for noise | `npm run check:perf` | task end, CI |
+| Bundle size (brotli) | Main script ≤ 61.2 kB, styles ≤ 3.65 kB, all scripts ≤ 71.7 kB | Ratchet: today + 0.5%. Growth must be a decision | `npm run check:size` | task end, CI |
+| Secrets | No findings in git history or uncommitted changes (values always redacted) | External judge | `npm run check:secrets` | task end, CI |
+| Dependencies | Nothing known-vulnerable at high or above | External database (OSV) | `npm run check:deps` | task end, CI |
+| Code security | No Semgrep findings at ERROR (p/default, p/owasp-top-ten, p/typescript, p/react) | External rules | CI only (`semgrep`) | CI |
+| Supply chain | Exact versions, lockfile, install scripts off, nothing published in the last 2 weeks, CI actions pinned to commits | Owner's brief | review, `.npmrc`, CI | every change |
+
+One command per stage: `npm run check:fast` (seconds), `npm run check:task` (about a minute),
+`npm run check:full` (several minutes, includes browsers and Lighthouse).
+
+## Measured, not yet enforced
+
+| Metric | Today | Direction |
+|---|---|---|
+| Lint findings recorded in `eslint-suppressions.json` | 159 | must fall to 0 (E1) |
+| Lighthouse SEO, home | 91 (no robots.txt) | must rise to 100 in step 7 |
+| Lighthouse best practices, missing-profile page | 96 (logged 404) | must not fall |
+
+## Exceptions
+
+| ID | Rule | Path | Reason | Owner | Expires |
+|---|---|---|---|---|---|
+| E1 | Lint findings that existed before lint was introduced | `eslint-suppressions.json` | Lint was added in the Phase 0 audit; the findings are listed in the audit report and fixed in its fix stage. New findings fail now | Chiranjeevi560 | 2026-10-25 |
+| E2 | Accessibility (colour contrast, links distinguished by colour only) | `apps/web/src/styles`, links | Found by the Phase 0 audit on every screen; the browser test stays red until fixed. Not suppressed | Chiranjeevi560 | 2026-10-25 |
+
+## Known limits of the checks
+
+- Firefox (Playwright build) exits with "Could not find profile folder" on this Mac (macOS 27.0.1),
+  with or without the command sandbox, so Firefox runs in CI on Linux only.
+- Homebrew has no bottles for macOS 27: gitleaks and osv-scanner are the projects' official release
+  binaries in `.local/tools/`, verified against their published SHA-256 checksums. Semgrep runs in
+  CI only.
+- Locally, the preview server drops `upgrade-insecure-requests` from the CSP (WebKit upgrades even
+  localhost to https). Deploys keep it; a test checks both.
+- The project's own tests are the circular kind of check. The external judges are axe, Lighthouse,
+  osv-scanner, npm audit, gitleaks and Semgrep.

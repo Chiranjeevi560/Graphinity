@@ -46,7 +46,7 @@ export default defineConfig(({ mode }) => {
       modulePreload: { polyfill: false },
     },
     // `npm run preview` serves the production build with the production headers.
-    preview: { port: 4173, strictPort: true, headers: securityHeaders(headerOptions) },
+    preview: { port: 4173, strictPort: true, headers: securityHeaders({ ...headerOptions, localHttp: true }) },
     server: { port: 5173, strictPort: true },
   };
 });

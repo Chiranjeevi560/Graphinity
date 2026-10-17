@@ -18,6 +18,12 @@ describe('content security policy', () => {
     expect(csp).toContain("connect-src 'self' https://api.example.onrender.com;");
   });
 
+  it('upgrades insecure requests on deploys, and only skips that for local http previews', () => {
+    expect(csp).toContain('upgrade-insecure-requests');
+    expect(pagesHeadersFile(options)).toContain('upgrade-insecure-requests');
+    expect(contentSecurityPolicy({ ...options, localHttp: true })).not.toContain('upgrade-insecure-requests');
+  });
+
   it('cannot be framed and has no base-uri', () => {
     expect(csp).toContain("frame-ancestors 'none'");
     expect(csp).toContain("base-uri 'none'");

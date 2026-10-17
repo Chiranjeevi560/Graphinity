@@ -8,6 +8,9 @@ The owner is a solo founder and CSE student, not a working engineer. Explain in 
 simply but completely. Ask questions as if to an everyday user. The bar is "as if Apple or Google
 built it": never ship anything that looks or behaves like generic AI output.
 
+**Read `CONSTRAINTS.md` before writing code. Do not weaken it to make a change pass.** Run
+`npm run check:fast` after edits and `npm run check:task` before saying a task is done.
+
 ## Hard rules
 
 - **Zero cost.** Free tiers only, on services that suspend or refuse rather than bill. Check limits
