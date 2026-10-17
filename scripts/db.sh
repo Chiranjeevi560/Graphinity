@@ -62,7 +62,11 @@ ensure_login_role() {
   if [ ! -f "$LOCAL/api.env" ]; then
     PASS=$(openssl rand -hex 24)
     psql_owner -d postgres -c "DROP ROLE IF EXISTS graphinity_api" >/dev/null
-    psql_owner -d postgres -c "CREATE ROLE graphinity_api LOGIN PASSWORD '$PASS' IN ROLE app_api" >/dev/null
+    # Sent on standard input, not as an argument: arguments are visible to
+    # every process on the machine (ps) while psql runs.
+    psql_owner -d postgres >/dev/null <<SQL
+CREATE ROLE graphinity_api LOGIN PASSWORD '$PASS' IN ROLE app_api;
+SQL
     psql_owner -d "$DB" -c "GRANT CONNECT ON DATABASE $DB TO graphinity_api" >/dev/null
     umask 077
     {
