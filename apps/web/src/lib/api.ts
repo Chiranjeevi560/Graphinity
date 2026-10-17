@@ -39,6 +39,9 @@ export function createApi(deps: { origin: string; auth: Auth; fetch: typeof fetc
     let token: string | null = null;
     if (options.signedIn) {
       token = await deps.auth.getAccessToken();
+      // No token but the session is still there: the refresh couldn't reach
+      // Supabase (offline). Say so, instead of telling the person they're out.
+      if (!token && deps.auth.hasSession()) throw new ApiError(0, 'offline', OFFLINE);
       if (!token) throw new ApiError(401, 'signed_out', 'You’re signed out. Sign in again to continue.');
     }
     let res: Response;

@@ -1,23 +1,11 @@
 // Who is signed in, and whether they have a profile yet. One instance for
 // the whole app.
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ApiError, createApi, type Api } from './lib/api.ts';
+import { createContext, useContext, useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react';
+import { createApi, type Api } from './lib/api.ts';
 import { createAuth, type Auth } from './lib/auth.ts';
+import { createSessionStore, type Profile, type SessionState } from './lib/session-store.ts';
 
-export interface Profile {
-  handle: string;
-  country: { code: string; name: string };
-  fields: Array<{ slug: string; name: string }>;
-  joined: string;
-  handleChangeAvailableAt?: string | null;
-}
-
-export type SessionState =
-  | { status: 'loading' }
-  | { status: 'signedOut' }
-  | { status: 'needsProfile' }
-  | { status: 'ready'; profile: Profile }
-  | { status: 'unreachable'; message: string };
+export type { Profile, SessionState } from './lib/session-store.ts';
 
 /** sessionStorage can throw (blocked storage, some private modes); then sign-in lasts for the page only. */
 function tabStorage(): Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> {
@@ -41,6 +29,8 @@ export const auth: Auth = createAuth({
 
 export const api: Api = createApi({ origin: import.meta.env.VITE_API_ORIGIN, auth, fetch: (...args) => fetch(...args) });
 
+const store = createSessionStore({ auth, api });
+
 interface SessionValue {
   state: SessionState;
   reload(): Promise<void>;
@@ -50,30 +40,9 @@ interface SessionValue {
 const SessionContext = createContext<SessionValue | null>(null);
 
 export function SessionProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<SessionState>({ status: 'loading' });
-
-  const reload = useCallback(async () => {
-    if (!auth.hasSession()) { setState({ status: 'signedOut' }); return; }
-    try {
-      const { profile } = await api<{ profile: Profile | null }>('/me', { signedIn: true });
-      setState(profile ? { status: 'ready', profile } : { status: 'needsProfile' });
-    } catch (err) {
-      if (err instanceof ApiError && err.code === 'signed_out') setState({ status: 'signedOut' });
-      else setState({ status: 'unreachable', message: err instanceof ApiError ? err.message : 'Something went wrong. Try again in a minute.' });
-    }
-  }, []);
-
-  useEffect(() => {
-    void reload();
-    return auth.subscribe(() => { void reload(); });
-  }, [reload]);
-
-  const value = useMemo<SessionValue>(() => ({
-    state,
-    reload,
-    setProfile: profile => setState({ status: 'ready', profile }),
-  }), [state, reload]);
-
+  const state = useSyncExternalStore(store.subscribe, store.getState);
+  useEffect(() => { void store.reload(); }, []);
+  const value = useMemo<SessionValue>(() => ({ state, reload: store.reload, setProfile: store.setProfile }), [state]);
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 

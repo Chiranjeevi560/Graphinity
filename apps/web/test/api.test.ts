@@ -6,6 +6,7 @@ function fakeAuth(tokens: Array<string | null>) {
   let cleared = false;
   const auth = {
     getAccessToken: async () => tokens.shift() ?? null,
+    hasSession: () => false,
     clear: () => { cleared = true; },
   } as unknown as Auth;
   return { auth, get cleared() { return cleared; } };
@@ -59,6 +60,13 @@ describe('api', () => {
     const { auth } = fakeAuth([]);
     const f = (async () => { throw new TypeError('Failed to fetch'); }) as unknown as typeof fetch;
     await expect(createApi({ origin: 'https://api.test', auth, fetch: f })('/meta')).rejects.toMatchObject({ code: 'offline', message: 'You seem to be offline. Check your connection and try again.' });
+  });
+
+  it('says "offline", not "signed out", when the token could not be refreshed for lack of network', async () => {
+    const auth = { getAccessToken: () => Promise.resolve(null), hasSession: () => true, clear: () => {} } as unknown as Auth;
+    const { f, seen } = fetchSequence([]);
+    await expect(createApi({ origin: 'https://api.test', auth, fetch: f })('/me', { signedIn: true })).rejects.toMatchObject({ code: 'offline' });
+    expect(seen).toHaveLength(0);
   });
 
   it('does not call the server at all when a signed-in request has no session', async () => {

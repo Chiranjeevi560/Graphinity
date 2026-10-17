@@ -217,9 +217,6 @@
   },
   "apps/web/src/session.tsx": {
     "@typescript-eslint/no-confusing-void-expression": {
-      "count": 2
-    },
-    "react-hooks/set-state-in-effect": {
       "count": 1
     }
   },
