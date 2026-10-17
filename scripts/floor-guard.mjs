@@ -66,8 +66,18 @@ for (const { file: f, text } of added) {
   if (exception && !approved.has(exception[1])) flag('new-exception', f, text);
 }
 
+// An assertion call removed from a test file, unless the same line was added
+// back in that file (moved, or the test was reorganised). Imports don't count.
+const addedIn = new Map();
+for (const { file: f, text } of added) {
+  if (!addedIn.has(f)) addedIn.set(f, new Set());
+  addedIn.get(f).add(text.trim());
+}
 for (const { file: f, text } of removed) {
-  if (/\.(test|spec)\.ts$/.test(f) && /\b(expect|assert)\b/.test(text)) flag('assertion-removed', f, text);
+  if (!/\.(test|spec)\.ts$/.test(f) || /^\s*import\b/.test(text)) continue;
+  if (!/\b(expect|assert)(\.\w+)*\(/.test(text)) continue;
+  if (addedIn.get(f)?.has(text.trim())) continue;
+  flag('assertion-removed', f, text);
 }
 
 // A deleted test file is a test made easier.
