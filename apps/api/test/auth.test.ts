@@ -70,6 +70,11 @@ describe('createTokenVerifier', () => {
     await rejected(await issuer.sign({}, { lifetime: 7 * 24 * 3600 }));
   });
 
+  it('refuses a token dated in the future, which could outlive the deleted-account lockout', async () => {
+    const issuedAt = Math.floor(Date.now() / 1000) + 3 * 3600;
+    await rejected(await issuer.sign({}, { issuedAt, lifetime: 3600 }));
+  });
+
   it('refuses a subject that is not a user id', async () => {
     await rejected(await issuer.sign({}, { sub: 'admin' }));
   });

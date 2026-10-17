@@ -1,18 +1,4 @@
 {
-  "apps/api/src/auth.ts": {
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 9
-    }
-  },
   "apps/api/src/main.ts": {
     "@typescript-eslint/no-confusing-void-expression": {
       "count": 1

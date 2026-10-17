@@ -2,7 +2,7 @@
 // token itself, against Supabase's published public keys: it never trusts the
 // website's word for who someone is.
 import { createHmac } from 'node:crypto';
-import { createRemoteJWKSet, errors, jwtVerify, type JWTVerifyGetKey } from 'jose';
+import { createRemoteJWKSet, errors, jwtVerify, type JWTPayload, type JWTVerifyGetKey } from 'jose';
 
 export interface SignedInUser {
   id: string;
@@ -56,7 +56,7 @@ export function createTokenVerifier({ issuer, keys }: VerifierOptions): TokenVer
     async verify(token) {
       // A real token is well under 2 KB; refuse giant inputs before parsing.
       if (token.length > 4096) throw new AuthError('token too long');
-      let payload;
+      let payload: JWTPayload;
       try {
         ({ payload } = await jwtVerify(token, keys, {
           issuer,
@@ -78,6 +78,10 @@ export function createTokenVerifier({ issuer, keys }: VerifierOptions): TokenVer
       if (typeof payload.exp !== 'number' || typeof payload.iat !== 'number' || payload.exp - payload.iat > MAX_TOKEN_LIFETIME_SECONDS + 60) {
         throw new AuthError('lifetime');
       }
+      // jose doesn't reject a future issue time on its own. A token "issued"
+      // hours from now would also expire hours from now, outliving the 2-hour
+      // lockout after an account is deleted.
+      if (payload.iat > Math.floor(Date.now() / 1000) + 30) throw new AuthError('issued in the future');
       if (payload.role !== 'authenticated') throw new AuthError('role');
       if (payload.is_anonymous === true) throw new AuthError('anonymous');
       if (typeof payload.sub !== 'string' || !UUID.test(payload.sub)) throw new AuthError('sub');
