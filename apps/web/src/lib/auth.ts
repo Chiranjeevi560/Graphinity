@@ -150,7 +150,11 @@ export function createAuth(deps: AuthDeps) {
       refreshing ??= (async () => {
         try {
           const res = await postToken('refresh_token', { refresh_token: refreshToken });
-          if (!res.ok) { forget(); return null; }
+          // Only Supabase saying the refresh token is no good ends the
+          // session. A server error or a rate limit is temporary: keep the
+          // refresh token and try again on the next request.
+          if (res.status === 400 || res.status === 401 || res.status === 403) { forget(); return null; }
+          if (!res.ok) return null;
           keep(await res.json() as TokenResponse);
           return access!.token;
         } catch {

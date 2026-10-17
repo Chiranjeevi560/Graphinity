@@ -185,6 +185,16 @@ describe('staying signed in', () => {
     expect(h.auth.hasSession()).toBe(false);
   });
 
+  it('keeps the session when Supabase has a temporary problem (5xx, rate limit)', async () => {
+    for (const status of [500, 503, 429]) {
+      const h = await signedIn([json({ error: 'temporarily_unavailable' }, status), json(session(2))]);
+      h.tick(3600);
+      expect(await h.auth.getAccessToken(), String(status)).toBeNull();
+      expect(h.auth.hasSession(), String(status)).toBe(true);
+      expect(await h.auth.getAccessToken(), String(status)).toBe('access-2');
+    }
+  });
+
   it('keeps the session when offline, so it works again once back online', async () => {
     const h = await signedIn([() => { throw new TypeError('Failed to fetch'); }, json(session(2))]);
     h.tick(3600);
