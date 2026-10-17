@@ -3,7 +3,7 @@
 // API does in production, and checks what that role can and cannot do.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type pg from 'pg';
-import type { Database } from '../src/db.ts';
+import { createDatabase, type Database } from '../src/db.ts';
 import { createTestDatabase, schema, type TestDatabase } from './helpers/database.ts';
 
 // The version the schema file says it is, so tests don't need editing on every change.
@@ -109,5 +109,20 @@ describe('withUser', () => {
     })).rejects.toThrow('fail midway');
     // The connection is still usable afterwards (not left mid-transaction).
     expect(await database.ping()).toEqual({ schemaVersion: VERSION });
+  });
+});
+
+describe('the startup check of the database account', () => {
+  it('passes for the restricted API role', async () => {
+    await expect(database.assertRestricted()).resolves.toBeUndefined();
+  });
+
+  it('refuses an owner or superuser login, which would silently skip every privacy rule', async () => {
+    const asOwner = createDatabase(t.ownerUrl);
+    try {
+      await expect(asOwner.assertRestricted()).rejects.toThrow(/superuser|bypass|owns/);
+    } finally {
+      await asOwner.close();
+    }
   });
 });

@@ -15,6 +15,8 @@ export interface TestDatabase {
   api: pg.Client;
   /** The app's Database wrapper, as the restricted role. */
   database: Database;
+  /** Connection string for the owner (superuser locally and in CI). */
+  ownerUrl: string;
   close(): Promise<void>;
 }
 
@@ -59,6 +61,7 @@ export async function createTestDatabase(): Promise<TestDatabase> {
     owner,
     api,
     database,
+    ownerUrl: urlFor(dbName),
     async close() {
       await database.close();
       await api.end();

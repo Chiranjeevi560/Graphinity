@@ -9,6 +9,7 @@ function fakeDb(overrides: Partial<Database> = {}): Database {
   return {
     ping: async () => ({ schemaVersion: 7 }),
     withUser: async () => { throw new Error('not used'); },
+    assertRestricted: async () => {},
     close: async () => {},
     ...overrides,
   };

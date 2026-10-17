@@ -13,6 +13,12 @@ export interface Database {
    * that touches user data must go through here.
    */
   withUser<T>(userId: string | null, fn: (q: Queryable) => Promise<T>): Promise<T>;
+  /**
+   * Throws unless we are connected as the restricted role. An owner or
+   * superuser login silently skips every row-level security policy, so the
+   * server must refuse to start with one.
+   */
+  assertRestricted(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -59,6 +65,18 @@ export function createDatabase(connectionString: string, options: DatabaseOption
       } finally {
         client.release();
       }
+    },
+
+    async assertRestricted() {
+      const { rows } = await pool.query<{ rolsuper: boolean; rolbypassrls: boolean; owned: number }>(
+        `SELECT r.rolsuper, r.rolbypassrls,
+                (SELECT count(*)::int FROM pg_tables t WHERE t.schemaname = 'app' AND t.tableowner = current_user) AS owned
+         FROM pg_roles r WHERE r.rolname = current_user`);
+      const role = rows[0];
+      if (!role) throw new Error('could not read the database role');
+      if (role.rolsuper) throw new Error('DATABASE_URL logs in as a superuser; use the restricted API role');
+      if (role.rolbypassrls) throw new Error('DATABASE_URL logs in as a role that can bypass row-level security; use the restricted API role');
+      if (role.owned > 0) throw new Error('DATABASE_URL logs in as the role that owns the tables; use the restricted API role');
     },
 
     close: () => pool.end(),

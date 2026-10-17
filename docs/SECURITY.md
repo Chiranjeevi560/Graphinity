@@ -34,7 +34,7 @@ These must stay true. If one stops being true, revisit everything that depends o
 
 | Area | Defence | Proven by |
 |---|---|---|
-| Database access | API logs in as a role that owns nothing, can't create objects, bypass RLS or become the owner | `db.integration.test.ts` |
+| Database access | API logs in as a role that owns nothing, can't create objects, bypass RLS or become the owner. **The server refuses to start** if its login is a superuser, can bypass RLS, or owns the tables | `db.integration.test.ts`; built server refuses the owner login |
 | Row-level security | Enabled and forced on every table in `app` | Integration test fails on any table without it |
 | Identity leakage between requests | Identity set with `set_config(..., true)`, scoped to one transaction | Integration test; fails when made session-wide |
 | Request flooding | Global and per-visitor token buckets; visitor = HMAC of address | `server.test.ts`, `rate-limit.test.ts` |

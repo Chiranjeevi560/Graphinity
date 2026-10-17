@@ -20,6 +20,16 @@ try {
 const db = createDatabase(config.databaseUrl, {
   onIdleError: err => app.log.warn({ kind: err.name }, 'database connection dropped'),
 });
+// Refuse to start as an all-powerful database login: row-level security
+// would be silently skipped.
+try {
+  await db.assertRestricted();
+} catch (err) {
+  console.error(`Refusing to start: ${err instanceof Error ? err.message : 'database check failed'}`);
+  await db.close();
+  process.exit(1);
+}
+
 const app = await buildServer({
   config,
   db,
