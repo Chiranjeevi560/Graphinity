@@ -120,10 +120,13 @@ export async function buildServer(deps: Deps) {
   app.addHook('onRequest', async (req, reply) => {
     reply.headers(securityHeaders);
 
-    const limited = globalBucket.take('all');
-    const visitor = limited.ok ? visitorBuckets.take(visitorKey(req.ip, config.ipHashKey)) : limited;
-    if (!visitor.ok) {
-      reply.header('retry-after', String(visitor.retryAfterSeconds));
+    // The visitor's own allowance first: a request refused here must not
+    // spend the shared allowance, or one address could exhaust it and lock
+    // everyone else out.
+    const own = visitorBuckets.take(visitorKey(req.ip, config.ipHashKey));
+    const verdict = own.ok ? globalBucket.take('all') : own;
+    if (!verdict.ok) {
+      reply.header('retry-after', String(verdict.retryAfterSeconds));
       return reply.code(429).send({ error: 'rate_limited', message: messages.tooMany });
     }
   });
