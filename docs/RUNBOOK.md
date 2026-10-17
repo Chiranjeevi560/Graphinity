@@ -33,6 +33,12 @@ in the same commit.
 `npm run db:start` writes two private files in `.local/` (git-ignored, readable only by you):
 `api.env` (the API's database login and hashing key) and `test.env` (for integration tests).
 
+To use the real Supabase project and Google instead of the stand-in, put the project's public
+values in `apps/web/.env.supabase`, put `SUPABASE_URL` and the secret key in `.local/api.env`, and
+start the website with `npm --workspace apps/web run dev -- --mode supabase` (don't run
+`dev:auth`). Never paste the secret key into chat or a Terminal command; edit the file with
+`open -e .local/api.env`.
+
 To try sign-in locally, run `db:start`, then `dev:auth`, `dev:api` and `dev:web` in three
 terminals, and open http://localhost:5173. "Continue with Google" opens a local page where you pick
 a test person. To try the production build with its strict security headers, run

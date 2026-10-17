@@ -20,7 +20,12 @@ paste into a file yourself and never share.
    - **Name:** `graphinity`
    - **Database password:** click **Generate a password**, then save it in your password manager.
      We need it at deploy time. Don't send it to me.
-   - **Region:** choose **Singapore** (it may be shown as "Southeast Asia (Singapore)").
+   - **Region:** under Asia-Pacific, click **Need a specific region?** and choose **Singapore**.
+   - **GitHub (optional):** skip it. It lets Supabase change your database when code is pushed;
+     we apply database changes ourselves, one tested step at a time.
+   - **Security:** turn **Enable Data API** **off** (all data goes through our own server). The
+     **Automatically expose new tables** switch then greys out; that's expected and safe. Turn
+     **Enable automatic RLS** **on**.
    - Click **Create new project** and wait about two minutes.
 4. **Check the token signing keys.** In the left sidebar open **Project Settings**, then the page
    about **JWT keys** / **JWT signing keys**.
@@ -40,9 +45,12 @@ paste into a file yourself and never share.
    - Under **Redirect URLs** click **Add URL** and add exactly: `http://localhost:5173/auth/callback**`
      (the two stars let the safety code in the address through).
    - Click **Save**.
-8. Leave the **access token expiry** at its default of **3600 seconds** (one hour). Graphinity
+8. **Turn off email sign-in.** **Authentication → Sign In / Providers → Email**: switch
+   **Enable Email provider** off and save. The publishable key is public, so with email on, anyone
+   could create an email account and get a valid token. Graphinity is Google-only.
+9. Leave the **access token expiry** at its default of **3600 seconds** (one hour). Graphinity
    refuses longer-lived tokens on purpose.
-9. Open **Authentication → Sign In / Providers**, click **Google**, and keep this tab open. It shows
+10. Open **Authentication → Sign In / Providers**, click **Google**, and keep this tab open. It shows
    a **Callback URL** you need in Part B.
 
 ## Part B: Google (the "Continue with Google" screen)
@@ -59,24 +67,28 @@ paste into a file yourself and never share.
    - **Contact email:** your email
    - Agree to the policy, then **Create**.
 4. Open **Data Access** → **Add or remove scopes**. Tick **openid**, **…/auth/userinfo.email** and
-   **…/auth/userinfo.profile** (only these three) → **Update** → **Save**. These are basic scopes;
-   Google doesn't require a review for them.
+   **…/auth/userinfo.profile** (only these three; never the Cloud or BigQuery rows) → **Update**,
+   then click **Save** on the page itself. These are two separate clicks, and forgetting the
+   second one is easy: reload the page and check the three scopes are still listed under "non-sensitive
+   scopes". These are basic scopes; Google doesn't require a review for them.
 5. Open **Clients** → **Create client**:
    - **Application type:** **Web application**
    - **Name:** `Graphinity web`
    - **Authorized JavaScript origins:** add `http://localhost:5173`
-   - **Authorized redirect URIs:** paste the **Callback URL** from Supabase (Part A, step 9). It
+   - **Authorized redirect URIs:** paste the **Callback URL** from Supabase (Part A, step 10). It
      looks like `https://abcdefgh.supabase.co/auth/v1/callback`.
-   - Click **Create**. A box shows the **Client ID** and **Client secret**. Keep it open.
+   - Click **Create**. A box shows the **Client ID** and **Client secret**. Copy the secret now:
+     Google may not show it again. If you lose it, open the client and use **Add secret**.
 6. Open **Audience**. While the app is in **Testing**, only people you list can sign in: click
    **Add users** and add your own Gmail address. (Publishing to everyone happens at launch.)
 
 ## Part C: Connect Google to Supabase
 
-1. Back in Supabase's **Google** provider page (Part A, step 9):
+1. Back in Supabase's **Google** provider page (Part A, step 10):
    - Turn **Enable Sign in with Google** on.
    - Paste the **Client ID** and **Client secret** from Google.
-   - Click **Save**.
+   - Click **Save** and wait for the confirmation. Nothing is saved until then. (On the first
+     attempt the form was filled in but never saved, and sign-in stayed off.)
 2. You can close Google's box now. If you ever lose the client secret, create a new one in Google
    and paste it here again.
 
@@ -101,6 +113,24 @@ paste into a file yourself and never share.
 3. Tell me when that's done. I'll start the website and server, and you'll sign in with your real
    Google account on your own screen. That first real sign-in, and deleting a test account
    afterwards, are the checks the local stand-in can't make.
+
+## Checking it worked (what we did, and how you can repeat it)
+
+Without printing any secret, you can confirm each part from the project folder. Use Node, not the
+system Python: that Python has no root certificates on this Mac.
+
+- Google is on and email is off: ask `https://<project>.supabase.co/auth/v1/settings` with the
+  publishable key in an `apikey` header: `external.google` must be `true`, `external.email` `false`.
+- The secret key is accepted: `GET /auth/v1/admin/users?per_page=1` with it in `apikey` gives 200;
+  a made-up key gives 401.
+- Then sign in on your own screen at http://localhost:5173 after starting the API and
+  `npm --workspace apps/web run dev -- --mode supabase`. While Google is in Testing, "Google hasn't
+  verified this app" is expected: choose Continue and check it only asks for your name, email and
+  profile picture.
+- Finally delete the test account from your profile page, and confirm Supabase lists 0 users.
+
+First real run (2026-10-18): sign-in, profile creation and account deletion all worked; Supabase
+showed one Google-only user, then none; the server log held no emails or ids.
 
 ## Part E (optional now, needed before launch): GitHub
 

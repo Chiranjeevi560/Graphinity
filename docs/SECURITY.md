@@ -87,7 +87,13 @@ Each line answers: *if a hostile researcher spent a day on this, what would they
 - The 15-second timeouts are configured but not tested under load.
 - Closing the tab signs you out: the refresh token lives in sessionStorage by design (the brief
   rules out localStorage). Opening a link in a new tab means signing in again.
-- Not yet checked against the real Supabase project and Google: the local stand-in mirrors
-  Supabase's requests as read from supabase-js, but the first real sign-in is the real test.
+- Checked on 2026-10-18 against the real Supabase project and Google: sign-in, profile creation
+  and account deletion work end to end (Supabase listed one Google-only user, then none after
+  deletion; our database kept no rows; the server log held no emails or ids). Not checked: Supabase's
+  redirect allow-list rejecting a foreign `redirect_to` (it is applied when Google returns, which
+  needs a real sign-in to exercise), and the keyboard covering fields on a real phone.
+- Email sign-in is switched off in the Supabase dashboard, which is a setting, not code. The server
+  does not yet refuse tokens whose provider isn't Google (`app_metadata.provider`); adding that is a
+  recommended second lock, not yet done.
 - Not yet checked: CI on GitHub (no repository yet), and headers on the real Cloudflare and Render
   hosts.
