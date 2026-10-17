@@ -18,7 +18,8 @@ Checked by `node scripts/floor-guard.mjs` on everything changed since `origin/ma
   coverage-ignore comments, `nosemgrep`, `gitleaks:allow`.
 - No unfinished work: "not implemented" stubs, empty `catch {}`, `TODO`, `FIXME`.
 - No tests made easier: `.skip`, `.only`, `.todo`, `.fixme`, deleted test files, assertions removed
-  from tests that stayed.
+  from tests that stayed. An assertion replaced because the behaviour it checked changed on purpose
+  needs a reason in the commit: `Assertions-changed: <at least ten characters of why>`.
 - No secrets in source (gitleaks, below).
 - No changed numbers or new exceptions in this file without the owner's say-so.
 
@@ -71,5 +72,8 @@ One command per stage: `npm run check:fast` (seconds), `npm run check:task` (abo
   CI only.
 - Locally, the preview server drops `upgrade-insecure-requests` from the CSP (WebKit upgrades even
   localhost to https). Deploys keep it; a test checks both.
+- The `Constraints-approved:` and `Assertions-changed:` trailers are honour-based: the guard can't
+  tell who wrote them. The owner can audit them with
+  `git log --grep='Constraints-approved\|Assertions-changed'`.
 - The project's own tests are the circular kind of check. The external judges are axe, Lighthouse,
   osv-scanner, npm audit, gitleaks and Semgrep.

@@ -66,6 +66,10 @@ for (const { file: f, text } of added) {
   if (exception && !approved.has(exception[1])) flag('new-exception', f, text);
 }
 
+// Assertions replaced on purpose (the behaviour they checked changed) are
+// allowed when a commit in the range says why: "Assertions-changed: <reason>".
+const assertionReasons = [...(git(['log', `${mergeBase}..HEAD`, '--format=%B']) ?? '').matchAll(/^Assertions-changed:\s*(\S.{9,})$/gm)];
+
 // An assertion call removed from a test file, unless the same line was added
 // back in that file (moved, or the test was reorganised). Imports don't count.
 const addedIn = new Map();
@@ -77,6 +81,7 @@ for (const { file: f, text } of removed) {
   if (!/\.(test|spec)\.ts$/.test(f) || /^\s*import\b/.test(text)) continue;
   if (!/\b(expect|assert)(\.\w+)*\(/.test(text)) continue;
   if (addedIn.get(f)?.has(text.trim())) continue;
+  if (assertionReasons.length > 0) continue;
   flag('assertion-removed', f, text);
 }
 
