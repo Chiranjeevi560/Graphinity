@@ -27,8 +27,14 @@ export function createSupabaseAdmin(options: { supabaseUrl: string; secretKey: s
         body: JSON.stringify({ should_soft_delete: false }),
         signal: AbortSignal.timeout(10_000),
       });
-      // 404: already gone (a retry after a partial failure). That's success.
-      if (res.ok || res.status === 404) return;
+      if (res.ok) return;
+      // Already gone (a retry after an earlier success) is also done, but only
+      // when Supabase itself says so; any other 404 (wrong path, a proxy or
+      // maintenance page) must not be mistaken for a finished deletion.
+      if (res.status === 404) {
+        const body = (await res.json().catch(() => null)) as { error_code?: unknown } | null;
+        if (body?.error_code === 'user_not_found') return;
+      }
       throw new AuthAdminError(`status ${res.status}`);
     },
   };

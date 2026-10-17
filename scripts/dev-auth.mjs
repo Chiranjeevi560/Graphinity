@@ -172,6 +172,8 @@ const server = createServer(async (req, res) => {
     if (req.method === 'DELETE' && adminMatch) {
       if (req.headers.apikey !== SECRET_KEY) return send(res, 401, { error: 'invalid api key' });
       const sub = adminMatch[1];
+      // Same shape as Supabase's apierrors.HTTPError for a missing user.
+      if (deleted.has(sub)) return send(res, 404, { code: 404, error_code: 'user_not_found', msg: 'User not found' });
       deleted.add(sub);
       for (const [t, s] of refreshTokens) if (s === sub) refreshTokens.delete(t);
       return send(res, 200, { id: sub });
