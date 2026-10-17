@@ -99,6 +99,19 @@ describe('rate limits', () => {
     expect(res.json().message).toMatch(/Wait a minute/);
   });
 
+  it('lets the website read a "too many requests" answer, so people see the real reason', async () => {
+    const app = await server({ limits: tight });
+    const ask = (origin: string) => app.inject({ url: '/health', headers: { origin } });
+    await ask(ORIGIN); await ask(ORIGIN);
+    const limited = await ask(ORIGIN);
+    expect(limited.statusCode).toBe(429);
+    expect(limited.headers['access-control-allow-origin']).toBe(ORIGIN);
+    expect(limited.headers['access-control-expose-headers']).toMatch(/retry-after/i);
+    expect(String(limited.headers.vary)).toMatch(/origin/i);
+    // Other sites still get nothing they could read.
+    expect((await ask('https://evil.example')).headers['access-control-allow-origin']).toBeUndefined();
+  });
+
   it('ignores X-Forwarded-For when no proxy is trusted, so forging it cannot dodge the limit', async () => {
     const app = await server({ limits: tight, hops: 0 });
     const codes = [];

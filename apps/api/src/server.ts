@@ -127,6 +127,12 @@ export async function buildServer(deps: Deps) {
     const verdict = own.ok ? globalBucket.take('all') : own;
     if (!verdict.ok) {
       reply.header('retry-after', String(verdict.retryAfterSeconds));
+      // This runs before the CORS plugin, so add its headers here: without
+      // them the browser hides the answer and the website can only say
+      // "you seem to be offline".
+      if (req.headers.origin === config.webOrigin) {
+        reply.headers({ 'access-control-allow-origin': config.webOrigin, 'access-control-expose-headers': 'retry-after', vary: 'Origin' });
+      }
       return reply.code(429).send({ error: 'rate_limited', message: messages.tooMany });
     }
   });
