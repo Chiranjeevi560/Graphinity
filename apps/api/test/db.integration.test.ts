@@ -126,3 +126,19 @@ describe('the startup check of the database account', () => {
     }
   });
 });
+
+describe('a connection that dies mid-transaction', () => {
+  it('is not handed to the next request', async () => {
+    // Kill this transaction's server process from outside, as a database
+    // restart or network drop would.
+    await expect(database.withUser(null, async q => {
+      const pid = (await q.query<{ pid: number }>('SELECT pg_backend_pid() AS pid')).rows[0]?.pid;
+      await owner.query('SELECT pg_terminate_backend($1)', [pid]);
+      await q.query('SELECT 1');
+    })).rejects.toThrow();
+    // Every following request must get a working connection (the pool holds up to 5).
+    for (let i = 0; i < 6; i++) {
+      expect(await database.withUser(null, async q => (await q.query<{ ok: number }>('SELECT 1 AS ok')).rows[0]?.ok)).toBe(1);
+    }
+  });
+});

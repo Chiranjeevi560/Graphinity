@@ -51,6 +51,13 @@ export function createDatabase(connectionString: string, options: DatabaseOption
 
     async withUser(userId, fn) {
       const client = await pool.connect();
+      // The pool only listens for errors on idle connections. A connection
+      // that drops while a request holds it emits 'error' with no listener,
+      // which crashes the whole process. Catch it here; the failing query
+      // already reports the problem to the request.
+      let broken: Error | undefined;
+      const onError = (err: Error) => { broken = err; };
+      client.on('error', onError);
       try {
         await client.query('BEGIN');
         // Third argument true = local to this transaction, so the identity
@@ -60,10 +67,14 @@ export function createDatabase(connectionString: string, options: DatabaseOption
         await client.query('COMMIT');
         return result;
       } catch (err) {
-        await client.query('ROLLBACK').catch(() => {});
+        await client.query('ROLLBACK').catch((rollbackErr: unknown) => {
+          broken ??= rollbackErr instanceof Error ? rollbackErr : new Error('rollback failed');
+        });
         throw err;
       } finally {
-        client.release();
+        client.off('error', onError);
+        // Passing the error destroys the connection instead of reusing it.
+        client.release(broken);
       }
     },
 
