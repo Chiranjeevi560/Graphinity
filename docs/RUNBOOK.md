@@ -21,7 +21,8 @@ in the same commit.
 | Start the local database (creates it the first time) | `npm run db:start` |
 | Re-apply the schema after editing `db/schema.sql` | `npm run db:apply` |
 | Run the local sign-in stand-in (replaces Google + Supabase Auth) | `npm run dev:auth` |
-| Run the API on http://localhost:3000 | `npm run dev:api` |
+| Run the API against the local stand-in (no accounts needed) | `npm run dev:api:local` |
+| Run the API against your real Supabase project (values in `.local/api.env`) | `npm run dev:api` |
 | Run the website on http://localhost:5173 | `npm run dev:web` |
 | Design gallery (development only) | http://localhost:5173/design |
 | All tests | `npm test` |
@@ -39,7 +40,7 @@ start the website with `npm --workspace apps/web run dev -- --mode supabase` (do
 `dev:auth`). Never paste the secret key into chat or a Terminal command; edit the file with
 `open -e .local/api.env`.
 
-To try sign-in locally, run `db:start`, then `dev:auth`, `dev:api` and `dev:web` in three
+To try sign-in locally, run `db:start`, then `dev:auth`, `dev:api:local` and `dev:web` in three
 terminals, and open http://localhost:5173. "Continue with Google" opens a local page where you pick
 a test person. To try the production build with its strict security headers, run
 `npm --workspace apps/web run build`, then `preview`, and start the API with

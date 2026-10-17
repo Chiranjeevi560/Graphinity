@@ -83,7 +83,7 @@ Use Node 24 (`source ~/.nvm/nvm.sh && nvm use 24`; the machine default is 20).
 | Install (scripts disabled by `.npmrc`) | `npm ci` |
 | Local database (creates `.local/`) | `npm run db:start` / `db:apply` / `db:stop` |
 | Local sign-in stand-in (no Google needed) | `npm run dev:auth` |
-| API on :3000 | `npm run dev:api` |
+| API on :3000 with the stand-in / with the real Supabase | `npm run dev:api:local` / `npm run dev:api` |
 | Website on :5173 | `npm run dev:web` |
 | Website against the real Supabase | `npm --workspace apps/web run dev -- --mode supabase` (don't run `dev:auth`) |
 | All tests (integration tests need the local database) | `npm test` |
