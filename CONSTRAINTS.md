@@ -68,7 +68,7 @@ One command per stage: `npm run check:fast` (seconds), `npm run check:task` (abo
   with or without the command sandbox, so Firefox runs in CI on Linux only.
 - Homebrew has no bottles for macOS 27: gitleaks and osv-scanner are the projects' official release
   binaries in `.local/tools/`, verified against their published SHA-256 checksums. Semgrep runs in
-  CI only.
+  CI only, from its official Docker image pinned by digest.
 - Locally, the preview server drops `upgrade-insecure-requests` from the CSP (WebKit upgrades even
   localhost to https). Deploys keep it; a test checks both.
 - The `Constraints-approved:` and `Assertions-changed:` trailers are honour-based: the guard can't
