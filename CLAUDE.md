@@ -8,8 +8,11 @@ The owner is a solo founder and CSE student, not a working engineer. Explain in 
 simply but completely. Ask questions as if to an everyday user. The bar is "as if Apple or Google
 built it": never ship anything that looks or behaves like generic AI output.
 
-**Read `CONSTRAINTS.md` before writing code. Do not weaken it to make a change pass.** Run
-`npm run check:fast` after edits and `npm run check:task` before saying a task is done.
+**For any task, run the `graphinity-build` skill first** (`.claude/skills/graphinity-build`): it
+is every chosen skill combined into one pipeline, with the bar and the lessons this project paid
+for. **Read `CONSTRAINTS.md` before writing code. Do not weaken it to make a change pass.** Run
+`npm run check:fast` after edits and `npm run check:task` before saying a task is done. Commit and
+push only with `sh scripts/ship.sh <message-file> <paths…>`, which pushes only if every check passed.
 
 ## Hard rules
 
@@ -33,8 +36,8 @@ built it": never ship anything that looks or behaves like generic AI output.
 
 ## Skill router
 
-Load the matching skill before starting that kind of work (Skill tool). Load per task, not all at
-once: unused skills only crowd out the code.
+`graphinity-build` runs these in order. Load the full skill when a stage needs its depth; per
+task, not all at once: unused skills only crowd out the code.
 
 | Work | Skills |
 |---|---|
