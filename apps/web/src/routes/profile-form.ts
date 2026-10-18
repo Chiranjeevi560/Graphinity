@@ -1,5 +1,5 @@
 // Shared by the welcome steps and the edit screen.
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { FieldStatus } from '../components/Form.tsx';
 import { ApiError } from '../lib/api.ts';
 import { api } from '../session.tsx';
@@ -11,7 +11,7 @@ export interface Meta {
 
 let metaCache: Promise<Meta> | null = null;
 export function loadMeta(): Promise<Meta> {
-  metaCache ??= api<Meta>('/meta').catch(err => { metaCache = null; throw err; });
+  metaCache ??= api<Meta>('/meta').catch((err: unknown) => { metaCache = null; throw err; });
   return metaCache;
 }
 
@@ -19,7 +19,7 @@ export function useMeta() {
   const [meta, setMeta] = useState<Meta | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    loadMeta().then(setMeta, err => setError(err instanceof ApiError ? err.message : 'Something went wrong. Try again in a minute.'));
+    loadMeta().then(setMeta, (err: unknown) => { setError(err instanceof ApiError ? err.message : 'Something went wrong. Try again in a minute.'); });
   }, []);
   return { meta, error };
 }
@@ -28,37 +28,44 @@ export function useMeta() {
 export function guessCountry(codes: string[]): string {
   try {
     const region = new Intl.Locale(navigator.language).maximize().region;
-    if (region && codes.includes(region)) return region;
-  } catch {}
-  return '';
+    return region && codes.includes(region) ? region : '';
+  } catch {
+    return ''; // An unusual language tag: no guess, the person picks.
+  }
 }
 
-/** Checks a name as the person types, once they pause. */
+interface Check { value: string; available: boolean; status: FieldStatus }
+
+/**
+ * Checks a name as the person types, once they pause. Only the server's
+ * answer is state; everything else is worked out from what's typed, so a
+ * stale answer for an older value is never shown.
+ */
 export function useHandleCheck(handle: string, current?: string) {
-  const [status, setStatus] = useState<FieldStatus>(null);
-  const [available, setAvailable] = useState(false);
-  const latest = useRef(0);
+  const value = handle.trim().toLowerCase();
+  const [answer, setAnswer] = useState<Check | null>(null);
+  const unchanged = current !== undefined && value === current;
 
   useEffect(() => {
-    const value = handle.trim().toLowerCase();
-    setAvailable(false);
-    if (!value) { setStatus(null); return; }
-    if (current !== undefined && value === current) { setStatus(null); setAvailable(true); return; }
-    setStatus({ tone: 'neutral', text: 'Checking…' });
-    const id = ++latest.current;
-    const timer = setTimeout(async () => {
-      try {
-        const res = await api<{ available: boolean; message?: string }>(`/handles/${encodeURIComponent(value)}`, { signedIn: true });
-        if (id !== latest.current) return;
-        setAvailable(res.available);
-        setStatus(res.available ? { tone: 'good', text: 'Available' } : { tone: 'bad', text: res.message ?? 'That name isn’t available.' });
-      } catch (err) {
-        if (id !== latest.current) return;
-        setStatus({ tone: 'bad', text: err instanceof ApiError ? err.message : 'Couldn’t check that name. Try again.' });
-      }
+    if (!value || unchanged) return;
+    let live = true;
+    const timer = setTimeout(() => {
+      api<{ available: boolean; message?: string }>(`/handles/${encodeURIComponent(value)}`, { signedIn: true })
+        .then(res => {
+          if (live) setAnswer({ value, available: res.available, status: res.available ? { tone: 'good', text: 'Available' } : { tone: 'bad', text: res.message ?? 'That name isn’t available.' } });
+        })
+        .catch((err: unknown) => {
+          if (live) setAnswer({ value, available: false, status: { tone: 'bad', text: err instanceof ApiError ? err.message : 'Couldn’t check that name. Try again.' } });
+        });
     }, 400);
-    return () => clearTimeout(timer);
-  }, [handle, current]);
+    return () => { live = false; clearTimeout(timer); };
+  }, [value, unchanged]);
 
-  return { status, available, setStatus, setAvailable };
+  /** The server refused the name on submit (someone took it meanwhile). */
+  const refuse = (text: string) => { setAnswer({ value, available: false, status: { tone: 'bad', text } }); };
+
+  if (!value) return { status: null, available: false, refuse };
+  if (unchanged) return { status: null, available: true, refuse };
+  if (answer?.value === value) return { status: answer.status, available: answer.available, refuse };
+  return { status: { tone: 'neutral', text: 'Checking…' } as FieldStatus, available: false, refuse };
 }

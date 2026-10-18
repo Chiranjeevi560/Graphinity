@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type SubmitEvent } from 'react';
 import { Button } from '../components/Button.tsx';
 import { ChipPicker, SelectField, TextField } from '../components/Form.tsx';
 import { ApiError } from '../lib/api.ts';
@@ -17,18 +17,21 @@ export default function EditProfile({ profile }: { profile: Profile }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const check = useHandleCheck(handle, profile.handle);
+  // The time the screen opened: reading the clock while drawing would make
+  // the lock flicker between renders.
+  const [openedAt] = useState(Date.now);
 
   const nextChange = profile.handleChangeAvailableAt ? new Date(profile.handleChangeAvailableAt) : null;
-  const nameLocked = nextChange !== null && nextChange.getTime() > Date.now();
+  const nameLocked = nextChange !== null && nextChange.getTime() > openedAt;
 
   if (metaError) return <main className="page stack-message"><p className="text-body" role="alert">{metaError}</p></main>;
   if (!meta) return <main className="page stack-message"><p className="text-body status" role="status">Loading…</p></main>;
 
-  const toggle = (slug: string) => setFields(prev => {
+  const toggle = (slug: string) => { setFields(prev => {
     const next = new Set(prev);
     if (next.has(slug)) next.delete(slug); else if (next.size < 8) next.add(slug);
     return next;
-  });
+  }); };
 
   const normalized = handle.trim().toLowerCase();
   const changes: Record<string, unknown> = {};
@@ -38,7 +41,7 @@ export default function EditProfile({ profile }: { profile: Profile }) {
   if ([...fields].sort().join() !== before) changes.fields = [...fields];
   const canSave = Object.keys(changes).length > 0 && fields.size > 0 && (changes.handle === undefined || check.available) && !saving;
 
-  async function save(e: FormEvent) {
+  async function save(e: SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!canSave) return;
     setSaving(true);
@@ -56,7 +59,7 @@ export default function EditProfile({ profile }: { profile: Profile }) {
 
   return (
     <main className="page">
-      <form className="edit-form" onSubmit={save}>
+      <form className="edit-form" onSubmit={e => { void save(e); }}>
         <div className="onboarding-top">
           <Link to="/me" className="btn btn-plain">Cancel</Link>
         </div>
@@ -67,7 +70,7 @@ export default function EditProfile({ profile }: { profile: Profile }) {
           value={handle}
           onChange={setHandle}
           status={nameLocked ? null : check.status}
-          hint={nameLocked ? `You can change your name again on ${dateFormat.format(nextChange!)}.` : 'You can change your name once a week.'}
+          hint={nameLocked ? `You can change your name again on ${dateFormat.format(nextChange)}.` : 'You can change your name once a week.'}
           disabled={nameLocked}
           autoComplete="off"
           autoCapitalize="none"

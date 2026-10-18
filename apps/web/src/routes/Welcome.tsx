@@ -1,5 +1,5 @@
 // First-time setup, one decision per screen: name, country, fields.
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type SubmitEvent } from 'react';
 import { Button } from '../components/Button.tsx';
 import { Checkbox, ChipPicker, SelectField, TextField } from '../components/Form.tsx';
 import { ApiError } from '../lib/api.ts';
@@ -38,13 +38,13 @@ export default function Welcome() {
   if (metaError) return <main className="page stack-message"><p className="text-body" role="alert">{metaError}</p></main>;
   if (!meta) return <main className="page stack-message"><p className="text-body status" role="status">Loading…</p></main>;
 
-  const toggle = (slug: string) => setFields(prev => {
+  const toggle = (slug: string) => { setFields(prev => {
     const next = new Set(prev);
     if (next.has(slug)) next.delete(slug); else if (next.size < MAX_FIELDS) next.add(slug);
     return next;
-  });
+  }); };
 
-  async function create(e: FormEvent) {
+  async function create(e: SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
     setSubmitting(true);
     setSubmitError(null);
@@ -58,8 +58,7 @@ export default function Welcome() {
     } catch (err) {
       if (err instanceof ApiError && (err.code === 'handle_taken' || err.code === 'invalid_handle')) {
         // Someone took the name meanwhile: back to the name step, with the reason.
-        check.setStatus({ tone: 'bad', text: err.message });
-        check.setAvailable(false);
+        check.refuse(err.message);
         setStep(1);
       } else {
         setSubmitError(err instanceof ApiError ? err.message : 'Something went wrong. Try again in a minute.');
@@ -72,7 +71,7 @@ export default function Welcome() {
   return (
     <main className="page onboarding">
       <div className="onboarding-top">
-        {step > 1 ? <button type="button" className="btn btn-plain" onClick={() => setStep(step - 1)}>Back</button> : <span />}
+        {step > 1 ? <button type="button" className="btn btn-plain" onClick={() => { setStep(step - 1); }}>Back</button> : <span />}
         <p className="text-footnote secondary" aria-live="polite">Step {step} of 3</p>
       </div>
 
@@ -92,7 +91,6 @@ export default function Welcome() {
             autoCorrect="off"
             spellCheck={false}
             maxLength={24}
-            autoFocus
           />
           <Button type="submit" className="btn-block" disabled={!check.available}>Continue</Button>
         </form>
@@ -113,7 +111,7 @@ export default function Welcome() {
       )}
 
       {step === 3 && (
-        <form className="onboarding-step" onSubmit={create}>
+        <form className="onboarding-step" onSubmit={e => { void create(e); }}>
           <h1 ref={heading} className="text-title1" tabIndex={-1}>What do you know about?</h1>
           <p className="text-body secondary">Pick areas where you have real experience. You’ll be asked questions about them. You can change these later.</p>
           <ChipPicker legend="Your fields" options={meta.fields} selected={fields} onToggle={toggle} max={MAX_FIELDS} />

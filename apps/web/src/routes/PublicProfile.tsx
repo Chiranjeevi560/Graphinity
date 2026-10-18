@@ -8,12 +8,14 @@ export default function PublicProfile({ handle }: { handle: string }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // App keys each screen by its path, so a new handle mounts a fresh screen;
+  // only a late answer after leaving needs ignoring.
   useEffect(() => {
-    setProfile(null);
-    setError(null);
+    let live = true;
     api<{ profile: Profile }>(`/profiles/${encodeURIComponent(handle)}`)
-      .then(r => setProfile(r.profile))
-      .catch(err => setError(err instanceof ApiError ? err.message : 'Something went wrong. Try again in a minute.'));
+      .then(r => { if (live) setProfile(r.profile); })
+      .catch((err: unknown) => { if (live) setError(err instanceof ApiError ? err.message : 'Something went wrong. Try again in a minute.'); });
+    return () => { live = false; };
   }, [handle]);
 
   if (error) {
