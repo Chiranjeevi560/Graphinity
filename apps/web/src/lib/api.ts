@@ -13,8 +13,18 @@ export class ApiError extends Error {
   }
 }
 
-const OFFLINE = 'You seem to be offline. Check your connection and try again.';
+// A request that got no answer: either this device has no internet, or it
+// does and Graphinity didn't answer. Saying "check your connection" when the
+// connection is fine sends people to fix the wrong thing.
+const OFFLINE = 'You’re offline. Connect to the internet and try again.';
+const UNREACHABLE = 'Graphinity isn’t responding. Try again in a moment.';
 const UNKNOWN = 'Something went wrong. Try again in a minute.';
+
+/** Worth trying again unchanged: no answer, a server fault, or too many requests. */
+export function canRetry(err: unknown): boolean {
+  if (!(err instanceof ApiError)) return true;
+  return err.code === 'offline' || err.code === 'unreachable' || err.status >= 500 || err.status === 429;
+}
 
 export interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -27,7 +37,15 @@ export interface RequestOptions {
   signedIn?: boolean | 'if-possible';
 }
 
-export function createApi(deps: { origin: string; auth: Auth; fetch: typeof fetch }) {
+export function createApi(deps: {
+  origin: string;
+  auth: Auth;
+  fetch: typeof fetch;
+  /** Whether the device has a network at all (navigator.onLine). */
+  online: () => boolean;
+}) {
+  const noAnswer = () => deps.online() ? new ApiError(0, 'unreachable', UNREACHABLE) : new ApiError(0, 'offline', OFFLINE);
+
   async function send(path: string, options: RequestOptions, token: string | null) {
     const headers: Record<string, string> = {};
     if (token) headers.authorization = `Bearer ${token}`;
@@ -46,8 +64,8 @@ export function createApi(deps: { origin: string; auth: Auth; fetch: typeof fetc
     } else if (options.signedIn) {
       token = await deps.auth.getAccessToken();
       // No token but the session is still there: the refresh couldn't reach
-      // Supabase (offline). Say so, instead of telling the person they're out.
-      if (!token && deps.auth.hasSession()) throw new ApiError(0, 'offline', OFFLINE);
+      // Supabase. Say so, instead of telling the person they're signed out.
+      if (!token && deps.auth.hasSession()) throw noAnswer();
       if (!token) throw new ApiError(401, 'signed_out', 'You’re signed out. Sign in again to continue.');
     }
     let res: Response;
@@ -62,7 +80,7 @@ export function createApi(deps: { origin: string; auth: Auth; fetch: typeof fetc
       }
     } catch (err) {
       if (err instanceof ApiError) throw err;
-      throw new ApiError(0, 'offline', OFFLINE);
+      throw noAnswer();
     }
     if (res.status === 204) return undefined as T;
     const data = await res.json().catch(() => null) as Record<string, unknown> | null;

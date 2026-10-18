@@ -97,8 +97,9 @@ Use Node 24 (`source ~/.nvm/nvm.sh && nvm use 24`; the machine default is 20).
 New dependencies: `npm install --before=<date two weeks ago> ...` (exact versions, nothing
 published in the last two weeks).
 
-In the Claude app, the browser pane's launcher did not run the API or the stand-in; start them from
-Bash in the background. A hidden browser pane gets no animation frames, so screenshots can catch a
+In the Claude app, `.claude/launch.json` starts every server through `scripts/node24.mjs`: the
+launcher uses the machine's Node 20, which can't run the API (it crashed at start, and the site said
+every request failed). A hidden browser pane gets no animation frames, so screenshots can catch a
 fade half-way: measure state with JavaScript before calling it a bug.
 
 ## Conventions

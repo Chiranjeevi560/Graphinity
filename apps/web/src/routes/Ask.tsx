@@ -1,6 +1,7 @@
 import { useEffect, useState, type SubmitEvent } from 'react';
 import { Button } from '../components/Button.tsx';
 import { SelectField, TextArea, TextField } from '../components/Form.tsx';
+import { LoadFailed } from '../components/Message.tsx';
 import { ApiError } from '../lib/api.ts';
 import { charCount, DETAILS_MAX, questionPath, TITLE } from '../lib/questions.ts';
 import { Link, navigate } from '../lib/router.ts';
@@ -36,7 +37,7 @@ function useSimilar(title: string) {
 }
 
 export default function Ask({ profile }: { profile: Profile }) {
-  const { meta, error: metaError } = useMeta();
+  const { meta, error: metaError, retry: retryMeta } = useMeta();
   const [title, setTitle] = useState(draft?.title ?? '');
   const [details, setDetails] = useState(draft?.details ?? '');
   // No topic chosen for them: a wrong guess would send the question to the wrong people.
@@ -48,7 +49,7 @@ export default function Ask({ profile }: { profile: Profile }) {
 
   useEffect(() => { draft = { title, details, field, country }; }, [title, details, field, country]);
 
-  if (metaError) return <main className="page stack-message"><p className="text-body" role="alert">{metaError}</p></main>;
+  if (metaError) return <LoadFailed error={metaError} onRetry={retryMeta} />;
   if (!meta) return <main className="page stack-message"><p className="text-body status" role="status">Loading…</p></main>;
 
   const titleLength = charCount(title.trim());

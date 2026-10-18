@@ -40,6 +40,16 @@ start the website with `npm --workspace apps/web run dev -- --mode supabase` (do
 `dev:auth`). Never paste the secret key into chat or a Terminal command; edit the file with
 `open -e .local/api.env`.
 
+Starting servers from an app or editor instead of a terminal (the Claude app's preview uses
+`.claude/launch.json`): they don't load nvm, so they would get this Mac's Node 20, and the API
+can't run on it. `node scripts/node24.mjs <command>` runs any command on Node 24 and says plainly if
+Node 24 isn't installed. The launcher's API and sign-in stand-in keep their ports (3000, 54321) or
+fail, since the website only looks there.
+
+If the website says "Graphinity isn't responding", the API isn't running or can't be reached; it
+says "You're offline" only when the device has no internet. Either way it tries again by itself once
+the connection is back.
+
 To try sign-in locally, run `db:start`, then `dev:auth`, `dev:api:local` and `dev:web` in three
 terminals, and open http://localhost:5173. "Continue with Google" opens a local page where you pick
 a test person. To try the production build with its strict security headers, run

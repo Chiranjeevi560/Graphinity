@@ -44,10 +44,10 @@ describe('createSessionStore', () => {
   });
 
   it('shows "offline" rather than "signed out" when the network is down', async () => {
-    const api = (() => Promise.reject(new ApiError(0, 'offline', 'You seem to be offline. Check your connection and try again.'))) as unknown as Api;
+    const api = (() => Promise.reject(new ApiError(0, 'offline', 'You’re offline. Connect to the internet and try again.'))) as unknown as Api;
     const store = createSessionStore({ auth: fakeAuth(true).auth, api });
     await store.reload();
-    expect(store.getState()).toEqual({ status: 'unreachable', message: 'You seem to be offline. Check your connection and try again.' });
+    expect(store.getState()).toMatchObject({ status: 'unreachable', error: { code: 'offline', message: 'You’re offline. Connect to the internet and try again.' } });
   });
 
   it('reports ready or needs-profile from /me, and signed out without a session', async () => {

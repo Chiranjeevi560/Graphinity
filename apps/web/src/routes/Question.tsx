@@ -3,7 +3,7 @@ import { Button, LinkButton } from '../components/Button.tsx';
 import { TextArea } from '../components/Form.tsx';
 import { BackButton } from '../components/BackButton.tsx';
 import { GoogleButton } from '../components/GoogleButton.tsx';
-import { MessageScreen, splitMessage } from '../components/Message.tsx';
+import { LoadFailed, MessageScreen, splitMessage } from '../components/Message.tsx';
 import { ReportButton } from '../components/ReportButton.tsx';
 import { ApiError } from '../lib/api.ts';
 import { onLive } from '../lib/live.ts';
@@ -12,6 +12,7 @@ import { ANSWER, charCount, questionPath, timeAgo, type Answer, type QuestionSum
 import { AnswerActions, AnswerLabels } from '../components/AnswerActions.tsx';
 import { Link } from '../lib/router.ts';
 import { api, useSession } from '../session.tsx';
+import { useLoad } from '../use-load.ts';
 
 interface Page { question: QuestionSummary & { body: string; hidden: boolean }; answers: Array<Answer & { hidden: boolean }>; selection: Selection | null }
 
@@ -27,34 +28,26 @@ function present(page: Page) {
 
 export default function Question({ id }: { id: string }) {
   const { state } = useSession();
-  const [page, setPage] = useState<Page | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: page, error, retry, setData: setPage } = useLoad<Page>(`/questions/${id}`, 'if-possible');
   const [now] = useState(Date.now);
 
-  async function reload() {
-    const loaded = await api<Page>(`/questions/${id}`, { signedIn: 'if-possible' });
-    setPage(loaded);
-    present(loaded);
-  }
+  // Fix the address and the tab title once the question is here.
+  useEffect(() => { if (page) present(page); }, [page]);
 
-  useEffect(() => {
-    let live = true;
-    api<Page>(`/questions/${id}`, { signedIn: 'if-possible' })
-      .then(loaded => { if (live) { setPage(loaded); present(loaded); } })
-      .catch((err: unknown) => { if (live) setError(err instanceof ApiError ? err.message : 'This question couldn’t load. Try again in a minute.'); });
-    return () => { live = false; };
-  }, [id]);
+  async function reload() {
+    setPage(await api<Page>(`/questions/${id}`, { signedIn: 'if-possible' }));
+  }
 
   // A new answer to this question appears without reloading the page.
   useEffect(() => onLive(e => {
     if (e.type === 'answered' && e.questionId === id) {
-      api<Page>(`/questions/${id}`, { signedIn: 'if-possible' }).then(loaded => { setPage(loaded); }).catch(() => { /* next visit shows it */ });
+      api<Page>(`/questions/${id}`, { signedIn: 'if-possible' }).then(setPage).catch(() => { /* next visit shows it */ });
     }
-  }), [id]);
+  }), [id, setPage]);
 
-  if (error) {
-    return <MessageScreen {...splitMessage(error)} />;
-  }
+  // Only a question the server says isn't there is "gone"; anything else can be tried again.
+  if (error?.status === 404) return <MessageScreen {...splitMessage(error.message)} />;
+  if (error) return <LoadFailed error={error} onRetry={retry} />;
   if (!page) return <main className="page stack-message"><p className="text-body status" role="status">Loading…</p></main>;
 
   const { question, answers, selection } = page;

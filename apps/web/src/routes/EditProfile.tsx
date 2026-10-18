@@ -1,6 +1,7 @@
 import { useState, type SubmitEvent } from 'react';
 import { Button } from '../components/Button.tsx';
 import { ChipPicker, SelectField, TextField } from '../components/Form.tsx';
+import { LoadFailed } from '../components/Message.tsx';
 import { ApiError } from '../lib/api.ts';
 import { Link, navigate } from '../lib/router.ts';
 import { api, useSession, type Profile } from '../session.tsx';
@@ -10,7 +11,7 @@ const dateFormat = new Intl.DateTimeFormat('en', { day: 'numeric', month: 'long'
 
 export default function EditProfile({ profile }: { profile: Profile }) {
   const { setProfile } = useSession();
-  const { meta, error: metaError } = useMeta();
+  const { meta, error: metaError, retry: retryMeta } = useMeta();
   const [handle, setHandle] = useState(profile.handle);
   const [country, setCountry] = useState(profile.country.code);
   const [fields, setFields] = useState<Set<string>>(new Set(profile.fields.map(f => f.slug)));
@@ -24,7 +25,7 @@ export default function EditProfile({ profile }: { profile: Profile }) {
   const nextChange = profile.handleChangeAvailableAt ? new Date(profile.handleChangeAvailableAt) : null;
   const nameLocked = nextChange !== null && nextChange.getTime() > openedAt;
 
-  if (metaError) return <main className="page stack-message"><p className="text-body" role="alert">{metaError}</p></main>;
+  if (metaError) return <LoadFailed error={metaError} onRetry={retryMeta} />;
   if (!meta) return <main className="page stack-message"><p className="text-body status" role="status">Loading…</p></main>;
 
   const toggle = (slug: string) => { setFields(prev => {

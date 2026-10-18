@@ -1,8 +1,9 @@
 // Shared by the welcome steps and the edit screen.
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { FieldStatus } from '../components/Form.tsx';
 import { ApiError } from '../lib/api.ts';
 import { api } from '../session.tsx';
+import { useRetryWhenOnline } from '../lib/retry.ts';
 
 export interface Meta {
   fields: Array<{ slug: string; name: string }>;
@@ -15,13 +16,22 @@ export function loadMeta(): Promise<Meta> {
   return metaCache;
 }
 
+/** The topics and countries, shared and cached; tries again when asked, or once back online. */
 export function useMeta() {
   const [meta, setMeta] = useState<Meta | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ApiError | null>(null);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    loadMeta().then(setMeta, (err: unknown) => { setError(err instanceof ApiError ? err.message : 'Something went wrong. Try again in a minute.'); });
-  }, []);
-  return { meta, error };
+    let live = true;
+    loadMeta().then(
+      m => { if (live) setMeta(m); },
+      (err: unknown) => { if (live) setError(err instanceof ApiError ? err : new ApiError(0, 'unknown', 'Something went wrong. Try again in a minute.')); },
+    );
+    return () => { live = false; };
+  }, [attempt]);
+  const retry = useCallback(() => { setError(null); setAttempt(a => a + 1); }, []);
+  useRetryWhenOnline(error, retry);
+  return { meta, error, retry };
 }
 
 /** The region in the browser's language setting, if it's a country we know. Never leaves the device. */

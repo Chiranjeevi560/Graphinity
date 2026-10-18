@@ -152,6 +152,7 @@
 /* Screens with only a message: centred, one action. */
 .message-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-3); min-height: 60vh; text-align: center; }
 .message-action { margin-top: var(--space-3); min-width: 14rem; }
+.load-failed { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); }
 .screen-top { display: flex; min-height: var(--tap); margin: calc(-1 * var(--space-4)) 0 calc(-1 * var(--space-5)) calc(-1 * var(--space-2)); }
 .back-button { gap: var(--space-1); }
 .back-button svg { width: 0.5rem; height: 0.875rem; }

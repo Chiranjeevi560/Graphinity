@@ -1,9 +1,10 @@
 import { LinkButton } from '../components/Button.tsx';
 import { GoogleButton } from '../components/GoogleButton.tsx';
 import { Inbox } from '../components/Inbox.tsx';
+import { LoadFailed } from '../components/Message.tsx';
 import { Link } from '../lib/router.ts';
 import { QuestionList } from '../components/QuestionList.tsx';
-import { useSession } from '../session.tsx';
+import { retrySession, useSession } from '../session.tsx';
 
 export default function Home() {
   const { state } = useSession();
@@ -35,7 +36,7 @@ export default function Home() {
         </div>
       )}
       {state.status === 'unreachable' && (
-        <div className="home-action"><p className="text-body secondary" role="alert">{state.message}</p></div>
+        <div className="home-action"><LoadFailed error={state.error} onRetry={retrySession} inline /></div>
       )}
       {state.status === 'ready' && <Inbox />}
       <section className="home-questions" aria-labelledby="recent-heading">

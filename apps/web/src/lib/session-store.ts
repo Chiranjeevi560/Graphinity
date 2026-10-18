@@ -20,7 +20,7 @@ export type SessionState =
   | { status: 'signedOut' }
   | { status: 'needsProfile' }
   | { status: 'ready'; profile: Profile }
-  | { status: 'unreachable'; message: string };
+  | { status: 'unreachable'; error: ApiError };
 
 export function createSessionStore(deps: { auth: Auth; api: Api }) {
   let state: SessionState = { status: 'loading' };
@@ -46,7 +46,7 @@ export function createSessionStore(deps: { auth: Auth; api: Api }) {
     } catch (err) {
       next = err instanceof ApiError && err.code === 'signed_out'
         ? { status: 'signedOut' }
-        : { status: 'unreachable', message: err instanceof ApiError ? err.message : 'Something went wrong. Try again in a minute.' };
+        : { status: 'unreachable', error: err instanceof ApiError ? err : new ApiError(0, 'unknown', 'Something went wrong. Try again in a minute.') };
     }
     if (mine === latest) set(next);
   }

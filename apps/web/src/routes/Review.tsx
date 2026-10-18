@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { LoadFailed } from '../components/Message.tsx';
 import { ApiError } from '../lib/api.ts';
 import { Link } from '../lib/router.ts';
 import { api } from '../session.tsx';
+import { useLoad } from '../use-load.ts';
 
 interface Item {
   kind: 'question' | 'answer';
@@ -23,22 +25,13 @@ const reasonNames: Record<string, string> = {
 
 /** For moderators: reported posts and points exchanged from shared networks. */
 export default function ReviewPage() {
-  const [review, setReview] = useState<Review | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: review, error, retry } = useLoad<Review>('/review', true);
   const [busy, setBusy] = useState<string | null>(null);
   // Kept apart: a decision on the post and a block on its author are separate
   // steps, and a failure must leave the buttons there to try again.
   const [decided, setDecided] = useState<Record<string, string>>({});
   const [blocked, setBlocked] = useState<Record<string, true>>({});
   const [failed, setFailed] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    let live = true;
-    api<Review>('/review', { signedIn: true })
-      .then(r => { if (live) setReview(r); })
-      .catch((err: unknown) => { if (live) setError(err instanceof ApiError ? err.message : 'The review couldn’t load. Try again in a minute.'); });
-    return () => { live = false; };
-  }, []);
 
   async function act(key: string, work: () => Promise<unknown>, saved: () => void) {
     setBusy(key);
@@ -60,7 +53,7 @@ export default function ReviewPage() {
     () => api('/review/block', { method: 'POST', signedIn: true, body: { handle: item.author.handle, reason: item.reasons.join(', ') } }),
     () => { setBlocked(b => ({ ...b, [item.author.handle]: true })); });
 
-  if (error) return <main className="page stack-message"><h1 className="text-title2">{error}</h1></main>;
+  if (error) return <LoadFailed error={error} onRetry={retry} />;
   if (!review) return <main className="page stack-message"><p className="text-body status" role="status">Loading…</p></main>;
 
   return (

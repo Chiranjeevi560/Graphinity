@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, type SubmitEvent } from 'react';
 import { Button } from '../components/Button.tsx';
 import { Checkbox, ChipPicker, SelectField, TextField } from '../components/Form.tsx';
+import { LoadFailed } from '../components/Message.tsx';
 import { ApiError } from '../lib/api.ts';
 import { safePath } from '../lib/auth.ts';
 import { navigate } from '../lib/router.ts';
@@ -12,7 +13,7 @@ const MAX_FIELDS = 8;
 
 export default function Welcome() {
   const { setProfile } = useSession();
-  const { meta, error: metaError } = useMeta();
+  const { meta, error: metaError, retry: retryMeta } = useMeta();
   const [step, setStep] = useState(1);
   const [handle, setHandle] = useState('');
   const [country, setCountry] = useState('');
@@ -36,7 +37,7 @@ export default function Welcome() {
   // know the screen changed.
   useEffect(() => { if (step > 1) heading.current?.focus(); }, [step]);
 
-  if (metaError) return <main className="page stack-message"><p className="text-body" role="alert">{metaError}</p></main>;
+  if (metaError) return <LoadFailed error={metaError} onRetry={retryMeta} />;
   if (!meta) return <main className="page stack-message"><p className="text-body status" role="status">Loading…</p></main>;
 
   const toggle = (slug: string) => { setFields(prev => {

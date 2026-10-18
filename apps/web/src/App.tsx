@@ -1,9 +1,10 @@
 import { Component, lazy, Suspense, useEffect, type ReactNode } from 'react';
 import { Button } from './components/Button.tsx';
 import { Avatar } from './components/Identity.tsx';
+import { LoadFailed } from './components/Message.tsx';
 import { applyMeta, pageMeta } from './lib/meta.ts';
 import { Link, navigate, usePath } from './lib/router.ts';
-import { auth, useSession, type SessionState } from './session.tsx';
+import { auth, retrySession, useSession, type SessionState } from './session.tsx';
 
 // Each screen is its own chunk, so a phone downloads only what it shows.
 const Home = lazy(() => import('./routes/Home.tsx'));
@@ -49,6 +50,9 @@ function route(path: string, state: SessionState): ReactNode {
 
   // Everything below depends on who is signed in.
   if (state.status === 'loading') return null;
+  // Couldn't learn who's signed in: stay on the page and offer to try again,
+  // rather than sending them home as if they were signed out.
+  if (state.status === 'unreachable' && path !== '/') return <LoadFailed error={state.error} onRetry={retrySession} />;
   if (state.status === 'needsProfile' && path !== '/welcome') return <Redirect to="/welcome" />;
 
   switch (path) {
@@ -141,7 +145,8 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean
     return (
       <main className="page stack-message">
         <h1 className="text-title2">This page couldn’t load</h1>
-        <p className="text-body secondary">Check your internet connection, then reload the page.</p>
+        {/* Usually part of the site failed to download; only blame the connection when it's really down. */}
+        <p className="text-body secondary">{navigator.onLine ? 'Reload the page to try again.' : 'You’re offline. Connect to the internet, then reload the page.'}</p>
         <Button onClick={() => { location.reload(); }}>Reload</Button>
       </main>
     );
