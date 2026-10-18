@@ -6,6 +6,7 @@ import type { Database } from '../db.ts';
 import type { Events } from '../events.ts';
 import { cleanBody, cleanLine, prefixQuery, textProblem, type TextProblem } from '../text.ts';
 import { fail, pgCode, pgConstraint, signedIn } from './common.ts';
+import { blockedMessage, isBlocked } from './moderation.ts';
 import { MAX_CHANGES } from './points.ts';
 
 export const LIMITS = {
@@ -84,6 +85,9 @@ function inserted(rows: Array<{ id: string }>): string {
   return row.id;
 }
 
+const newAccountMessage = 'New accounts can ask 3 questions and give 10 answers on their first day. Try again tomorrow.';
+const isNewAccountLimit = (err: unknown) => pgCode(err) === '23514' && (err as { hint?: string }).hint === 'new_account_limit';
+
 function refuseText(reply: FastifyReply, what: keyof typeof messages, problem: TextProblem) {
   return fail(reply, 400, `invalid_${what}`, messages[what][problem], { reason: problem });
 }
@@ -131,10 +135,10 @@ export function registerQuestionRoutes(app: FastifyInstance, { db, events }: { d
     const viewer = req.user?.id ?? null;
     const found = await db.withUser(viewer, async q => {
       if (viewer) await q.query('UPDATE app.routes SET seen_at = now() WHERE question_id = $1 AND profile_id = $2 AND seen_at IS NULL', [id, viewer]);
-      const question = (await q.query<QuestionRow>(`${questionSelect()} WHERE q.id = $1`, [id])).rows[0];
+      const question = (await q.query<QuestionRow & { hidden: boolean }>(`${questionSelect('app.is_question_hidden(q.id) AS hidden,')} WHERE q.id = $1`, [id])).rows[0];
       if (!question) return null;
-      const answers = (await q.query<{ id: string; body: string; answerer: string; created_at: Date; helpful: boolean }>(
-        `SELECT a.id::text AS id, a.body, p.handle AS answerer, a.created_at,
+      const answers = (await q.query<{ id: string; body: string; answerer: string; created_at: Date; helpful: boolean; hidden: boolean }>(
+        `SELECT a.id::text AS id, a.body, p.handle AS answerer, a.created_at, app.is_answer_hidden(a.id) AS hidden,
                 EXISTS (SELECT 1 FROM app.helpful_marks h WHERE h.answer_id = a.id) AS helpful
          FROM app.answers a JOIN app.profiles p ON p.id = a.answerer_id
          WHERE a.question_id = $1 ORDER BY a.created_at, a.id`, [id])).rows;
@@ -146,8 +150,9 @@ export function registerQuestionRoutes(app: FastifyInstance, { db, events }: { d
     });
     if (!found) return fail(reply, 404, 'not_found', 'This question doesn’t exist. It may have been deleted.');
     return {
-      question: { ...summary(found.question), body: found.question.body },
-      answers: found.answers.map(a => ({ id: a.id, body: a.body, answerer: { handle: a.answerer }, createdAt: a.created_at.toISOString(), helpful: a.helpful })),
+      // Hidden posts reach only their author and moderators; it says so for them.
+      question: { ...summary(found.question), body: found.question.body, hidden: found.question.hidden },
+      answers: found.answers.map(a => ({ id: a.id, body: a.body, answerer: { handle: a.answerer }, createdAt: a.created_at.toISOString(), helpful: a.helpful, hidden: a.hidden })),
       // The answer the asker picked, how many changes they have left, and
       // whether they said it turned out right (null: not said yet).
       selection: found.selection && {
@@ -196,18 +201,23 @@ export function registerQuestionRoutes(app: FastifyInstance, { db, events }: { d
     if (titleProblem) return refuseText(reply, 'title', titleProblem);
     const detailsProblem = textProblem(details, LIMITS.details.min, LIMITS.details.max);
     if (detailsProblem) return refuseText(reply, 'details', detailsProblem);
-    let id: string;
+    let id: string | null;
     try {
-      id = await db.withUser(user.id, async q => inserted((await q.query<{ id: string }>(
-        'INSERT INTO app.questions (asker_id, field, country, title, body) VALUES ($1, $2, $3, $4, $5) RETURNING id::text AS id',
-        [user.id, body.field, body.country ?? null, title, details])).rows));
+      id = await db.withUser(user.id, async q => {
+        if (await isBlocked(q)) return null;
+        return inserted((await q.query<{ id: string }>(
+          'INSERT INTO app.questions (asker_id, field, country, title, body) VALUES ($1, $2, $3, $4, $5) RETURNING id::text AS id',
+          [user.id, body.field, body.country ?? null, title, details])).rows);
+      });
     } catch (err) {
+      if (isNewAccountLimit(err)) return fail(reply, 429, 'new_account_limit', newAccountMessage);
       if (pgCode(err) === '23503' && pgConstraint(err) === 'questions_asker_id_fkey') {
         return fail(reply, 403, 'no_profile', 'Set up your profile before asking.');
       }
       if (pgCode(err) === '23503') return fail(reply, 400, 'invalid_request', 'Choose a field and country from the lists.');
       throw err;
     }
+    if (id === null) return fail(reply, 403, 'blocked', blockedMessage);
     // Put it to people now, rather than at the routing job's next run.
     events.asked(id);
     return reply.code(201).send({ question: { id } });
@@ -229,9 +239,10 @@ export function registerQuestionRoutes(app: FastifyInstance, { db, events }: { d
     const text = cleanBody((req.body as { body: string }).body);
     const problem = textProblem(text, LIMITS.answer.min, LIMITS.answer.max);
     if (problem) return refuseText(reply, 'answer', problem);
-    let outcome: { kind: 'missing' } | { kind: 'own' } | { kind: 'ok'; id: string; askerId: string };
+    let outcome: { kind: 'missing' } | { kind: 'own' } | { kind: 'blocked' } | { kind: 'ok'; id: string; askerId: string };
     try {
       outcome = await db.withUser(user.id, async q => {
+        if (await isBlocked(q)) return { kind: 'blocked' as const };
         const question = (await q.query<{ asker_id: string }>('SELECT asker_id FROM app.questions WHERE id = $1', [id])).rows[0];
         if (!question) return { kind: 'missing' as const };
         if (question.asker_id === user.id) return { kind: 'own' as const };
@@ -241,6 +252,7 @@ export function registerQuestionRoutes(app: FastifyInstance, { db, events }: { d
         return { kind: 'ok' as const, id: answerId, askerId: question.asker_id };
       });
     } catch (err) {
+      if (isNewAccountLimit(err)) return fail(reply, 429, 'new_account_limit', newAccountMessage);
       if (pgCode(err) === '23505' && pgConstraint(err) === 'answers_question_id_answerer_id_key') {
         return fail(reply, 409, 'already_answered', 'You’ve already answered this question.');
       }
@@ -249,6 +261,7 @@ export function registerQuestionRoutes(app: FastifyInstance, { db, events }: { d
       }
       throw err;
     }
+    if (outcome.kind === 'blocked') return fail(reply, 403, 'blocked', blockedMessage);
     if (outcome.kind === 'missing') return fail(reply, 404, 'not_found', 'This question doesn’t exist. It may have been deleted.');
     if (outcome.kind === 'own') return fail(reply, 409, 'own_question', 'You can’t answer your own question.');
     events.publish(outcome.askerId, { type: 'answered', questionId: id });

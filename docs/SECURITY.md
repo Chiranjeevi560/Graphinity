@@ -37,7 +37,7 @@ These must stay true. If one stops being true, revisit everything that depends o
 | Database access | API logs in as a role that owns nothing, can't create objects, bypass RLS or become the owner. **The server refuses to start** if its login is a superuser, can bypass RLS, or owns the tables | `db.integration.test.ts`; built server refuses the owner login |
 | Row-level security | Enabled and forced on every table in `app` | Integration test fails on any table without it |
 | Identity leakage between requests | Identity set with `set_config(..., true)`, scoped to one transaction | Integration test; fails when made session-wide |
-| Request flooding | Global and per-visitor token buckets; visitor = HMAC of address | `server.test.ts`, `rate-limit.test.ts` |
+| Request flooding | Global (400, refilling 100/s) and per-visitor (300, refilling 10/s) token buckets; visitor = HMAC of address (IPv6 by /64). The visitor allowance is generous because mobile carriers share one address among many people; per-person write limits and new-account limits sit on top | `server.test.ts`, `rate-limit.test.ts` |
 | Forged `X-Forwarded-For` | Only measured hops trusted; with 0, header ignored | `server.test.ts` |
 | Large bodies | 4 KB limit before any route runs | `server.test.ts` |
 | Slow clients | 15 s connection and request timeouts | Config in `server.ts` (not load-tested) |
@@ -75,7 +75,7 @@ Each line answers: *if a hostile researcher spent a day on this, what would they
 |---|---|---|---|
 | T1 | Read or change another person's data through the API | RLS on every table keyed to the transaction's identity; API never owns tables | Foundation in place; per-table policies come with each table |
 | T2 | Use the public Supabase key to query tables directly | Tables in unexposed schema `app`; no grants to `anon`/`authenticated` | In place, tested |
-| T3 | Flood the server so it is slow or suspended | Global + per-visitor limits; durable per-account daily limits later | Partly in place (step 6 adds per-account limits) |
+| T3 | Flood the server so it is slow or suspended | Global + per-visitor limits, per-person write limits, new-account limits (3 questions, 10 answers on day one), 10 push devices and 3 live streams per person | In place |
 | T4 | Forge their address to dodge limits | Measured hop count; HMAC key | In place; hop count must be measured at deploy |
 | T5 | Inject script into pages (XSS) | React escapes text; strict CSP; plain-text posts, links never made clickable | In place |
 | T6 | Steal a sign-in token | Access token in memory, refresh token in sessionStorage; CSP with no inline or third-party scripts | In place |

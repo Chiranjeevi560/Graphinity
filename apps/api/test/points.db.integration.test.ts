@@ -24,6 +24,8 @@ async function member(): Promise<string> {
     await q.query("INSERT INTO app.profiles (id, handle, country, adult_confirmed_at) VALUES ($1, $2, 'IN', now())", [id, `points.${String(names)}`]);
     await q.query("INSERT INTO app.profile_fields (profile_id, field) VALUES ($1, 'imports-customs')", [id]);
   });
+  // An established member: these tests ask more than a new account may on day one.
+  await t.owner.query("UPDATE app.profiles SET created_at = now() - interval '2 days' WHERE id = $1", [id]);
   return id;
 }
 

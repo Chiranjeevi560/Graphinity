@@ -96,7 +96,7 @@ describe('later waves', () => {
 
 describe('the daily budget', () => {
   it('puts at most 5 questions a day to one person', async () => {
-    const asker = await member({ fields: ['shopping'] });
+    const asker = await member({ fields: ['shopping'], joinedDaysAgo: 100 });
     const only = await member({ fields: ['shopping'], joinedDaysAgo: 100 });
     for (let i = 0; i < 7; i++) await ask(asker.token, 'shopping');
     await routeDueQuestions(h.t.database);

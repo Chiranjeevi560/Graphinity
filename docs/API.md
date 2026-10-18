@@ -232,3 +232,27 @@ Pushes go out for the same events as the live stream (`routed`, `answered`), enc
 device: `{ title, body: the question's title, questionId }`. A device the push service reports gone
 (404/410) is removed.
 
+## Reporting and moderation
+
+### `POST /questions/:id/report`, `POST /answers/:id/report` (signed in, counts as a write)
+
+`{ reason, note? }` → 201 `{ report: { received: true } }`. `reason`: `spam`, `abuse`, `private_info`,
+`misleading`, `other`; `note` up to 500 characters. Reporting the same post again changes nothing (and
+says the same). 400 `own_post`, 403 `blocked`. Reports are private: only moderators see them, and
+not who sent them on the page. A post reported by 3 people with accounts over a day old, since the
+last moderator decision, is hidden from everyone but its author (who sees `hidden: true` on it) and
+moderators.
+
+### Moderators only (403 `not_a_moderator` otherwise)
+
+- `GET /review` → `{ items: [{ kind, id, questionId, text, author, reports, reasons, notes, hidden, lastReportAt }], sharedNetworks: [{ giver, recipient, points }] }`
+- `POST /review/decision` `{ kind, id, decision: "keep" | "remove" }`
+- `POST /review/block` `{ handle, reason? }`, `DELETE /review/block` `{ handle }`
+
+A blocked person can still read and delete their account, but can't ask, answer or report
+(403 `blocked`). `GET /me` also returns `moderator` and `blocked`.
+
+### Limits for new accounts
+
+In its first day an account can ask 3 questions and give 10 answers (429 `new_account_limit`).
+

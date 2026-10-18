@@ -6,10 +6,17 @@ import { readFileSync } from 'node:fs';
 import pg from 'pg';
 import { createDatabase, type Database } from '../../src/db.ts';
 
+/** Owns the tables in every test database, like Supabase's non-superuser `postgres`. */
+export const SCHEMA_OWNER = 'graphinity_schema_owner';
+
 export const schema = readFileSync(new URL('../../../../db/schema.sql', import.meta.url), 'utf8');
 
 export interface TestDatabase {
-  /** Owner connection: may do anything. Use only to set up or inspect. */
+  /**
+   * A superuser connection, for setting up and inspecting tests (it skips
+   * every policy). The tables themselves belong to a non-superuser, as on
+   * Supabase; see createTestDatabase.
+   */
   owner: pg.Client;
   /** A raw connection as the API's restricted role. */
   api: pg.Client;
@@ -44,11 +51,31 @@ export async function createTestDatabase(): Promise<TestDatabase> {
   for (const r of ['anon', 'authenticated']) {
     await admin.query(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${r}') THEN CREATE ROLE ${r} NOLOGIN; END IF; END $$`);
   }
+  // Supabase's `postgres` role owns our tables there: not a superuser, but
+  // able to bypass row-level security (the schema seeds tables under FORCE
+  // RLS with no owner policies, which only works with that), and since
+  // Postgres 16 a non-inheriting member of roles it created (app_api). The
+  // schema is applied as such a role, so owner-run functions and cascades
+  // behave as they will there. SETUP-ACCOUNTS.md has the query that checks
+  // these attributes on the real project.
+  await admin.query(`DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_api') THEN
+      CREATE ROLE app_api NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${SCHEMA_OWNER}') THEN
+      CREATE ROLE ${SCHEMA_OWNER} NOLOGIN NOSUPERUSER BYPASSRLS CREATEROLE;
+    END IF;
+    ALTER ROLE ${SCHEMA_OWNER} NOSUPERUSER BYPASSRLS CREATEROLE;
+  END $$`);
+  await admin.query(`GRANT app_api TO ${SCHEMA_OWNER} WITH INHERIT FALSE, SET FALSE`);
   await admin.query(`CREATE DATABASE ${dbName}`);
+  await admin.query(`GRANT CREATE, CONNECT ON DATABASE ${dbName} TO ${SCHEMA_OWNER}`);
   const owner = new pg.Client({ connectionString: urlFor(dbName) });
   await owner.connect();
+  await owner.query(`SET ROLE ${SCHEMA_OWNER}`);
   await owner.query(schema);
   await owner.query(schema);
+  await owner.query('RESET ROLE');
   await admin.query(`CREATE ROLE ${loginRole} LOGIN PASSWORD '${password}' IN ROLE app_api`);
   await admin.query(`GRANT CONNECT ON DATABASE ${dbName} TO ${loginRole}`);
 

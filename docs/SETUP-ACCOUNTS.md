@@ -180,3 +180,30 @@ photo). Supabase's own fix, a custom domain, is a paid add-on, so we don't use i
    address. Showing the name "Graphinity" with a logo needs Google's brand verification, which we
    do at launch with the final address.
 
+## Part G: Make yourself a moderator (after the database is updated)
+
+Moderators see reports and can keep or remove posts and block people. Only you can add one, from the
+Supabase dashboard; the website can't.
+
+1. Open **supabase.com**, your project, then **SQL Editor** in the left bar, then **New query**.
+2. First, a check that tells me how your project's main database role is set up (it decides how the
+   hiding of reported posts works). Paste this and click **Run**:
+
+   ```sql
+   SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = 'postgres';
+   ```
+
+   Send me the one row it shows (three words: the name and two true/false values). It holds no
+   secret.
+3. Then, with your own name on Graphinity in place of `yourname` (without the @), paste and **Run**:
+
+   ```sql
+   INSERT INTO app.moderators (profile_id) SELECT id FROM app.profiles WHERE handle = 'yourname';
+   ```
+
+   It should say "Success. 1 row". If it says 0 rows, the name is spelled differently; check it on
+   your profile page.
+4. Reload Graphinity: your profile now has **Review reports**.
+
+To remove a moderator later: `DELETE FROM app.moderators WHERE profile_id = (SELECT id FROM app.profiles WHERE handle = 'theirname');`
+

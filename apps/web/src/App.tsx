@@ -14,6 +14,7 @@ const EditProfile = lazy(() => import('./routes/EditProfile.tsx'));
 const PublicProfile = lazy(() => import('./routes/PublicProfile.tsx'));
 const Ask = lazy(() => import('./routes/Ask.tsx'));
 const Question = lazy(() => import('./routes/Question.tsx'));
+const ReviewPage = lazy(() => import('./routes/Review.tsx'));
 const Goodbye = lazy(() => import('./routes/Goodbye.tsx'));
 const NotFound = lazy(() => import('./routes/NotFound.tsx'));
 // Live updates only matter once signed in: loaded then, not by every reader.
@@ -54,6 +55,8 @@ function route(path: string, state: SessionState): ReactNode {
       return <Redirect to="/" />;
     case '/me':
       return state.status === 'ready' ? <Me profile={state.profile} /> : <Redirect to="/" />;
+    case '/review':
+      return state.status === 'ready' && state.profile.moderator ? <ReviewPage /> : <Redirect to="/" />;
     case '/ask':
       return state.status === 'ready' ? <Ask profile={state.profile} /> : <Redirect to="/" />;
     case '/me/edit':

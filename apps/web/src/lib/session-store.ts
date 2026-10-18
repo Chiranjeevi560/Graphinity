@@ -9,6 +9,10 @@ export interface Profile {
   fields: Array<{ slug: string; name: string }>;
   joined: string;
   handleChangeAvailableAt?: string | null;
+  /** From /me only: may review reports. */
+  moderator?: boolean;
+  /** From /me only: can read but not post. */
+  blocked?: boolean;
 }
 
 export type SessionState =
@@ -35,8 +39,10 @@ export function createSessionStore(deps: { auth: Auth; api: Api }) {
     if (!deps.auth.hasSession()) { set({ status: 'signedOut' }); return; }
     let next: SessionState;
     try {
-      const { profile } = await deps.api<{ profile: Profile | null }>('/me', { signedIn: true });
-      next = profile ? { status: 'ready', profile } : { status: 'needsProfile' };
+      const me = await deps.api<{ profile: Profile | null; moderator?: boolean; blocked?: boolean }>('/me', { signedIn: true });
+      next = me.profile
+        ? { status: 'ready', profile: { ...me.profile, moderator: me.moderator === true, blocked: me.blocked === true } }
+        : { status: 'needsProfile' };
     } catch (err) {
       next = err instanceof ApiError && err.code === 'signed_out'
         ? { status: 'signedOut' }
@@ -58,7 +64,9 @@ export function createSessionStore(deps: { auth: Auth; api: Api }) {
     reload,
     setProfile: (profile: Profile) => {
       latest++; // anything still in flight is now out of date
-      set({ status: 'ready', profile });
+      // An edit returns the profile alone; who may moderate doesn't change with it.
+      const previous = state.status === 'ready' ? state.profile : null;
+      set({ status: 'ready', profile: { moderator: previous?.moderator === true, blocked: previous?.blocked === true, ...profile } });
     },
   };
 }

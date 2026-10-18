@@ -127,3 +127,18 @@
 }
 
 .notifications-toggle { align-self: flex-start; margin-left: calc(-1 * var(--space-2)); }
+
+/* Reporting and hidden posts. */
+.post-actions { display: flex; margin-left: calc(-1 * var(--space-2)); }
+.report-button { color: var(--label-secondary); font-size: var(--text-subhead-size); }
+.report-sent { display: inline-flex; align-items: center; min-height: var(--tap); }
+.hidden-note { padding: var(--space-3); border-radius: var(--radius-control); background: var(--fill-tertiary); color: var(--label); }
+
+/* Review (moderators). */
+.review { display: flex; flex-direction: column; gap: var(--space-8); padding-top: var(--space-6); }
+.review-section { display: flex; flex-direction: column; gap: var(--space-3); }
+.review-list, .review-notes { list-style: none; margin: 0; padding: 0; }
+.review-item { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4) 0; }
+.review-item + .review-item { border-top: var(--hairline) solid var(--separator); }
+.review-text { max-height: 12rem; overflow: auto; }
+.review-actions { display: flex; flex-wrap: wrap; gap: 0 var(--space-2); margin-left: calc(-1 * var(--space-2)); }

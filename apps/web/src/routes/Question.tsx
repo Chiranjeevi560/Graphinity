@@ -2,6 +2,7 @@ import { useEffect, useState, type SubmitEvent } from 'react';
 import { Button, LinkButton } from '../components/Button.tsx';
 import { TextArea } from '../components/Form.tsx';
 import { GoogleButton } from '../components/GoogleButton.tsx';
+import { ReportButton } from '../components/ReportButton.tsx';
 import { ApiError } from '../lib/api.ts';
 import { onLive } from '../lib/live.ts';
 import { applyMeta } from '../lib/meta.ts';
@@ -10,7 +11,7 @@ import { AnswerActions, AnswerLabels } from '../components/AnswerActions.tsx';
 import { Link } from '../lib/router.ts';
 import { api, useSession } from '../session.tsx';
 
-interface Page { question: QuestionSummary & { body: string }; answers: Answer[]; selection: Selection | null }
+interface Page { question: QuestionSummary & { body: string; hidden: boolean }; answers: Array<Answer & { hidden: boolean }>; selection: Selection | null }
 
 /**
  * The address carries the title's current wording: fix it quietly if an old
@@ -75,6 +76,8 @@ export default function Question({ id }: { id: string }) {
           <span><time dateTime={question.createdAt}>{timeAgo(question.createdAt, now)}</time></span>
         </p>
         {question.body && <p className="text-body post-body">{question.body}</p>}
+        {question.hidden && <p className="text-subhead hidden-note" role="note">Hidden while moderators review reports about it. Only you can see it now.</p>}
+        {state.status === 'ready' && !asked && <div className="post-actions"><ReportButton kind="question" id={question.id} /></div>}
       </article>
 
       <section className="answers" aria-labelledby="answers-heading">
@@ -92,7 +95,9 @@ export default function Question({ id }: { id: string }) {
                   {' · '}
                   <time dateTime={a.createdAt}>{timeAgo(a.createdAt, now)}</time>
                 </p>
+                {a.hidden && <p className="text-subhead hidden-note" role="note">Hidden while moderators review reports about it.</p>}
                 {asked && <AnswerActions questionId={question.id} answer={a} selection={selection} onChanged={reload} />}
+                {state.status === 'ready' && me !== a.answerer.handle && <div className="post-actions"><ReportButton kind="answer" id={a.id} /></div>}
               </li>
             ))}
           </ol>

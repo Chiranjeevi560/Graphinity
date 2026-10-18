@@ -53,7 +53,12 @@ export default function Me({ profile }: { profile: Profile }) {
 
       <Notifications />
 
+      {profile.blocked && (
+        <p className="text-subhead hidden-note" role="note">Your account can’t post right now. You can still read, and delete your account.</p>
+      )}
+
       <LinkButton to="/me/edit" variant="secondary" className="btn-block">Edit profile</LinkButton>
+      {profile.moderator && <LinkButton to="/review" variant="secondary" className="btn-block">Review reports</LinkButton>}
 
       <section className="profile-footer">
         <button type="button" className="btn btn-plain" onClick={() => { void turnPushOff(api).catch(() => {}).then(() => auth.signOut()).then(() => { navigate('/', { replace: true }); }); }}>

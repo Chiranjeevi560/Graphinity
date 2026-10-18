@@ -356,6 +356,7 @@ test('picking an answer moves points, and the profile shows them', async ({ page
   // The asker: a fixed test person, so they can come back later.
   await signIn(page, 'Test person A');
   await setUpIfNeeded(page, `asker.${run}`);
+  await establishTestPersonA();
   await page.goto('/ask');
   const title = `Which customs form do I need for a watch, case ${run}?`;
   await page.getByLabel('Your question').fill(title);
@@ -422,6 +423,7 @@ test('a new answer reaches the asker live, without reloading', async ({ browser,
     const asker = await askerContext.newPage();
     await signIn(asker, 'Test person A');
     await setUpIfNeeded(asker, `asker.${run}`);
+    await establishTestPersonA();
     await asker.goto('/ask');
     const title = `Is there a night bus from the airport, case ${run}?`;
     await asker.getByLabel('Your question').fill(title);
@@ -450,4 +452,76 @@ test('a new answer reaches the asker live, without reloading', async ({ browser,
     await askerContext.close();
     await answererContext.close();
   }
+});
+
+/** Runs one statement on the local database as its owner (what the owner would do in the SQL editor). */
+async function asOwner(sql: string, values: unknown[]) {
+  const { readFileSync } = await import('node:fs');
+  const pg = (await import('pg')).default;
+  let adminUrl = process.env.ADMIN_URL;
+  if (!adminUrl) {
+    const env = readFileSync('.local/test.env', 'utf8');
+    adminUrl = /^TEST_DATABASE_ADMIN_URL=(.+)$/m.exec(env)?.[1];
+  }
+  if (!adminUrl) throw new Error('No admin URL: set ADMIN_URL or run npm run db:start');
+  const url = new URL(adminUrl);
+  url.pathname = '/graphinity';
+  const client = new pg.Client({ connectionString: url.toString() });
+  await client.connect();
+  try {
+    await client.query(sql, values);
+  } finally {
+    await client.end();
+  }
+}
+
+const TEST_PERSON_A = '11111111-1111-4111-8111-111111111111';
+
+/** Test person A is reused across runs: an established member, past the new-account limits. */
+async function establishTestPersonA() {
+  await asOwner("UPDATE app.profiles SET created_at = now() - interval '30 days' WHERE id = $1", [TEST_PERSON_A]);
+}
+
+test('a moderator removes a reported question', async ({ page, browserName }) => {
+  const run = `${browserName}${String(Date.now() % 1_000_000)}`;
+  // Someone new asks something that shouldn't be there.
+  await signIn(page, 'A brand-new person');
+  await setUpIfNeeded(page, `spammer.${run}`);
+  await page.goto('/ask');
+  const title = `Cheap watches here, visit my shop now, case ${run}?`;
+  await page.getByLabel('Your question').fill(title);
+  await page.getByRole('button', { name: 'Post question' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
+  const questionUrl = new URL(page.url()).pathname;
+  await signOut(page);
+
+  // Test person A (fixed id in the stand-in) is a moderator.
+  await signIn(page, 'Test person A');
+  await setUpIfNeeded(page, `moderator.${run}`);
+  await establishTestPersonA();
+  await asOwner('INSERT INTO app.moderators (profile_id) VALUES ($1) ON CONFLICT DO NOTHING', [TEST_PERSON_A]);
+  await page.goto(questionUrl);
+  await page.getByRole('article').getByRole('button', { name: 'Report…' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Report this question' });
+  await expect(dialog.getByRole('button', { name: 'Send report' })).toBeDisabled();
+  await audit(page, 'report dialog');
+  await dialog.getByLabel('Spam or advertising').check();
+  await dialog.getByLabel('Anything to add? (optional)').fill('Advertising a shop');
+  await dialog.getByRole('button', { name: 'Send report' }).click();
+  await expect(page.getByText('Reported. Thank you.')).toBeVisible();
+
+  // The review lists it; the moderator removes it.
+  await page.goto('/me');
+  await page.getByRole('link', { name: 'Review reports' }).click();
+  await expect(page.getByRole('heading', { name: 'Review', level: 1 })).toBeVisible();
+  const item = page.getByRole('listitem').filter({ hasText: title });
+  await expect(item).toContainText('Advertising a shop');
+  await audit(page, 'review');
+  await item.getByRole('button', { name: 'Remove' }).click();
+  await expect(item.getByText('Removed.')).toBeVisible();
+
+  // Gone for everyone else.
+  await signOut(page);
+  await page.goto(questionUrl);
+  await expect(page.getByRole('heading', { name: 'This question doesn’t exist. It may have been deleted.' })).toBeVisible();
 });

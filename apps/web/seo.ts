@@ -2,7 +2,7 @@
 // in them are always the ones the site is served from.
 
 /** Screens that are personal or transient: nothing there for search. */
-const PRIVATE_PATHS = ['/auth/', '/welcome', '/me', '/goodbye', '/ask'];
+const PRIVATE_PATHS = ['/auth/', '/welcome', '/me', '/goodbye', '/ask', '/review'];
 
 /** Pages to list for search engines. Questions join this list in step 3. */
 const PUBLIC_PATHS = ['/'];

@@ -596,6 +596,8 @@ AS $$
 BEGIN
   IF TG_OP = 'INSERT' THEN
     NEW.handle_changed_at := NULL;
+    -- The join date is the database's: limits for new accounts rely on it.
+    NEW.created_at := now();
   ELSIF NEW.handle IS DISTINCT FROM OLD.handle THEN
     IF OLD.handle_changed_at IS NOT NULL AND OLD.handle_changed_at + interval '7 days' > now() THEN
       RAISE EXCEPTION 'name changed too recently' USING ERRCODE = 'check_violation';
@@ -646,8 +648,7 @@ CREATE INDEX IF NOT EXISTS questions_asker ON app.questions (asker_id);
 ALTER TABLE app.questions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.questions FORCE ROW LEVEL SECURITY;
 GRANT SELECT, INSERT ON app.questions TO app_api;
-DROP POLICY IF EXISTS questions_read ON app.questions;
-CREATE POLICY questions_read ON app.questions FOR SELECT TO app_api USING (true);
+-- Read policy: in the moderation section below (hidden posts).
 DROP POLICY IF EXISTS questions_insert_own ON app.questions;
 CREATE POLICY questions_insert_own ON app.questions FOR INSERT TO app_api
   WITH CHECK (asker_id = app.current_user_id());
@@ -669,8 +670,7 @@ CREATE INDEX IF NOT EXISTS answers_answerer ON app.answers (answerer_id);
 ALTER TABLE app.answers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.answers FORCE ROW LEVEL SECURITY;
 GRANT SELECT, INSERT ON app.answers TO app_api;
-DROP POLICY IF EXISTS answers_read ON app.answers;
-CREATE POLICY answers_read ON app.answers FOR SELECT TO app_api USING (true);
+-- Read policy: in the moderation section below (hidden posts).
 -- Your own answer, never to your own question.
 DROP POLICY IF EXISTS answers_insert_own ON app.answers;
 CREATE POLICY answers_insert_own ON app.answers FOR INSERT TO app_api
@@ -1138,8 +1138,288 @@ DROP TRIGGER IF EXISTS push_count ON app.push_subscriptions;
 CREATE TRIGGER push_count BEFORE INSERT ON app.push_subscriptions
   FOR EACH ROW EXECUTE FUNCTION app.check_push_count();
 
+-- ---------------------------------------------------------------------------
+-- Moderation. People report posts; a post 3 people report is hidden until
+-- the owner reviews it (keep or remove). The owner can block a person from
+-- posting. Moderators are only ever added by the owner, in the SQL editor:
+--   INSERT INTO app.moderators (profile_id) SELECT id FROM app.profiles WHERE handle = 'yourname';
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS app.moderators (
+  profile_id  uuid PRIMARY KEY REFERENCES app.profiles (id) ON DELETE CASCADE,
+  added_at    timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE app.moderators ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.moderators FORCE ROW LEVEL SECURITY;
+GRANT SELECT ON app.moderators TO app_api;
+DROP POLICY IF EXISTS moderators_self ON app.moderators;
+CREATE POLICY moderators_self ON app.moderators FOR SELECT TO app_api
+  USING (profile_id = app.current_user_id());
+
+
+-- A block. The blocked person can see that they are blocked, not by whom
+-- or why (that's in block_details, for moderators only).
+CREATE TABLE IF NOT EXISTS app.blocks (
+  profile_id  uuid PRIMARY KEY REFERENCES app.profiles (id) ON DELETE CASCADE,
+  blocked_at  timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE app.blocks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.blocks FORCE ROW LEVEL SECURITY;
+GRANT SELECT, DELETE ON app.blocks TO app_api;
+GRANT INSERT (profile_id) ON app.blocks TO app_api;
+
+CREATE OR REPLACE FUNCTION app.is_moderator() RETURNS boolean
+  LANGUAGE sql STABLE
+  SET search_path = pg_catalog, pg_temp
+AS $$
+  SELECT EXISTS (SELECT 1 FROM app.moderators m WHERE m.profile_id = app.current_user_id())
+     AND NOT EXISTS (SELECT 1 FROM app.blocks b WHERE b.profile_id = app.current_user_id())
+$$;
+REVOKE ALL ON FUNCTION app.is_moderator() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app.is_moderator() TO app_api;
+
+DROP POLICY IF EXISTS blocks_read ON app.blocks;
+CREATE POLICY blocks_read ON app.blocks FOR SELECT TO app_api
+  USING (profile_id = (SELECT app.current_user_id()) OR (SELECT app.is_moderator()));
+DROP POLICY IF EXISTS blocks_write ON app.blocks;
+CREATE POLICY blocks_write ON app.blocks FOR INSERT TO app_api
+  WITH CHECK ((SELECT app.is_moderator()) AND profile_id <> (SELECT app.current_user_id()));
+DROP POLICY IF EXISTS blocks_lift ON app.blocks;
+CREATE POLICY blocks_lift ON app.blocks FOR DELETE TO app_api USING ((SELECT app.is_moderator()));
+
+CREATE TABLE IF NOT EXISTS app.block_details (
+  profile_id  uuid PRIMARY KEY REFERENCES app.blocks (profile_id) ON DELETE CASCADE,
+  blocked_by  uuid REFERENCES app.profiles (id) ON DELETE SET NULL,
+  reason      text NOT NULL DEFAULT '' CHECK (char_length(reason) <= 500)
+);
+ALTER TABLE app.block_details ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.block_details FORCE ROW LEVEL SECURITY;
+GRANT SELECT ON app.block_details TO app_api;
+GRANT INSERT (profile_id, blocked_by, reason) ON app.block_details TO app_api;
+DROP POLICY IF EXISTS block_details_moderators ON app.block_details;
+CREATE POLICY block_details_moderators ON app.block_details FOR SELECT TO app_api USING ((SELECT app.is_moderator()));
+DROP POLICY IF EXISTS block_details_write ON app.block_details;
+CREATE POLICY block_details_write ON app.block_details FOR INSERT TO app_api
+  WITH CHECK ((SELECT app.is_moderator()) AND blocked_by = (SELECT app.current_user_id()));
+
+-- True for the signed-in person if they are blocked (they can see their own block).
+CREATE OR REPLACE FUNCTION app.is_blocked() RETURNS boolean
+  LANGUAGE sql STABLE
+  SET search_path = pg_catalog, pg_temp
+AS $$ SELECT EXISTS (SELECT 1 FROM app.blocks b WHERE b.profile_id = app.current_user_id()) $$;
+REVOKE ALL ON FUNCTION app.is_blocked() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app.is_blocked() TO app_api;
+
+CREATE TABLE IF NOT EXISTS app.reports (
+  id           bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  -- Deleting an account deletes its reports, so one person can't delete,
+  -- rejoin and report the same post again.
+  reporter_id  uuid NOT NULL REFERENCES app.profiles (id) ON DELETE CASCADE,
+  question_id  bigint REFERENCES app.questions (id) ON DELETE CASCADE,
+  answer_id    bigint REFERENCES app.answers (id) ON DELETE CASCADE,
+  reason       text NOT NULL CHECK (reason IN ('spam', 'abuse', 'private_info', 'misleading', 'other')),
+  note         text NOT NULL DEFAULT '' CHECK (char_length(note) <= 500 AND note = btrim(note) AND note !~ '[\x01-\x09\x0B-\x1F\x7F]'),
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  -- Set by the database: whether the reporter's account was over a day
+  -- old. Only those count towards hiding (new accounts still reach review).
+  counts       boolean NOT NULL DEFAULT false,
+  CONSTRAINT reports_one_target CHECK (num_nonnulls(question_id, answer_id) = 1)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS reports_once_question ON app.reports (reporter_id, question_id) WHERE question_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS reports_once_answer ON app.reports (reporter_id, answer_id) WHERE answer_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS reports_question ON app.reports (question_id) WHERE question_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS reports_answer ON app.reports (answer_id) WHERE answer_id IS NOT NULL;
+ALTER TABLE app.reports ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.reports FORCE ROW LEVEL SECURITY;
+GRANT SELECT ON app.reports TO app_api;
+GRANT INSERT (reporter_id, question_id, answer_id, reason, note) ON app.reports TO app_api;
+
+CREATE TABLE IF NOT EXISTS app.decisions (
+  id           bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  question_id  bigint REFERENCES app.questions (id) ON DELETE CASCADE,
+  answer_id    bigint REFERENCES app.answers (id) ON DELETE CASCADE,
+  decision     text NOT NULL CHECK (decision IN ('keep', 'remove')),
+  decided_by   uuid REFERENCES app.profiles (id) ON DELETE SET NULL,
+  decided_at   timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT decisions_one_target CHECK (num_nonnulls(question_id, answer_id) = 1)
+);
+CREATE INDEX IF NOT EXISTS decisions_question ON app.decisions (question_id) WHERE question_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS decisions_answer ON app.decisions (answer_id) WHERE answer_id IS NOT NULL;
+ALTER TABLE app.decisions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.decisions FORCE ROW LEVEL SECURITY;
+GRANT SELECT ON app.decisions TO app_api;
+GRANT INSERT (question_id, answer_id, decision, decided_by) ON app.decisions TO app_api;
+DROP POLICY IF EXISTS decisions_read ON app.decisions;
+CREATE POLICY decisions_read ON app.decisions FOR SELECT TO app_api USING (app.is_moderator());
+DROP POLICY IF EXISTS decisions_write ON app.decisions;
+CREATE POLICY decisions_write ON app.decisions FOR INSERT TO app_api
+  WITH CHECK (
+    (SELECT app.is_moderator()) AND decided_by = (SELECT app.current_user_id())
+    AND NOT EXISTS (SELECT 1 FROM app.questions q WHERE q.id = decisions.question_id AND q.asker_id = decisions.decided_by)
+    AND NOT EXISTS (SELECT 1 FROM app.answers a WHERE a.id = decisions.answer_id AND a.answerer_id = decisions.decided_by)
+  );
+
+-- Whether a post is hidden: removed by a moderator, or reported by 3 people
+-- since the last "keep". Counting needs everyone's reports, which people
+-- can't read, so these two run as the schema owner (SECURITY DEFINER), take
+-- only an id and return only yes or no. Names are schema-qualified and
+-- pg_temp comes last, so nothing the caller creates can stand in.
+-- They see every report and decision because the schema owner bypasses
+-- row-level security (it must: this file seeds tables under FORCE RLS).
+DROP POLICY IF EXISTS reports_owner ON app.reports;
+DROP POLICY IF EXISTS decisions_owner ON app.decisions;
+
+CREATE OR REPLACE FUNCTION app.is_question_hidden(target bigint) RETURNS boolean
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = pg_catalog, pg_temp
+AS $$
+  -- The latest decision (by id, so two at the same instant still have an order).
+  SELECT coalesce((SELECT d.decision = 'remove' FROM app.decisions d WHERE d.question_id = target ORDER BY d.id DESC LIMIT 1), false)
+      OR (SELECT count(*) FROM app.reports r
+          WHERE r.question_id = target AND r.counts
+            AND r.created_at > coalesce((SELECT max(d.decided_at) FROM app.decisions d WHERE d.question_id = target AND d.decision = 'keep'), '-infinity')
+         ) >= 3
+$$;
+REVOKE ALL ON FUNCTION app.is_question_hidden(bigint) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app.is_question_hidden(bigint) TO app_api;
+
+CREATE OR REPLACE FUNCTION app.is_answer_hidden(target bigint) RETURNS boolean
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = pg_catalog, pg_temp
+AS $$
+  -- The latest decision (by id, so two at the same instant still have an order).
+  SELECT coalesce((SELECT d.decision = 'remove' FROM app.decisions d WHERE d.answer_id = target ORDER BY d.id DESC LIMIT 1), false)
+      OR (SELECT count(*) FROM app.reports r
+          WHERE r.answer_id = target AND r.counts
+            AND r.created_at > coalesce((SELECT max(d.decided_at) FROM app.decisions d WHERE d.answer_id = target AND d.decision = 'keep'), '-infinity')
+         ) >= 3
+$$;
+REVOKE ALL ON FUNCTION app.is_answer_hidden(bigint) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app.is_answer_hidden(bigint) TO app_api;
+
+-- Hidden posts: visible only to their author (with a note) and moderators.
+DROP POLICY IF EXISTS questions_read ON app.questions;
+CREATE POLICY questions_read ON app.questions FOR SELECT TO app_api
+  USING (asker_id = (SELECT app.current_user_id()) OR (SELECT app.is_moderator()) OR NOT app.is_question_hidden(id));
+DROP POLICY IF EXISTS answers_read ON app.answers;
+CREATE POLICY answers_read ON app.answers FOR SELECT TO app_api
+  USING (answerer_id = (SELECT app.current_user_id()) OR (SELECT app.is_moderator()) OR NOT app.is_answer_hidden(id));
+
+-- Reporting: your own report, once per post, never your own post, not while blocked.
+DROP POLICY IF EXISTS reports_read ON app.reports;
+CREATE POLICY reports_read ON app.reports FOR SELECT TO app_api
+  USING (reporter_id = app.current_user_id() OR app.is_moderator());
+DROP POLICY IF EXISTS reports_insert ON app.reports;
+CREATE POLICY reports_insert ON app.reports FOR INSERT TO app_api
+  WITH CHECK (
+    reporter_id = app.current_user_id()
+    AND NOT app.is_blocked()
+    AND NOT EXISTS (SELECT 1 FROM app.questions q WHERE q.id = reports.question_id AND q.asker_id = reports.reporter_id)
+    AND NOT EXISTS (SELECT 1 FROM app.answers a WHERE a.id = reports.answer_id AND a.answerer_id = reports.reporter_id)
+  );
+
+CREATE OR REPLACE FUNCTION app.stamp_moderation() RETURNS trigger
+  LANGUAGE plpgsql
+  SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+  IF TG_TABLE_NAME = 'reports' THEN
+    NEW.created_at := clock_timestamp();
+    NEW.counts := EXISTS (SELECT 1 FROM app.profiles p WHERE p.id = NEW.reporter_id AND p.created_at < now() - interval '1 day');
+  ELSE
+    NEW.decided_at := clock_timestamp();
+  END IF;
+  RETURN NEW;
+END
+$$;
+REVOKE ALL ON FUNCTION app.stamp_moderation() FROM PUBLIC;
+DROP TRIGGER IF EXISTS reports_stamp ON app.reports;
+CREATE TRIGGER reports_stamp BEFORE INSERT ON app.reports FOR EACH ROW EXECUTE FUNCTION app.stamp_moderation();
+DROP TRIGGER IF EXISTS decisions_stamp ON app.decisions;
+CREATE TRIGGER decisions_stamp BEFORE INSERT ON app.decisions FOR EACH ROW EXECUTE FUNCTION app.stamp_moderation();
+
+-- Blocked people can't post; new accounts post a little at first: 3
+-- questions and 10 answers in their first day.
+DROP POLICY IF EXISTS questions_insert_own ON app.questions;
+CREATE POLICY questions_insert_own ON app.questions FOR INSERT TO app_api
+  WITH CHECK (asker_id = app.current_user_id() AND NOT app.is_blocked());
+DROP POLICY IF EXISTS answers_insert_own ON app.answers;
+CREATE POLICY answers_insert_own ON app.answers FOR INSERT TO app_api
+  WITH CHECK (
+    answerer_id = app.current_user_id()
+    AND NOT app.is_blocked()
+    -- Only to a question you can see: not a hidden or removed one.
+    AND EXISTS (SELECT 1 FROM app.questions q WHERE q.id = answers.question_id)
+    AND NOT EXISTS (
+      SELECT 1 FROM app.questions q
+      WHERE q.id = answers.question_id AND q.asker_id = answers.answerer_id
+    )
+  );
+
+CREATE OR REPLACE FUNCTION app.limit_new_accounts() RETURNS trigger
+  LANGUAGE plpgsql
+  SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  author uuid;
+  allowed int;
+  posted int;
+BEGIN
+  -- Separate branches: each table has only its own author column.
+  IF TG_TABLE_NAME = 'questions' THEN
+    author := NEW.asker_id;
+    allowed := 3;
+  ELSE
+    author := NEW.answerer_id;
+    allowed := 10;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM app.profiles p WHERE p.id = author AND p.created_at > clock_timestamp() - interval '1 day') THEN
+    RETURN NEW;
+  END IF;
+  -- One at a time per author, or parallel posts would all count the same total.
+  PERFORM pg_advisory_xact_lock(hashtext('graphinity.new-account'), hashtext(author::text));
+  IF TG_TABLE_NAME = 'questions' THEN
+    SELECT count(*) INTO posted FROM app.questions WHERE asker_id = author;
+  ELSE
+    SELECT count(*) INTO posted FROM app.answers WHERE answerer_id = author;
+  END IF;
+  IF posted >= allowed THEN
+    RAISE EXCEPTION 'new account limit' USING ERRCODE = 'check_violation', HINT = 'new_account_limit';
+  END IF;
+  RETURN NEW;
+END
+$$;
+REVOKE ALL ON FUNCTION app.limit_new_accounts() FROM PUBLIC;
+DROP TRIGGER IF EXISTS questions_new_account ON app.questions;
+CREATE TRIGGER questions_new_account BEFORE INSERT ON app.questions FOR EACH ROW EXECUTE FUNCTION app.limit_new_accounts();
+DROP TRIGGER IF EXISTS answers_new_account ON app.answers;
+CREATE TRIGGER answers_new_account BEFORE INSERT ON app.answers FOR EACH ROW EXECUTE FUNCTION app.limit_new_accounts();
+
+-- Shared networks: which keyed network hashes a person wrote from, by day,
+-- for 30 days. Only moderators read it (pairs exchanging points from the
+-- same network are shown for review, never blocked automatically).
+CREATE TABLE IF NOT EXISTS app.network_marks (
+  profile_id    uuid NOT NULL REFERENCES app.profiles (id) ON DELETE CASCADE,
+  network_hash  text NOT NULL CHECK (network_hash ~ '^[A-Za-z0-9_-]{16,64}$'),
+  day           date NOT NULL DEFAULT current_date,
+  PRIMARY KEY (profile_id, network_hash, day)
+);
+CREATE INDEX IF NOT EXISTS network_marks_hash ON app.network_marks (network_hash, day);
+ALTER TABLE app.network_marks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.network_marks FORCE ROW LEVEL SECURITY;
+GRANT SELECT, DELETE ON app.network_marks TO app_api;
+GRANT INSERT (profile_id, network_hash) ON app.network_marks TO app_api;
+DROP POLICY IF EXISTS network_insert_own ON app.network_marks;
+CREATE POLICY network_insert_own ON app.network_marks FOR INSERT TO app_api
+  WITH CHECK (profile_id = app.current_user_id());
+DROP POLICY IF EXISTS network_read ON app.network_marks;
+CREATE POLICY network_read ON app.network_marks FOR SELECT TO app_api
+  USING (app.is_moderator() OR app.is_system() OR profile_id = app.current_user_id());
+DROP POLICY IF EXISTS network_expire ON app.network_marks;
+CREATE POLICY network_expire ON app.network_marks FOR DELETE TO app_api
+  USING (app.is_system() AND day < current_date - 30);
+
 -- Bump on every change to this file.
-INSERT INTO app.schema_meta (id, version) VALUES (true, 8)
+INSERT INTO app.schema_meta (id, version) VALUES (true, 9)
   ON CONFLICT (id) DO UPDATE SET version = EXCLUDED.version, applied_at = now();
 
 COMMIT;

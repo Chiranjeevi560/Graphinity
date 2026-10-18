@@ -152,12 +152,13 @@ describe('rate limits', () => {
   });
 
   it('a visitor already over their own limit cannot use up everyone else\'s allowance', async () => {
-    // Real production limits: global 400 burst, visitor 60 burst. Clock frozen, so nothing refills.
+    // Real production limits (global burst 400, larger than one visitor's). Clock frozen, so nothing refills.
     const app = await server({ hops: 1, limits: defaultLimits });
     const from = (ip: string) => app.inject({ url: '/health', headers: { 'x-forwarded-for': ip } });
     let ok = 0;
     for (let i = 0; i < 1000; i++) if ((await from('198.51.100.66')).statusCode === 200) ok++;
-    expect(ok).toBe(60);
+    expect(ok).toBe(defaultLimits.visitor.capacity);
+    expect(defaultLimits.visitor.capacity).toBeLessThan(defaultLimits.global.capacity);
     // Three other people, each making their first request.
     for (const ip of ['203.0.113.1', '203.0.113.2', '203.0.113.3']) expect((await from(ip)).statusCode).toBe(200);
   });

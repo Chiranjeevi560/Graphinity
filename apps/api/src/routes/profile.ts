@@ -5,6 +5,7 @@ import { finishDeletion, lockOut, type DeletionDeps } from '../deletions.ts';
 import { handleProblem, handleProblemMessages, normalizeHandle } from '../handles.ts';
 import type { Clock } from '../rate-limit.ts';
 import { fail, pgCode, pgConstraint, signedIn } from './common.ts';
+import { isBlocked, isModerator } from './moderation.ts';
 import { standing } from './points.ts';
 
 export interface ProfileDeps {
@@ -119,10 +120,14 @@ export function registerProfileRoutes(app: FastifyInstance, deps: ProfileDeps) {
     const user = signedIn(req);
     const found = await db.withUser(user.id, async q => {
       const profile = await loadProfile(q, 'id', user.id);
-      return profile ? { profile, standing: await standing(q, profile.id) } : null;
+      return profile
+        ? { profile, standing: await standing(q, profile.id), moderator: await isModerator(q), blocked: await isBlocked(q) }
+        : null;
     });
     // No profile yet means the person signed in but hasn't finished setting up.
-    return found ? { profile: ownProfile(found.profile), standing: found.standing } : { profile: null };
+    return found
+      ? { profile: ownProfile(found.profile), standing: found.standing, moderator: found.moderator, blocked: found.blocked }
+      : { profile: null };
   });
 
   app.post('/me/profile', {

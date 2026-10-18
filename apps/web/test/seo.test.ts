@@ -7,7 +7,7 @@ const ORIGIN = 'https://graphinity.pages.dev';
 describe('robots.txt and sitemap', () => {
   it('keeps personal screens out of crawling and points at the sitemap', () => {
     const robots = robotsTxt(ORIGIN);
-    for (const p of ['/auth/', '/welcome', '/me', '/goodbye']) expect(robots).toContain(`Disallow: ${p}\n`);
+    for (const p of ['/auth/', '/welcome', '/me', '/goodbye', '/ask', '/review']) expect(robots).toContain(`Disallow: ${p}\n`);
     expect(robots).not.toMatch(/^Disallow: \/$/m);
     expect(robots).toContain(`Sitemap: ${ORIGIN}/sitemap.xml`);
   });

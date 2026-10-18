@@ -7,7 +7,9 @@ import type { Database } from './db.ts';
 import { TokenBuckets, visitorAddress, visitorKey, type BucketOptions, type Clock } from './rate-limit.ts';
 import { registerProfileRoutes } from './routes/profile.ts';
 import { createEvents, type Events } from './events.ts';
+import { createNetworkMarker } from './networks.ts';
 import { registerLiveRoutes } from './routes/live.ts';
+import { registerModerationRoutes } from './routes/moderation.ts';
 import { registerPointRoutes } from './routes/points.ts';
 import { registerPushRoutes } from './routes/push.ts';
 import { registerQuestionRoutes } from './routes/questions.ts';
@@ -39,7 +41,10 @@ export interface Limits {
 
 export const defaultLimits: Limits = {
   global: { capacity: 400, refillPerSecond: 100, maxKeys: 1 },
-  visitor: { capacity: 60, refillPerSecond: 2, maxKeys: 50_000 },
+  // Generous on purpose: mobile carriers put many people behind one address
+  // (common in India), and one page view makes 4-6 calls. The global bucket
+  // above still protects the single instance.
+  visitor: { capacity: 300, refillPerSecond: 10, maxKeys: 50_000 },
   anonymousBodyBytes: 4 * 1024,
   userWrites: { capacity: 20, refillPerSecond: 1 / 30, maxKeys: 50_000 },
 };
@@ -161,6 +166,7 @@ export async function buildServer(deps: Deps) {
   // nobody can make the server parse a body without passing both.
   app.decorateRequest('user', null);
   const userWrites = new TokenBuckets(limits.userWrites, clock);
+  const markNetwork = createNetworkMarker({ db, key: config.ipHashKey, today: () => new Date(clock.now()).toISOString().slice(0, 10) });
   app.addHook('onRequest', async (req, reply) => {
     const { auth: mode, write, allowRevoked } = req.routeOptions.config;
     if (!mode) return;
@@ -190,6 +196,7 @@ export async function buildServer(deps: Deps) {
         reply.header('retry-after', String(allowed.retryAfterSeconds));
         return reply.code(429).send({ error: 'rate_limited', message: messages.tooMany });
       }
+      markNetwork(req.user.id, req.ip);
     }
   });
 
@@ -240,6 +247,7 @@ export async function buildServer(deps: Deps) {
   const events = deps.events ?? createEvents();
   registerQuestionRoutes(app, { db, events });
   registerLiveRoutes(app, { events, clock });
+  registerModerationRoutes(app, { db });
   registerPushRoutes(app, { db, vapidPublicKey: deps.vapidPublicKey ?? null });
   registerPointRoutes(app, { db });
 

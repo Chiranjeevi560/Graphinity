@@ -4,6 +4,7 @@ import { loadConfig, ConfigError } from './config.ts';
 import { createDatabase } from './db.ts';
 import { completePendingDeletions } from './deletions.ts';
 import { createEvents } from './events.ts';
+import { expireNetworkMarks } from './networks.ts';
 import { createPushSender } from './push-sender.ts';
 import { routeDueQuestions } from './routing.ts';
 import { systemClock } from './rate-limit.ts';
@@ -58,6 +59,8 @@ const runDeletions = () => {
   completePendingDeletions({ db, authAdmin, subjectKey: config.ipHashKey, log: app.log })
     .then(r => { if (r.completed || r.failed) app.log.info(r, 'pending deletions'); })
     .catch((err: unknown) => { app.log.warn({ kind: err instanceof Error ? err.name : 'unknown' }, 'pending deletions run failed'); });
+  // Network marks are kept 30 days.
+  expireNetworkMarks(db).catch((err: unknown) => { app.log.warn({ kind: err instanceof Error ? err.name : 'unknown' }, 'network mark expiry failed'); });
 };
 runDeletions();
 const deletionTimer = setInterval(runDeletions, 5 * 60_000);

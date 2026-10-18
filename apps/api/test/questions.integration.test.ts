@@ -92,6 +92,8 @@ describe('asking', () => {
 describe('reading', () => {
   it('lists the newest first, a page at a time', async () => {
     const m = await member();
+    // An established member: a new account may ask only 3 on day one.
+    await h.t.owner.query("UPDATE app.profiles SET created_at = now() - interval '2 days' WHERE id = $1", [m.id]);
     const ids: string[] = [];
     for (let i = 0; i < 22; i++) ids.push(await ask(m.token, { ...question, title: `Paging question number ${String(i)} for the list` }));
     const first = (await h.call('GET', '/questions')).json<{ questions: Array<{ id: string }>; next: string | null }>();

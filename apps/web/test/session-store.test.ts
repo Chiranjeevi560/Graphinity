@@ -6,13 +6,15 @@ import { createSessionStore, type Profile } from '../src/lib/session-store.ts';
 const profile: Profile = { handle: 'chiru', country: { code: 'IN', name: 'India' }, fields: [], joined: '2026-10' };
 
 /** A /me endpoint whose answers the test releases one at a time. */
+interface MeAnswer { profile: Profile | null; moderator?: boolean; blocked?: boolean }
+
 function controllableMe() {
-  const pending: Array<(value: { profile: Profile | null }) => void> = [];
+  const pending: Array<(value: MeAnswer) => void> = [];
   const api = ((path: string) => {
     if (path !== '/me') throw new Error(`unexpected ${path}`);
     return new Promise(resolve => { pending.push(resolve); });
   }) as unknown as Api;
-  return { api, answer: (i: number, value: { profile: Profile | null }) => { pending[i]?.(value); }, count: () => pending.length };
+  return { api, answer: (i: number, value: MeAnswer) => { pending[i]?.(value); }, count: () => pending.length };
 }
 
 function fakeAuth(initial: boolean) {
@@ -56,9 +58,20 @@ describe('createSessionStore', () => {
     await done;
     expect(store.getState()).toEqual({ status: 'needsProfile' });
     store.setProfile(profile);
-    expect(store.getState()).toEqual({ status: 'ready', profile });
+    expect(store.getState()).toEqual({ status: 'ready', profile: { ...profile, moderator: false, blocked: false } });
     const empty = createSessionStore({ auth: fakeAuth(false).auth, api: me.api });
     await empty.reload();
     expect(empty.getState()).toEqual({ status: 'signedOut' });
+  });
+
+  it('keeps whether you moderate when you edit your profile', async () => {
+    const me = controllableMe();
+    const store = createSessionStore({ auth: fakeAuth(true).auth, api: me.api });
+    const done = store.reload();
+    me.answer(0, { profile, moderator: true, blocked: false });
+    await done;
+    expect(store.getState()).toEqual({ status: 'ready', profile: { ...profile, moderator: true, blocked: false } });
+    store.setProfile({ ...profile, handle: 'renamed' });
+    expect(store.getState()).toEqual({ status: 'ready', profile: { ...profile, handle: 'renamed', moderator: true, blocked: false } });
   });
 });
