@@ -4,6 +4,7 @@
 // security headers, the real API and the local sign-in stand-in.
 import { createECDH } from 'node:crypto';
 import { defineConfig, devices } from '@playwright/test';
+import { privateKeyText } from './apps/api/src/push.ts';
 
 // A throwaway secret shared by the API and the stand-in during tests, so the
 // real Supabase secret in .local/api.env is never sent anywhere but Supabase.
@@ -46,7 +47,7 @@ export default defineConfig({
       // Variables set here win over the env file.
       env: {
         WEB_ORIGIN: 'http://localhost:4173', SUPABASE_URL: 'http://localhost:54321', SUPABASE_SECRET_KEY: TEST_SECRET,
-        VAPID_PUBLIC_KEY: vapid.getPublicKey().toString('base64url'), VAPID_PRIVATE_KEY: vapid.getPrivateKey().toString('base64url'),
+        VAPID_PUBLIC_KEY: vapid.getPublicKey().toString('base64url'), VAPID_PRIVATE_KEY: privateKeyText(vapid),
       },
     },
     {

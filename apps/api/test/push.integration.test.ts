@@ -4,10 +4,11 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { createPushSender } from '../src/push-sender.ts';
 import { startApp, type TestApp } from './helpers/app.ts';
 import { must, type Body } from './helpers/must.ts';
+import { privateKeyText } from '../src/push.ts';
 
 const server = createECDH('prime256v1');
 server.generateKeys();
-const vapid = { publicKey: server.getPublicKey().toString('base64url'), privateKey: server.getPrivateKey().toString('base64url'), subject: 'https://graphinity.pages.dev' };
+const vapid = { publicKey: server.getPublicKey().toString('base64url'), privateKey: privateKeyText(server), subject: 'https://graphinity.pages.dev' };
 
 let h: TestApp;
 let names = 0;

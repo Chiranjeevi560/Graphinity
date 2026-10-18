@@ -1,7 +1,7 @@
 // Web push without a library: messages are encrypted for the browser
 // (RFC 8291, aes128gcm) and signed by us (VAPID, RFC 8292, with jose,
 // which we already use). Checked against RFC 8291's worked example.
-import { createCipheriv, createECDH, hkdfSync, randomBytes } from 'node:crypto';
+import { createCipheriv, createECDH, hkdfSync, randomBytes, type ECDH } from 'node:crypto';
 import { importJWK, SignJWT } from 'jose';
 
 const b64url = (b: Buffer) => b.toString('base64url');
@@ -31,6 +31,16 @@ export function encryptPush(plaintext: Buffer, receiverPublicKey: Buffer, authSe
   header.writeUInt32BE(4096, 16);
   header.writeUInt8(senderPublicKey.length, 20);
   return Buffer.concat([header, senderPublicKey, body]);
+}
+
+/**
+ * A P-256 private key as 43 base64url characters. Node returns it without
+ * leading zero bytes (31 bytes, 42 characters, about one key in 256),
+ * which push services and our config refuse: pad it to its full 32 bytes.
+ */
+export function privateKeyText(ecdh: ECDH): string {
+  const key = ecdh.getPrivateKey();
+  return Buffer.concat([Buffer.alloc(32 - key.length), key]).toString('base64url');
 }
 
 export interface VapidKeys {

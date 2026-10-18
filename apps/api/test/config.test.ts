@@ -1,6 +1,7 @@
 import { createECDH } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { ConfigError, loadConfig } from '../src/config.ts';
+import { privateKeyText } from '../src/push.ts';
 
 const key = 'ab'.repeat(32);
 const prod = {
@@ -64,7 +65,7 @@ describe('web push keys', () => {
   const pair = () => {
     const ecdh = createECDH('prime256v1');
     ecdh.generateKeys();
-    return { VAPID_PUBLIC_KEY: ecdh.getPublicKey().toString('base64url'), VAPID_PRIVATE_KEY: ecdh.getPrivateKey().toString('base64url') };
+    return { VAPID_PUBLIC_KEY: ecdh.getPublicKey().toString('base64url'), VAPID_PRIVATE_KEY: privateKeyText(ecdh) };
   };
 
   it('are optional: without them, push is off', () => {
@@ -88,4 +89,14 @@ describe('web push keys', () => {
       expect(String(err)).not.toContain(b.VAPID_PRIVATE_KEY);
     }
   });
+
+  it('accept a key whose first byte is zero (Node drops it; we pad it back)', () => {
+    const ecdh = createECDH('prime256v1');
+    ecdh.setPrivateKey(Buffer.concat([Buffer.alloc(1), Buffer.alloc(31, 7)]));
+    expect(ecdh.getPrivateKey()).toHaveLength(31);
+    const keys = { VAPID_PUBLIC_KEY: ecdh.getPublicKey().toString('base64url'), VAPID_PRIVATE_KEY: privateKeyText(ecdh) };
+    expect(keys.VAPID_PRIVATE_KEY).toHaveLength(43);
+    expect(loadConfig({ ...prod, ...keys }).vapid?.privateKey).toBe(keys.VAPID_PRIVATE_KEY);
+  });
 });
+

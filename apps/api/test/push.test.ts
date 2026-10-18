@@ -1,7 +1,7 @@
 import { createECDH } from 'node:crypto';
 import { decodeJwt, decodeProtectedHeader } from 'jose';
 import { describe, expect, it } from 'vitest';
-import { encryptPush, isPushService, vapidHeader } from '../src/push.ts';
+import { encryptPush, isPushService, privateKeyText, vapidHeader } from '../src/push.ts';
 
 const b = (s: string) => Buffer.from(s.replace(/\s+/g, ''), 'base64url');
 
@@ -36,7 +36,7 @@ describe('VAPID', () => {
     keys.generateKeys();
     const now = 1_800_000_000;
     const header = await vapidHeader('https://fcm.googleapis.com/fcm/send/abc', {
-      publicKey: keys.getPublicKey().toString('base64url'), privateKey: keys.getPrivateKey().toString('base64url'), subject: 'https://graphinity.pages.dev',
+      publicKey: keys.getPublicKey().toString('base64url'), privateKey: privateKeyText(keys), subject: 'https://graphinity.pages.dev',
     }, now);
     const [, token, publicKey] = /^vapid t=([^,]+), k=(.+)$/.exec(header) ?? [];
     expect(publicKey).toBe(keys.getPublicKey().toString('base64url'));
