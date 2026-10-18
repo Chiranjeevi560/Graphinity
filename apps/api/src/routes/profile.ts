@@ -1,4 +1,5 @@
-import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { SignedInUser } from '../auth.ts';
 import type { AuthAdmin } from '../auth-admin.ts';
 import type { Database, Queryable } from '../db.ts';
 import { finishDeletion, lockOut, type DeletionDeps } from '../deletions.ts';
@@ -38,6 +39,19 @@ const PROFILE_SELECT = `
 async function loadProfile(q: Queryable, where: 'id' | 'handle', value: string): Promise<ProfileRow | null> {
   const { rows } = await q.query<ProfileRow>(`${PROFILE_SELECT} WHERE p.${where} = $1 GROUP BY p.id, c.name`, [value]);
   return rows[0] ?? null;
+}
+
+/** Reading back a row written earlier in the same transaction: it must exist. */
+async function loadOwn(q: Queryable, userId: string): Promise<ProfileRow> {
+  const profile = await loadProfile(q, 'id', userId);
+  if (!profile) throw new Error('profile missing inside the transaction that wrote it');
+  return profile;
+}
+
+/** Routes marked auth: 'required' run only after the auth hook set the user. */
+function signedIn(req: FastifyRequest): SignedInUser {
+  if (!req.user) throw new Error('auth-required route ran without a user');
+  return req.user;
 }
 
 /** What anyone may see. No id, no timestamps beyond the month joined. */
@@ -112,7 +126,7 @@ export function registerProfileRoutes(app: FastifyInstance, deps: ProfileDeps) {
   });
 
   app.get('/me', { config: { auth: 'required' } }, async req => {
-    const user = req.user!;
+    const user = signedIn(req);
     const profile = await db.withUser(user.id, q => loadProfile(q, 'id', user.id));
     // No profile yet means the person signed in but hasn't finished setting up.
     return { profile: profile ? ownProfile(profile) : null };
@@ -128,25 +142,26 @@ export function registerProfileRoutes(app: FastifyInstance, deps: ProfileDeps) {
       },
     },
   }, async (req, reply) => {
-    const user = req.user!;
+    const user = signedIn(req);
     const body = req.body as { handle: string; country: string; fields: string[] };
     const handle = normalizeHandle(body.handle);
     const problem = handleProblem(handle);
     if (problem) return fail(reply, 400, 'invalid_handle', handleProblemMessages[problem], { reason: problem });
+    let profile: ProfileRow;
     try {
-      const profile = await db.withUser(user.id, async q => {
+      profile = await db.withUser(user.id, async q => {
         await q.query(
           'INSERT INTO app.profiles (id, handle, country, adult_confirmed_at) VALUES ($1, $2, $3, $4)',
           [user.id, handle, body.country, new Date(clock.now())],
         );
         await replaceFields(q, user.id, body.fields);
-        return loadProfile(q, 'id', user.id);
+        return loadOwn(q, user.id);
       });
-      return reply.code(201).send({ profile: ownProfile(profile!) });
     } catch (err) {
       if (explainDbError(err, reply)) return reply;
       throw err;
     }
+    return reply.code(201).send({ profile: ownProfile(profile) });
   });
 
   app.patch('/me/profile', {
@@ -158,15 +173,16 @@ export function registerProfileRoutes(app: FastifyInstance, deps: ProfileDeps) {
       },
     },
   }, async (req, reply) => {
-    const user = req.user!;
+    const user = signedIn(req);
     const body = req.body as { handle?: string; country?: string; fields?: string[] };
     const handle = body.handle === undefined ? undefined : normalizeHandle(body.handle);
     if (handle !== undefined) {
       const problem = handleProblem(handle);
       if (problem) return fail(reply, 400, 'invalid_handle', handleProblemMessages[problem], { reason: problem });
     }
+    let outcome: { kind: 'missing' } | { kind: 'too_soon'; availableAt: string } | { kind: 'ok'; profile: ProfileRow };
     try {
-      const outcome = await db.withUser(user.id, async q => {
+      outcome = await db.withUser(user.id, async q => {
         // Lock the row so two edits at once can't both pass the weekly check.
         // The database's clock decides (it also enforces the rule itself).
         const { rows } = await q.query<{ handle: string; available_at: Date | null; too_soon: boolean }>(
@@ -187,17 +203,17 @@ export function registerProfileRoutes(app: FastifyInstance, deps: ProfileDeps) {
         }
         if (body.fields !== undefined) await replaceFields(q, user.id, body.fields);
         await q.query('UPDATE app.profiles SET updated_at = $2 WHERE id = $1', [user.id, new Date(now)]);
-        return { kind: 'ok' as const, profile: (await loadProfile(q, 'id', user.id))! };
+        return { kind: 'ok' as const, profile: await loadOwn(q, user.id) };
       });
-      if (outcome.kind === 'missing') return fail(reply, 404, 'no_profile', 'Set up your profile first.');
-      if (outcome.kind === 'too_soon') {
-        return fail(reply, 409, 'handle_change_too_soon', 'You changed your name recently. You can change it again in a few days.', { availableAt: outcome.availableAt });
-      }
-      return { profile: ownProfile(outcome.profile) };
     } catch (err) {
       if (explainDbError(err, reply)) return reply;
       throw err;
     }
+    if (outcome.kind === 'missing') return fail(reply, 404, 'no_profile', 'Set up your profile first.');
+    if (outcome.kind === 'too_soon') {
+      return fail(reply, 409, 'handle_change_too_soon', 'You changed your name recently. You can change it again in a few days.', { availableAt: outcome.availableAt });
+    }
+    return { profile: ownProfile(outcome.profile) };
   });
 
   // Live feedback while someone types a name. Signed-in only, so it can't be
@@ -206,7 +222,7 @@ export function registerProfileRoutes(app: FastifyInstance, deps: ProfileDeps) {
     config: { auth: 'required' },
     schema: { params: { type: 'object', properties: { handle: handleSchema }, required: ['handle'] } },
   }, async req => {
-    const user = req.user!;
+    const user = signedIn(req);
     const handle = normalizeHandle((req.params as { handle: string }).handle);
     const problem = handleProblem(handle);
     if (problem) return { handle, available: false, reason: problem, message: handleProblemMessages[problem] };
@@ -234,7 +250,7 @@ export function registerProfileRoutes(app: FastifyInstance, deps: ProfileDeps) {
     config: { auth: 'required', write: true, allowRevoked: true },
     schema: { body: { type: 'object', additionalProperties: false, required: ['confirm'], properties: { confirm: { const: true } } } },
   }, async (req, reply) => {
-    const user = req.user!;
+    const user = signedIn(req);
     await db.withUser(user.id, async q => {
       await q.query('DELETE FROM app.revoked_subjects WHERE until < now()');
       await q.query('DELETE FROM app.profiles WHERE id = $1', [user.id]);
