@@ -4,7 +4,9 @@
 
 export type PersonEvent =
   | { type: 'routed'; questionId: string }
-  | { type: 'answered'; questionId: string };
+  | { type: 'answered'; questionId: string }
+  /** To the asker: a wave of their question went out (the screen shows it travel). */
+  | { type: 'sent'; questionId: string };
 
 export interface Events {
   /** A new question: the routing job should run now instead of waiting. */

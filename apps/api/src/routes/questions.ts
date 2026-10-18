@@ -154,7 +154,13 @@ export function registerQuestionRoutes(app: FastifyInstance, { db, events }: { d
         `SELECT s.answer_id::text AS answer_id, s.changes, v.correct
          FROM app.selections s LEFT JOIN app.verdicts v ON v.answer_id = s.answer_id
          WHERE s.question_id = $1`, [id])).rows[0] ?? null;
-      return { question, answers, selection };
+      // How far it went (the asker only, numbers only), and why it reached
+      // this viewer (that person only): the database gives each to no one else.
+      const routing = (await q.query<{ waves: number; asked: number | null; in_country: number | null }>(
+        'SELECT waves, asked, in_country FROM app.routing_summary($1)', [id])).rows[0];
+      const why = viewer ? (await q.query<{ same_country: boolean | null; field_points: number | null; trust_pct: number | null; answered_pct: number | null; newcomer: boolean | null }>(
+        'SELECT same_country, field_points, trust_pct, answered_pct, newcomer FROM app.routes WHERE question_id = $1 AND profile_id = $2', [id, viewer])).rows[0] : undefined;
+      return { question, answers, selection, routing, why };
     });
     if (!found) return fail(reply, 404, 'not_found', 'This question doesn’t exist. It may have been deleted.');
     return {
@@ -168,6 +174,22 @@ export function registerQuestionRoutes(app: FastifyInstance, { db, events }: { d
         changesLeft: MAX_CHANGES - found.selection.changes,
         correct: found.selection.correct,
       },
+      // Only for the asker, once it went out: how many waves, how many people,
+      // how many in the question's country. Under 5 is null ("a few"). Never who.
+      ...(found.routing && {
+        routing: { waves: found.routing.waves, asked: found.routing.asked, inCountry: found.routing.in_country },
+      }),
+      // Only for someone it was put to. Null parts: nothing to go on then,
+      // or a route from before reasons were kept.
+      ...(found.why && {
+        whyYou: {
+          sameCountry: found.why.same_country,
+          fieldPoints: found.why.field_points,
+          trustPct: found.why.trust_pct,
+          answeredPct: found.why.answered_pct,
+          newcomer: found.why.newcomer,
+        },
+      }),
     };
   });
 

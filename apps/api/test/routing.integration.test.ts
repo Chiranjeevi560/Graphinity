@@ -1,7 +1,7 @@
 // Who a question is put to, in which wave, and who can see it.
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { PersonEvent } from '../src/events.ts';
-import { routeDueQuestions } from '../src/routing.ts';
+import { routeDueQuestions, routeWave, WEIGHTS } from '../src/routing.ts';
 import { startApp, type TestApp } from './helpers/app.ts';
 import { must } from './helpers/must.ts';
 
@@ -170,5 +170,118 @@ describe('events', () => {
     stop();
     expect(asked).toContain(q);
     expect(heard).toEqual([{ type: 'answered', questionId: q }]);
+  });
+});
+
+describe('the score learns from what people did', () => {
+  // Without chance, so the order is the score's alone. Everyone joined long
+  // ago, so the newcomer places don't apply.
+  const noChance = { ...WEIGHTS, chance: 0 };
+  const firstPick = async (questionId: string) =>
+    (await h.t.database.asSystem(q => routeWave(q, questionId, 1, 1, noChance)))[0];
+
+  /** Points as picks leave them: from a real asker, for a real question. */
+  async function points(person: { id: string }, field: string, amount: number) {
+    for (let i = 0; i < amount / 5; i++) {
+      const giver = await member({ fields: ['travel'], joinedDaysAgo: 30 });
+      const qid = await ask(giver.token, field);
+      await h.t.owner.query('DELETE FROM app.routes WHERE question_id = $1', [qid]);
+      await h.t.owner.query("INSERT INTO app.points_ledger (recipient_id, giver_id, field, amount, reason, question_id) VALUES ($1, $2, $3, 5, 'selected', $4)",
+        [person.id, giver.id, field, qid]);
+    }
+  }
+
+  it('prefers points earned in this field, and ignores points from other fields', async () => {
+    const field = 'watches-luxury';
+    const asker = await member({ fields: ['travel'], joinedDaysAgo: 30 });
+    const carExpert = await member({ fields: [field], joinedDaysAgo: 30 });
+    const elsewhereExpert = await member({ fields: [field, 'travel'], joinedDaysAgo: 30 });
+    await points(carExpert, field, 20);
+    await points(elsewhereExpert, 'travel', 50);
+    expect(await firstPick(await ask(asker.token, field))).toBe(carExpert.id);
+  });
+
+  it('ranks people who ignore what is put to them below people with no record', async () => {
+    const field = 'phones-gadgets';
+    const asker = await member({ fields: ['travel'], joinedDaysAgo: 30 });
+    const ignorer = await member({ fields: [field], joinedDaysAgo: 30 });
+    const fresh = await member({ fields: [field], joinedDaysAgo: 30 });
+    // The ignorer has a small edge (one answer an asker said turned out right)...
+    const earlier = await ask(asker.token, field);
+    await h.t.owner.query('DELETE FROM app.routes WHERE question_id = $1', [earlier]);
+    const { rows } = await h.t.owner.query<{ id: string }>('INSERT INTO app.answers (question_id, answerer_id, body) VALUES ($1, $2, $3) RETURNING id',
+      [earlier, ignorer.id, 'I did this last year and it went fine for me.']);
+    await h.t.owner.query('INSERT INTO app.verdicts (answer_id, correct) VALUES ($1, true)', [must(rows[0]).id]);
+    // ...but five earlier questions were put to them, and none answered.
+    for (let i = 0; i < 5; i++) {
+      const old = await ask(asker.token, 'travel');
+      await h.t.owner.query('INSERT INTO app.routes (question_id, profile_id, wave) VALUES ($1, $2, 1)', [old, ignorer.id]);
+      // The database stamps the time itself; move it back so today's limit doesn't apply.
+      await h.t.owner.query("UPDATE app.routes SET routed_at = now() - interval '3 days' WHERE question_id = $1", [old]);
+    }
+    expect(await firstPick(await ask(asker.token, field))).toBe(fresh.id);
+  });
+
+  it('prefers people whose picked answers in this field turned out right', async () => {
+    const field = 'health-hospitals';
+    // The wrong one joins first, so a tie (if trust counted for nothing) would favour them.
+    const wrong = await member({ fields: [field], joinedDaysAgo: 30 });
+    const right = await member({ fields: [field], joinedDaysAgo: 30 });
+    // Three different askers each say how a picked answer turned out.
+    for (const [answerer, correct] of [[right, true], [right, true], [right, true], [wrong, false], [wrong, false], [wrong, false]] as const) {
+      const asker = await member({ fields: ['travel'], joinedDaysAgo: 30 });
+      const qid = await ask(asker.token, field);
+      await h.t.owner.query('DELETE FROM app.routes WHERE question_id = $1', [qid]);
+      const { rows } = await h.t.owner.query<{ id: string }>('INSERT INTO app.answers (question_id, answerer_id, body) VALUES ($1, $2, $3) RETURNING id',
+        [qid, answerer.id, 'I did this last year and it went fine for me.']);
+      await h.t.owner.query('INSERT INTO app.verdicts (answer_id, correct) VALUES ($1, $2)', [must(rows[0]).id, correct]);
+    }
+    const asker = await member({ fields: ['travel'], joinedDaysAgo: 30 });
+    expect(await firstPick(await ask(asker.token, field))).toBe(right.id);
+  });
+
+  it('keeps why each person was asked, for them alone', async () => {
+    const field = 'legal-matters';
+    const asker = await member({ fields: ['travel'], joinedDaysAgo: 30 });
+    const expert = await member({ fields: [field], country: 'IN', joinedDaysAgo: 30 });
+    await points(expert, field, 10);
+    const qid = await ask(asker.token, field, 'IN');
+    await h.t.database.asSystem(q => routeWave(q, qid, 1, 10));
+    const { rows } = await h.t.owner.query('SELECT same_country, field_points, trust_pct, answered_pct, newcomer FROM app.routes WHERE question_id = $1 AND profile_id = $2', [qid, expert.id]);
+    expect(rows).toEqual([{ same_country: true, field_points: 10, trust_pct: null, answered_pct: null, newcomer: false }]);
+  });
+
+  /** The answer rate kept with a new route to this person: what the score saw. */
+  async function answeredPct(person: { id: string }, field: string) {
+    const asker = await member({ fields: ['travel'], joinedDaysAgo: 30 });
+    const qid = await ask(asker.token, field);
+    await h.t.database.asSystem(q => routeWave(q, qid, 1, 10, noChance));
+    return (await h.t.owner.query<{ answered_pct: number | null }>('SELECT answered_pct FROM app.routes WHERE question_id = $1 AND profile_id = $2', [qid, person.id])).rows[0]?.answered_pct;
+  }
+
+  it('gives people a day to answer before a question counts as ignored', async () => {
+    const field = 'fitness';
+    const asker = await member({ fields: ['travel'], joinedDaysAgo: 30 });
+    const busy = await member({ fields: [field], joinedDaysAgo: 30 });
+    for (let i = 0; i < 2; i++) {
+      const today = await ask(asker.token, 'travel');
+      await h.t.owner.query('INSERT INTO app.routes (question_id, profile_id, wave) VALUES ($1, $2, 1)', [today, busy.id]);
+    }
+    // Two put to them an hour ago, not answered yet: nothing to judge.
+    expect(await answeredPct(busy, field)).toBeNull();
+  });
+
+  it('doesn’t count an answer a moderator removed as answering', async () => {
+    const field = 'shopping';
+    const asker = await member({ fields: ['travel'], joinedDaysAgo: 30 });
+    const junk = await member({ fields: [field, 'travel'], joinedDaysAgo: 30 });
+    const old = await ask(asker.token, 'travel');
+    await h.t.owner.query('INSERT INTO app.routes (question_id, profile_id, wave) VALUES ($1, $2, 1)', [old, junk.id]);
+    await h.t.owner.query("UPDATE app.routes SET routed_at = now() - interval '3 days' WHERE question_id = $1", [old]);
+    const { rows } = await h.t.owner.query<{ id: string }>('INSERT INTO app.answers (question_id, answerer_id, body) VALUES ($1, $2, $3) RETURNING id',
+      [old, junk.id, 'Buy followers cheap at my shop, best price today.']);
+    expect(await answeredPct(junk, field)).toBe(100);
+    await h.t.owner.query("INSERT INTO app.decisions (answer_id, decision) VALUES ($1, 'remove')", [must(rows[0]).id]);
+    expect(await answeredPct(junk, field)).toBe(0);
   });
 });

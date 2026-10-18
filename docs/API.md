@@ -138,6 +138,16 @@ answers oldest first. `selection` is `null` until the asker picks, then
 `{ answerId, changesLeft, correct }` (`answerId` is `null` if the picked answer's author deleted their
 account; `correct` is `null` until the asker says how it turned out). 404 `not_found` if there's no such question.
 
+Two parts appear only for one person each, and are left out for everyone else:
+
+- `routing` (the asker, once it went out): `{ waves, asked, inCountry }`, how many waves went out, how
+  many people they reached, and how many of those live in the question's country. Numbers only,
+  never who; under 5 is `null` ("a few"), since in a small field an exact number set against public
+  profiles could point at who.
+- `whyYou` (someone it was put to): `{ sameCountry, fieldPoints, trustPct, answeredPct, newcomer }`,
+  as they stood when it was sent. `trustPct` and `answeredPct` are `null` with nothing to go on yet;
+  all are `null` on routes made before reasons were kept.
+
 ### `POST /questions` (signed in, counts as a write)
 
 `{ title, details?, field, country? }` → 201 `{ question: { id } }`. `country` may be `null`.
@@ -188,15 +198,27 @@ still work, but no points move for them.
 
 New questions are put to people in waves by a job inside the server (every minute, and straight
 after each new question): 10 people at once, 30 more after 15 minutes without an answer, 100 more
-after another hour. People are chosen from those who know the question's field: people in the
-question's country first, then points in that field, then how much they answered in the last 30
-days. Two places in every ten are kept for people who joined in the last 14 days. Nobody gets more
+after another hour. People are chosen from those who know the question's field, by a score
+(docs/GRAPH.md): 35% points in that field, 20% same country, 20% how many questions put to them in
+the last 60 days they answered (one sent in the last day counts only once answered; removed answers
+don't count), 15% how often askers said their picked answers in that field turned
+out right, 10% chance. Two places in every ten are kept for people who joined in the last 14 days. Nobody gets more
 than 5 a day, and never their own question. Who was asked is visible only to them.
 
 ### `GET /me/inbox` (signed in)
 
 `{ questions: [summary + { routedAt, seen }], unseen }`, newest first, up to 30. Opening a question
 (`GET /questions/:id` while signed in) marks it seen.
+
+## The graph
+
+### `GET /graph`
+
+Public, cached 5 minutes. `{ fields: [{ slug, name, members }], people: [[fieldIndex…]], activity:
+{ lastDay: { questions, answers }, recent: [{ field, kind }] } }`. `people` is a random sample of up to
+300 members, each only as the positions in `fields` of the fields they know: no names or ids.
+`recent` is the last 40 questions (`kind: "question"`) and answers in the last day, newest first,
+by field. Hidden and removed posts are left out.
 
 ## Live updates
 
@@ -209,7 +231,8 @@ event: answered
 data: {"questionId":"42"}
 ```
 
-`routed` (a question was put to you) and `answered` (someone answered your question). Messages carry
+`routed` (a question was put to you), `answered` (someone answered your question) and `sent` (a
+wave of your question went out; live only, never a push). Messages carry
 only the question id; screens fetch the rest the normal way. A comment line every 10 seconds keeps
 the connection open. The stream ends a minute before the sign-in token expires; the website then
 reconnects with a fresh token, so a deleted or signed-out account stops hearing. At most 3 open per

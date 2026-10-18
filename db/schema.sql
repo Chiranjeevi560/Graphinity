@@ -1451,8 +1451,40 @@ BEGIN
   END LOOP;
 END $$;
 
+-- ---------------------------------------------------------------------------
+-- Why each person was asked, as it stood at that moment: shown only to that
+-- person ("Why you got this"). Null on routes made before this was kept.
+-- ---------------------------------------------------------------------------
+ALTER TABLE app.routes ADD COLUMN IF NOT EXISTS same_country boolean;
+ALTER TABLE app.routes ADD COLUMN IF NOT EXISTS field_points integer CHECK (field_points >= 0);
+ALTER TABLE app.routes ADD COLUMN IF NOT EXISTS trust_pct smallint CHECK (trust_pct BETWEEN 0 AND 100);
+ALTER TABLE app.routes ADD COLUMN IF NOT EXISTS answered_pct smallint CHECK (answered_pct BETWEEN 0 AND 100);
+ALTER TABLE app.routes ADD COLUMN IF NOT EXISTS newcomer boolean;
+GRANT INSERT (same_country, field_points, trust_pct, answered_pct, newcomer) ON app.routes TO app_api;
+
+-- How far the asker's question went, in numbers only: never who, and
+-- nothing for anyone but the asker (routes stay readable only by the person
+-- asked). Fewer than 5 is given as null ("a few"): in a small field an exact
+-- count, set against public profiles, could tell the asker who was asked.
+-- No count of who answered, for the same reason.
+DROP FUNCTION IF EXISTS app.routing_summary(bigint);
+CREATE FUNCTION app.routing_summary(target bigint)
+  RETURNS TABLE (waves integer, asked integer, in_country integer)
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = pg_catalog, pg_temp
+AS $$
+  SELECT max(r.wave)::int,
+         CASE WHEN count(*) >= 5 THEN count(*)::int END,
+         CASE WHEN count(*) FILTER (WHERE r.same_country) >= 5 THEN (count(*) FILTER (WHERE r.same_country))::int END
+  FROM app.routes r JOIN app.questions q ON q.id = r.question_id
+  WHERE r.question_id = target AND q.asker_id = app.current_user_id()
+  HAVING count(*) > 0
+$$;
+REVOKE ALL ON FUNCTION app.routing_summary(bigint) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app.routing_summary(bigint) TO app_api;
+
 -- Bump on every change to this file.
-INSERT INTO app.schema_meta (id, version) VALUES (true, 10)
+INSERT INTO app.schema_meta (id, version) VALUES (true, 11)
   ON CONFLICT (id) DO UPDATE SET version = EXCLUDED.version, applied_at = now();
 
 COMMIT;

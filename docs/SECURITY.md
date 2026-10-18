@@ -56,6 +56,8 @@ These must stay true. If one stops being true, revisit everything that depends o
 | Half-finished deletion (Supabase down) | The id is kept in `app.pending_auth_deletions` until Supabase confirms; a job retries with backoff; the account is refused while pending; a deferred database trigger refuses any profile for a pending id (also closes the create/delete race) | Integration tests; each fails when its protection is removed |
 | Input "fixed" instead of refused | Fastify's coercion and property-stripping turned off | Integration test; fails with the defaults |
 | Someone posting as another person, or answering their own question | RLS: questions and answers only as `app.current_user_id()`; the answer policy also refuses the asker. No UPDATE or DELETE granted yet | `questions.integration.test.ts`; fails when the policy check is removed |
+| Learning who was asked, or who someone is, from the graph | `/graph` nodes are field sets with no names or ids, freshly sampled; the asker gets per-wave counts only, through `app.routing_summary`, which returns nothing to anyone else; "why you got this" reads the viewer's own route, which row-level security limits to them | `graph.integration.test.ts`; fail when the function's asker check is removed |
+| Gaming the routing score | Points need a real pick from another person (pair cap applies); trust counts each asker once with their latest word; answering counts only answers moderators haven't removed. Known gap: several fake accounts acting as askers can each raise someone's trust once; trust is 15% of the score, and new-account limits slow this | `routing.integration.test.ts` |
 | Hidden or spoofing characters in posts | Control characters (C0, DEL, C1) and direction overrides and isolates (U+202A-202E, U+2066-2069, which make text display in another order) refused in the API and by database checks on titles, bodies, answers, report notes and block reasons; the marks right-to-left writing needs (U+200E, U+200F, U+061C) stay allowed; titles one line with single spaces. Lookalike letters from other scripts (homoglyphs) are not refused: real names and languages use them | `text.test.ts` and database tests |
 | Getting points that didn't happen | See T8a. Every rule tested by an attack that must fail, and each test proven to fail when its rule is removed | `points.db.integration.test.ts`, `points.integration.test.ts` |
 | Learning who was asked a question | Routes readable only by their recipient (and the server's routing job, which sets its own `app.system` flag; no request does); only the job can create them; never to the asker; 5 a day per person, in the database | `routing.integration.test.ts`; fails when the policy or budget is loosened |
@@ -100,6 +102,13 @@ Each line answers: *if a hostile researcher spent a day on this, what would they
 
 ## Known gaps
 
+- The daily limit of 5 questions per person is counted without a lock. One server routes one
+  question at a time, so it holds today; before running two servers, lock per person while routing.
+- Routing scores everyone in the question's field (three indexed lookups each). Fine at today's
+  size; at thousands of members per field, narrow the pool first.
+- In a very small field, the asker can guess who was asked from the field's public members even
+  without counts (the first wave goes to everyone eligible). Counts under 5 are hidden to make
+  this harder; it can't be closed fully while fields and profiles are public.
 - Rate-limit counts live in memory and reset when Render restarts the server. That only ever errs
   towards letting people in. Durable limits come in step 6.
 - The 15-second timeouts are configured but not tested under load.

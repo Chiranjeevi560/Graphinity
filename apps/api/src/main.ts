@@ -7,7 +7,7 @@ import { createEvents } from './events.ts';
 import { errorKind, serial } from './jobs.ts';
 import { expireNetworkMarks } from './networks.ts';
 import { createLimiter, createPushSender } from './push-sender.ts';
-import { routeDueQuestions } from './routing.ts';
+import { announceRouting, routeDueQuestions } from './routing.ts';
 import { systemClock } from './rate-limit.ts';
 import { buildServer } from './server.ts';
 
@@ -84,9 +84,7 @@ if (config.vapid) {
 // picked up by one more run straight after it.
 const runRouting = serial(() => routeDueQuestions(db, app.log)
   .then(results => {
-    for (const { questionId, asked } of results) {
-      for (const person of asked) events.publish(person, { type: 'routed', questionId });
-    }
+    announceRouting(events, results);
     const people = results.reduce((n, r) => n + r.asked.length, 0);
     if (people) app.log.info({ questions: results.length, people }, 'routed questions');
   })

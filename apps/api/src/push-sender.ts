@@ -12,6 +12,8 @@ const titles = { routed: 'A question for you', answered: 'New answer to your que
 
 export function createPushSender(deps: { db: Database; vapid: VapidKeys; fetch: typeof fetch; log: Log; now: () => number }) {
   return async (userId: string, event: PersonEvent): Promise<void> => {
+    // Shown on the asker's open page only: a phone buzz for each wave would be noise.
+    if (event.type === 'sent') return;
     const { subscriptions, question } = await deps.db.asSystem(async q => ({
       subscriptions: (await q.query<{ endpoint: string; p256dh: string; auth: string }>(
         'SELECT endpoint, p256dh, auth FROM app.push_subscriptions WHERE profile_id = $1', [userId])).rows,

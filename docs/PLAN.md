@@ -67,12 +67,15 @@ Render or Supabase.** Limits checked on the services' own pages on 2026-10-17 ar
    locally; first real Google sign-in pending accounts, see SETUP-ACCOUNTS.md).
 3. ✅ Ask, answer, read: public reading, live matching while typing (built and tested locally;
    editing and deleting posts not offered yet; question pages' link previews and the sitemap of
-   questions need a server-side step at deploy, step 7).
+   questions need a server-side step at deploy, step 8).
 4. ✅ Select, helpful, points, medals, trust, change-with-reason, pair cap (built and tested locally;
    medal thresholds bronze 10 / silver 50 / gold 200 are a default for the owner to confirm).
 5. ✅ Routing waves, live updates, web push (built and tested locally; a real push delivered to a
-   phone is checked at deploy, step 7).
+   phone is checked at deploy, step 8).
 6. ✅ Reporting, auto-hide, owner review page, limits, blocking, shared-network flags (built and
    tested locally; moderators are added by the owner in the SQL editor, SETUP-ACCOUNTS.md Part G).
-7. Launch prep: privacy policy, terms, hostile review, phone checks, accounts, deploy (server
+7. ◐ The living graph (docs/GRAPH.md): routing score that learns from picks, helpful marks,
+   verdicts and ignored questions, per field; reasons kept per route; `/graph`; the asker's routing
+   counts and "why you got this". Screens in progress.
+8. Launch prep: privacy policy, terms, hostile review, phone checks, accounts, deploy (server
    first, then website), verify live.

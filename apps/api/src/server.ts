@@ -11,6 +11,7 @@ import { createNetworkMarker } from './networks.ts';
 import { registerLiveRoutes } from './routes/live.ts';
 import { registerModerationRoutes } from './routes/moderation.ts';
 import { registerPointRoutes } from './routes/points.ts';
+import { registerGraphRoutes } from './routes/graph.ts';
 import { registerPushRoutes } from './routes/push.ts';
 import { registerQuestionRoutes } from './routes/questions.ts';
 
@@ -250,6 +251,7 @@ export async function buildServer(deps: Deps) {
   registerModerationRoutes(app, { db });
   registerPushRoutes(app, { db, vapidPublicKey: deps.vapidPublicKey ?? null });
   registerPointRoutes(app, { db });
+  registerGraphRoutes(app, { db, clock });
 
   return app;
 }
