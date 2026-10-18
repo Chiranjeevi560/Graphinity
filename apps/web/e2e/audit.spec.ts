@@ -161,7 +161,7 @@ test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
   await expect(page.getByRole('heading', { name: 'This page doesn’t exist' })).toBeVisible();
 
   await page.goto('/u/nobody.here');
-  await expect(page.getByText('There’s no one with that name.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'There’s no one with that name' })).toBeVisible();
   await audit(page, 'public profile (missing)');
 
   // Coming back to this page from the browser's back/forward cache must
@@ -241,6 +241,7 @@ test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
   await page.getByLabel('Your question').fill(title);
   await page.getByLabel('Details (optional)').fill('Bought in Geneva.\nShipping to Dubai next month.');
   await page.getByLabel('About a country').selectOption('AE');
+  await page.getByLabel('Topic').selectOption('imports-customs');
   await page.getByRole('button', { name: 'Post question' }).click();
   await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
   await expect(page).toHaveURL(/\/q\/\d+\/how-do-i-import-a-vintage-watch-into-the-uae-case-/);
@@ -367,6 +368,7 @@ test('picking an answer moves points, and the profile shows them', async ({ page
   await page.goto('/ask');
   const title = `Which customs form do I need for a watch, case ${run}?`;
   await page.getByLabel('Your question').fill(title);
+  await page.getByLabel('Topic').selectOption('imports-customs');
   await page.getByRole('button', { name: 'Post question' }).click();
   await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
   const questionUrl = new URL(page.url()).pathname;
@@ -390,16 +392,17 @@ test('picking an answer moves points, and the profile shows them', async ({ page
   const first = page.getByRole('listitem').filter({ hasText: `says first.${run}` });
   const second = page.getByRole('listitem').filter({ hasText: `says second.${run}` });
   await audit(page, 'question (asker, before picking)');
-  await first.getByRole('button', { name: 'Pick as the answer that helped' }).click();
-  await expect(first.getByText('Picked by the asker')).toBeVisible();
+  await first.getByRole('button', { name: 'This helped me' }).click();
+  await expect(first.getByText('Helped the asker')).toBeVisible();
   await first.getByRole('group', { name: 'Did it turn out right?' }).getByRole('button', { name: 'Yes' }).click();
-  await expect(first.getByText('Turned out right')).toBeVisible();
-  await second.getByRole('button', { name: 'Mark helpful' }).click();
-  await expect(second.getByText('Marked helpful')).toBeVisible();
+  await expect(first.getByText('Helped the asker · turned out right')).toBeVisible();
+  await expect(first.getByRole('group', { name: 'Did it turn out right?' }).getByRole('button', { name: 'Yes' })).toHaveAttribute('aria-pressed', 'true');
+  await second.getByRole('button', { name: 'Also useful' }).click();
+  await expect(second.getByText('Useful to the asker')).toBeVisible();
   await audit(page, 'question (asker, picked)');
 
   // Changing the pick asks why, in a dialog.
-  await second.getByRole('button', { name: 'Pick this instead' }).click();
+  await second.getByRole('button', { name: 'This helped more' }).click();
   const dialog = page.getByRole('dialog', { name: 'Why are you changing your pick?' });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole('button', { name: 'Change pick' })).toBeDisabled();
@@ -407,8 +410,8 @@ test('picking an answer moves points, and the profile shows them', async ({ page
   await dialog.getByLabel('A better answer came later').check();
   await dialog.getByRole('button', { name: 'Change pick' }).click();
   await expect(dialog).toBeHidden();
-  await expect(second.getByText('Picked by the asker')).toBeVisible();
-  await expect(page.getByText('You can change your pick once more.')).toBeVisible();
+  await expect(second.getByText('Helped the asker')).toBeVisible();
+  await expect(page.getByText('You can change your pick 1 more time.')).toBeVisible();
 
   // The second answerer's profile now shows 7 points (5 for the pick, 2 for helpful).
   await page.goto(`/u/${answerers[1] ?? ''}`);
@@ -434,6 +437,7 @@ test('a new answer reaches the asker live, without reloading', async ({ browser,
     await asker.goto('/ask');
     const title = `Is there a night bus from the airport, case ${run}?`;
     await asker.getByLabel('Your question').fill(title);
+    await asker.getByLabel('Topic').selectOption('imports-customs');
     await asker.getByRole('button', { name: 'Post question' }).click();
     await expect(asker.getByRole('heading', { level: 1, name: title })).toBeVisible();
     const questionUrl = new URL(asker.url()).pathname;
@@ -497,6 +501,7 @@ test('a moderator removes a reported question', async ({ page, browserName }) =>
   await page.goto('/ask');
   const title = `Cheap watches here, visit my shop now, case ${run}?`;
   await page.getByLabel('Your question').fill(title);
+  await page.getByLabel('Topic').selectOption('imports-customs');
   await page.getByRole('button', { name: 'Post question' }).click();
   await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
   const questionUrl = new URL(page.url()).pathname;
@@ -508,14 +513,14 @@ test('a moderator removes a reported question', async ({ page, browserName }) =>
   await establishTestPersonA();
   await asOwner('INSERT INTO app.moderators (profile_id) VALUES ($1) ON CONFLICT DO NOTHING', [TEST_PERSON_A]);
   await page.goto(questionUrl);
-  await page.getByRole('article').getByRole('button', { name: 'Report…' }).click();
+  await page.getByRole('article').getByRole('button', { name: 'Report' }).click();
   const dialog = page.getByRole('dialog', { name: 'Report this question' });
   await expect(dialog.getByRole('button', { name: 'Send report' })).toBeDisabled();
   await audit(page, 'report dialog');
   await dialog.getByLabel('Spam or advertising').check();
   await dialog.getByLabel('Anything to add? (optional)').fill('Advertising a shop');
   await dialog.getByRole('button', { name: 'Send report' }).click();
-  await expect(page.getByText('Reported. Thank you.')).toBeVisible();
+  await expect(page.getByRole('article').getByText('Reported')).toBeVisible();
 
   // The review lists it; the moderator removes it.
   await page.goto('/me');
@@ -530,5 +535,6 @@ test('a moderator removes a reported question', async ({ page, browserName }) =>
   // Gone for everyone else.
   await signOut(page);
   await page.goto(questionUrl);
-  await expect(page.getByRole('heading', { name: 'This question doesn’t exist. It may have been deleted.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'This question doesn’t exist' })).toBeVisible();
+  await expect(page.getByText('It may have been deleted.')).toBeVisible();
 });

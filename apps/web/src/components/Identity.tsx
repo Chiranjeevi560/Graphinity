@@ -13,7 +13,6 @@ export function CountryBadge({ country }: { country: { code: string; name: strin
   return (
     <span className="badge sq-host" title={country.name}>
       <SquircleLayers radius={0.5} />
-      <span className="badge-code" aria-hidden="true">{country.code}</span>
       <span>{country.name}</span>
     </span>
   );
@@ -38,3 +37,10 @@ const monthFormat = new Intl.DateTimeFormat('en', { month: 'long', year: 'numeri
 export function joinedLabel(joined: string): string {
   return `Joined ${monthFormat.format(new Date(`${joined}-01T00:00:00Z`))}`;
 }
+
+/** A name that wraps at its dots and underscores, never in the middle of a word or number. */
+export function Handle({ handle }: { handle: string }) {
+  const parts = handle.split(/(?<=[._])/);
+  return <>@{parts.map((p, i) => <span key={i}>{i > 0 && <wbr />}{p}</span>)}</>;
+}
+

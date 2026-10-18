@@ -12,9 +12,18 @@ function subscribe(listener: () => void) {
   return () => listeners.delete(listener);
 }
 
+// How many screens deep the person is inside the app, kept in the history
+// entry itself so Back and Forward carry it. 0: they arrived here directly.
+const depth = (): number => (history.state as { depth?: number } | null)?.depth ?? 0;
+
+/** True when going back stays inside Graphinity. */
+export function canGoBack(): boolean {
+  return depth() > 0;
+}
+
 export function navigate(to: string, { replace = false } = {}) {
-  if (replace) history.replaceState(null, '', to);
-  else history.pushState(null, '', to);
+  if (replace) history.replaceState({ depth: depth() }, '', to);
+  else history.pushState({ depth: depth() + 1 }, '', to);
   window.scrollTo(0, 0);
   notify();
 }

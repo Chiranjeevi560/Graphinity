@@ -91,7 +91,8 @@
   max-height: calc(100dvh - 2 * var(--gutter));
   overflow: visible;
 }
-.dialog::backdrop { background: rgb(0 0 0 / 0.4); }
+.dialog::backdrop { background: rgb(0 0 0 / 0.25); }
+@media (prefers-color-scheme: dark) { .dialog::backdrop { background: rgb(0 0 0 / 0.5); } }
 .dialog[open] { animation: dialog-in var(--spring-smooth-duration) var(--spring-smooth); }
 .dialog[open]::backdrop { animation: fade-in 200ms ease; }
 @keyframes dialog-in { from { opacity: 0; transform: scale(0.94); } }
@@ -99,7 +100,10 @@
 @media (prefers-reduced-motion: reduce) { @keyframes dialog-in { from { opacity: 0; } } }
 .dialog-panel { --sq-radius: var(--radius-card); --sq-bg: var(--surface-raised); padding: var(--space-6) var(--space-5) var(--space-5); display: flex; flex-direction: column; gap: var(--space-3); }
 .dialog-body { color: var(--label-secondary); }
-.dialog-actions { display: flex; flex-wrap: wrap-reverse; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-2); }
+.dialog-actions { display: flex; flex-wrap: wrap-reverse; justify-content: flex-end; gap: var(--space-2); }
+/* Fields inside a dialog sit on the raised surface: a stronger fill to stay visible. */
+.dialog .input-box { --sq-bg: var(--fill-secondary); }
+.dialog .form-note:empty { display: none; }
 .dialog-actions .btn { flex: 1 0 auto; white-space: nowrap; }
 
 /* Red text on a neutral fill, as in Apple's alerts; white on red is too low in contrast. */
@@ -126,7 +130,6 @@
   font-size: var(--text-subhead-size); letter-spacing: var(--text-subhead-tracking);
 }
 .badge > :not(.sq-fill), .tag > :not(.sq-fill) { position: relative; }
-.badge-code { font-weight: 600; font-size: var(--text-caption-size); color: var(--label-secondary); letter-spacing: 0.04em; }
 .tags { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
 
 /* Plain inline status line (e.g. "Checking…") */
@@ -142,3 +145,5 @@
   field-sizing: content;
   line-height: var(--text-body-leading);
 }
+/* Grows with its text where the browser can, so no drag handle is needed. */
+@supports (field-sizing: content) { .textarea { resize: none; } }

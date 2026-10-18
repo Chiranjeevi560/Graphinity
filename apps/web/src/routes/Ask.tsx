@@ -39,7 +39,8 @@ export default function Ask({ profile }: { profile: Profile }) {
   const { meta, error: metaError } = useMeta();
   const [title, setTitle] = useState(draft?.title ?? '');
   const [details, setDetails] = useState(draft?.details ?? '');
-  const [field, setField] = useState(draft?.field ?? profile.fields[0]?.slug ?? '');
+  // No topic chosen for them: a wrong guess would send the question to the wrong people.
+  const [field, setField] = useState(draft?.field ?? '');
   const [country, setCountry] = useState(draft?.country ?? '');
   const [posting, setPosting] = useState(false);
   const [error, setError] = useState<{ on: 'title' | 'details' | 'form'; text: string } | null>(null);
@@ -53,6 +54,12 @@ export default function Ask({ profile }: { profile: Profile }) {
   const titleLength = charCount(title.trim());
   const detailsLength = charCount(details.trim());
   const canPost = titleLength >= TITLE.min && titleLength <= TITLE.max && detailsLength <= DETAILS_MAX && field !== '' && !posting;
+  // Why the button is greyed out, so it never just sits there.
+  const missing = titleLength < TITLE.min ? `Write your question in full, at least ${String(TITLE.min)} characters.`
+    : field === '' ? 'Choose a topic so it reaches the right people.' : null;
+  // Their own topics first: the likeliest choice is one tap away.
+  const mine = new Set(profile.fields.map(f => f.slug));
+  const topics = [...meta.fields].sort((a, b) => Number(mine.has(b.slug)) - Number(mine.has(a.slug)));
 
   async function post(e: SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -92,12 +99,12 @@ export default function Ask({ profile }: { profile: Profile }) {
         />
         {similar.length > 0 && (
           <section className="similar" aria-label="Similar questions already asked">
-            <h2 className="text-subhead secondary">Already asked?</h2>
-            <ul className="similar-list">
-              {similar.map(q => (
-                <li key={q.id}>
-                  <Link to={questionPath(q)} className="similar-link">
-                    <span className="text-callout">{q.title}</span>
+            <h2 className="text-subhead">Already asked? One of these may have your answer.</h2>
+            <ul className="question-list">
+              {similar.slice(0, 3).map(q => (
+                <li key={q.id} className="question-row">
+                  <Link to={questionPath(q)} className="question-link">
+                    <span className="text-headline question-title">{q.title}</span>
                     <span className="text-footnote secondary">{q.answerCount === 1 ? '1 answer' : `${String(q.answerCount)} answers`}</span>
                   </Link>
                 </li>
@@ -114,10 +121,10 @@ export default function Ask({ profile }: { profile: Profile }) {
           hint={detailsLength > DETAILS_MAX - 200 ? `${String(DETAILS_MAX - detailsLength)} characters left` : 'What you’ve tried, and what would help.'}
         />
         <SelectField
-          label="Field"
+          label="Topic"
           value={field}
           onChange={setField}
-          options={[...(field ? [] : [{ value: '', label: 'Choose a field' }]), ...meta.fields.map(f => ({ value: f.slug, label: f.name }))]}
+          options={[{ value: '', label: 'Choose a topic' }, ...topics.map(f => ({ value: f.slug, label: f.name }))]}
         />
         <SelectField
           label="About a country"
@@ -127,6 +134,7 @@ export default function Ask({ profile }: { profile: Profile }) {
           options={[{ value: '', label: 'Anywhere' }, ...meta.countries.map(c => ({ value: c.code, label: c.name }))]}
         />
         {error?.on === 'form' && <p className="form-note tone-bad" role="alert">{error.text}</p>}
+        {missing && !posting && <p className="form-note">{missing}</p>}
         <Button type="submit" className="btn-block" disabled={!canPost}>{posting ? 'Posting…' : 'Post question'}</Button>
       </form>
     </main>

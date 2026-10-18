@@ -26,6 +26,9 @@ body {
 }
 
 h1, h2, h3, p { margin: 0; }
+/* No lone last word on a line: balanced headings, tidier paragraphs. */
+h1, h2, h3 { text-wrap: balance; }
+p, li { text-wrap: pretty; }
 
 /* Text styles. Weight, size, leading and tracking always change together. */
 .text-large { font-size: var(--text-large-size); line-height: var(--text-large-leading); letter-spacing: var(--text-large-tracking); font-weight: 700; }

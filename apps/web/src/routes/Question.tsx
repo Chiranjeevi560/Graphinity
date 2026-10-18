@@ -1,7 +1,9 @@
 import { useEffect, useState, type SubmitEvent } from 'react';
 import { Button, LinkButton } from '../components/Button.tsx';
 import { TextArea } from '../components/Form.tsx';
+import { BackButton } from '../components/BackButton.tsx';
 import { GoogleButton } from '../components/GoogleButton.tsx';
+import { MessageScreen, splitMessage } from '../components/Message.tsx';
 import { ReportButton } from '../components/ReportButton.tsx';
 import { ApiError } from '../lib/api.ts';
 import { onLive } from '../lib/live.ts';
@@ -51,12 +53,7 @@ export default function Question({ id }: { id: string }) {
   }), [id]);
 
   if (error) {
-    return (
-      <main className="page stack-message">
-        <h1 className="text-title2">{error}</h1>
-        <p className="text-body secondary">Go to the <Link to="/">home page</Link> to see recent questions.</p>
-      </main>
-    );
+    return <MessageScreen {...splitMessage(error)} />;
   }
   if (!page) return <main className="page stack-message"><p className="text-body status" role="status">Loading…</p></main>;
 
@@ -67,6 +64,7 @@ export default function Question({ id }: { id: string }) {
 
   return (
     <main className="page question-page">
+      <div className="screen-top"><BackButton /></div>
       <article className="question">
         <h1 className="text-title1 question-heading">{question.title}</h1>
         <p className="text-footnote secondary question-meta">
@@ -74,30 +72,33 @@ export default function Question({ id }: { id: string }) {
           {question.country && <span>{question.country.name}</span>}
           <span>Asked by <Link to={`/u/${encodeURIComponent(question.asker.handle)}`}>@{question.asker.handle}</Link></span>
           <span><time dateTime={question.createdAt}>{timeAgo(question.createdAt, now)}</time></span>
+          {state.status === 'ready' && !asked && <span><ReportButton kind="question" id={question.id} /></span>}
         </p>
         {question.body && <p className="text-body post-body">{question.body}</p>}
         {question.hidden && <p className="text-subhead hidden-note" role="note">Hidden while moderators review reports about it. Only you can see it now.</p>}
-        {state.status === 'ready' && !asked && <div className="post-actions"><ReportButton kind="question" id={question.id} /></div>}
       </article>
 
       <section className="answers" aria-labelledby="answers-heading">
         <h2 id="answers-heading" className="text-title3">
           {answers.length === 0 ? 'No answers yet' : answers.length === 1 ? '1 answer' : `${String(answers.length)} answers`}
         </h2>
+        {asked && !selection && answers.length > 0 && (
+          <p className="text-subhead secondary">Choose the answer that helped you. It earns them points.</p>
+        )}
         {answers.length > 0 && (
           <ol className="answer-list">
-            {answers.map(a => (
+            {/* The answer that helped comes first. */}
+            {[...answers].sort((x, y) => Number(y.id === selection?.answerId) - Number(x.id === selection?.answerId)).map(a => (
               <li key={a.id} className={`answer${selection?.answerId === a.id ? ' is-picked' : ''}`}>
                 <AnswerLabels answer={a} picked={selection?.answerId === a.id} correct={selection?.answerId === a.id ? selection.correct : null} />
                 <p className="text-body post-body">{a.body}</p>
-                <p className="text-footnote secondary">
-                  <Link to={`/u/${encodeURIComponent(a.answerer.handle)}`}>@{a.answerer.handle}</Link>
-                  {' · '}
-                  <time dateTime={a.createdAt}>{timeAgo(a.createdAt, now)}</time>
+                <p className="text-footnote secondary question-meta">
+                  <span><Link to={`/u/${encodeURIComponent(a.answerer.handle)}`}>@{a.answerer.handle}</Link></span>
+                  <span><time dateTime={a.createdAt}>{timeAgo(a.createdAt, now)}</time></span>
+                  {state.status === 'ready' && me !== a.answerer.handle && <span><ReportButton kind="answer" id={a.id} /></span>}
                 </p>
                 {a.hidden && <p className="text-subhead hidden-note" role="note">Hidden while moderators review reports about it.</p>}
                 {asked && <AnswerActions questionId={question.id} answer={a} selection={selection} onChanged={reload} />}
-                {state.status === 'ready' && me !== a.answerer.handle && <div className="post-actions"><ReportButton kind="answer" id={a.id} /></div>}
               </li>
             ))}
           </ol>

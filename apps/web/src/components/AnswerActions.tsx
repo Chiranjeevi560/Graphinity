@@ -7,19 +7,19 @@ import { api } from '../session.tsx';
 import { Button } from './Button.tsx';
 import { Dialog } from './Dialog.tsx';
 
+const check = <svg viewBox="0 0 14 11" aria-hidden="true" focusable="false"><path d="M1.5 5.5l3.5 3.5 7.5-7.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+
 export function AnswerLabels({ answer, picked, correct }: { answer: Answer; picked: boolean; correct: boolean | null }) {
   if (!picked && !answer.helpful) return null;
   return (
     <p className="answer-labels text-footnote">
       {picked && (
         <span className="label-picked">
-          <svg viewBox="0 0 14 11" aria-hidden="true" focusable="false"><path d="M1.5 5.5l3.5 3.5 7.5-7.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
-          Picked by the asker
+          {check}
+          {correct === true ? 'Helped the asker · turned out right' : correct === false ? 'Helped the asker · turned out wrong' : 'Helped the asker'}
         </span>
       )}
-      {picked && correct === true && <span className="label-picked">Turned out right</span>}
-      {picked && correct === false && <span className="secondary">Turned out wrong</span>}
-      {answer.helpful && <span className="secondary">Marked helpful</span>}
+      {!picked && answer.helpful && <span className="secondary">Useful to the asker</span>}
     </p>
   );
 }
@@ -67,25 +67,27 @@ export function AnswerActions({ questionId, answer, selection, onChanged }: Prop
   return (
     <div className="answer-actions">
       {canPick && (
-        <button type="button" className="btn btn-plain" disabled={busy} onClick={() => { if (isChange) setChoosingReason(true); else void pick(); }}>
-          {isChange ? 'Pick this instead' : 'Pick as the answer that helped'}
-        </button>
+        <Button variant="secondary" className="btn-compact" disabled={busy} onClick={() => { if (isChange) setChoosingReason(true); else void pick(); }}>
+          {isChange ? 'This helped more' : 'This helped me'}
+        </Button>
       )}
-      {!answer.helpful && (
+      {!answer.helpful && !picked && (
         <button type="button" className="btn btn-plain" disabled={busy} onClick={() => { void run(() => api(`/answers/${answer.id}/helpful`, { method: 'POST', signedIn: true })); }}>
-          Mark helpful
+          Also useful
         </button>
       )}
       {picked && (
-        <div className="verdict" role="group" aria-label="Did it turn out right?">
-          <span className="text-footnote secondary">Did it turn out right?</span>
-          <button type="button" className="btn btn-plain" aria-pressed={selection.correct === true} disabled={busy} onClick={() => { void verdict(true); }}>Yes</button>
-          <button type="button" className="btn btn-plain" aria-pressed={selection.correct === false} disabled={busy} onClick={() => { void verdict(false); }}>No</button>
+        <div className="verdict">
+          <span className="text-subhead" id={`verdict-${answer.id}`}>Did it turn out right?</span>
+          <div className="segmented" role="group" aria-labelledby={`verdict-${answer.id}`}>
+            <button type="button" aria-pressed={selection.correct === true} disabled={busy} onClick={() => { void verdict(true); }}>Yes</button>
+            <button type="button" aria-pressed={selection.correct === false} disabled={busy} onClick={() => { void verdict(false); }}>No</button>
+          </div>
         </div>
       )}
       {picked && selection.changesLeft < 2 && (
         <p className="text-footnote secondary">
-          {selection.changesLeft === 0 ? 'You can’t change this pick again.' : 'You can change your pick once more.'}
+          {selection.changesLeft === 0 ? 'You can’t change this pick again.' : 'You can change your pick 1 more time.'}
         </p>
       )}
       {error && !choosingReason && <p className="form-note tone-bad" role="alert">{error}</p>}
@@ -96,7 +98,7 @@ export function AnswerActions({ questionId, answer, selection, onChanged }: Prop
         title="Why are you changing your pick?"
         actions={
           <>
-            <Button variant="secondary" disabled={busy} onClick={() => { setChoosingReason(false); setReason(null); }}>Cancel</Button>
+            <button type="button" className="btn btn-plain" disabled={busy} onClick={() => { setChoosingReason(false); setReason(null); }}>Cancel</button>
             <Button disabled={busy || reason === null} onClick={() => {
               if (!reason) return;
               void pick(reason).then(ok => { if (ok) { setChoosingReason(false); setReason(null); } });
@@ -104,7 +106,7 @@ export function AnswerActions({ questionId, answer, selection, onChanged }: Prop
           </>
         }
       >
-        <p>The points move to this answer. You can change your pick {selection?.changesLeft === 1 ? 'once more' : 'twice'} for this question.</p>
+        <p>The points move to this answer. {selection?.changesLeft === 1 ? 'This is your last change for this question.' : 'You can change your pick 2 more times for this question.'}</p>
         <fieldset className="reasons" aria-describedby={reasonsId}>
           <legend id={reasonsId} className="visually-hidden">Reason</legend>
           {CHANGE_REASONS.map(r => (

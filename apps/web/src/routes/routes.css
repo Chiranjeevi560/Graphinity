@@ -48,7 +48,7 @@
 .profile { display: flex; flex-direction: column; gap: var(--space-6); padding-top: var(--space-6); }
 .profile-head { display: flex; align-items: center; gap: var(--space-4); }
 .profile-names { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
-.profile-names h1 { overflow-wrap: anywhere; }
+.profile-names h1 { overflow-wrap: break-word; font-size: var(--text-title2-size); line-height: var(--text-title2-leading); }
 .profile-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
 .profile-section { display: flex; flex-direction: column; gap: var(--space-3); }
 .profile-footer { display: flex; flex-direction: column; align-items: center; gap: 0; margin-top: var(--space-4); }
@@ -57,7 +57,7 @@
 /* Questions: lists, the question page, answers. */
 .home-questions { display: flex; flex-direction: column; gap: var(--space-3); margin-top: var(--space-8); }
 
-.question-list, .similar-list, .answer-list { list-style: none; margin: 0; padding: 0; }
+.question-list, .answer-list { list-style: none; margin: 0; padding: 0; }
 .question-row + .question-row, .answer + .answer { border-top: var(--hairline) solid var(--separator); }
 .question-link {
   display: flex;
@@ -68,21 +68,24 @@
   color: inherit;
 }
 /* Whole-row links, not links inside a sentence: no underline (base.css underlines those). */
-.question-link, .question-link:hover, .similar-link, .similar-link:hover { text-decoration: none; }
+.question-link, .question-link:hover { text-decoration: none; }
 @media (hover: hover) { .question-link:hover .question-title { color: var(--accent-text); } }
 .question-title { overflow-wrap: anywhere; }
 
 /* "Field · Country · 3 answers · 2 hours ago" */
 .question-meta { display: flex; flex-wrap: wrap; gap: 0 var(--space-1); }
-.question-meta > span + span::before { content: "·"; margin-right: var(--space-1); }
+.question-meta > span { white-space: nowrap; }
+.question-meta > span:not(:last-child)::after { content: "·"; margin-left: var(--space-1); }
+/* Names in detail lines: no underline (the @ marks them), a full tap height. */
+.question-meta a { text-decoration: none; padding-block: 0.75rem; margin-block: -0.75rem; }
 
 .similar { display: flex; flex-direction: column; gap: var(--space-1); margin-top: calc(-1 * var(--space-2)); }
-.similar-link { display: flex; flex-direction: column; min-height: var(--tap); justify-content: center; padding: var(--space-2) 0; color: inherit; }
-.similar-list li + li { border-top: var(--hairline) solid var(--separator); }
+
+
 
 .question-page { display: flex; flex-direction: column; gap: var(--space-8); padding-top: var(--space-6); }
 .question { display: flex; flex-direction: column; gap: var(--space-3); }
-.question-heading { overflow-wrap: anywhere; }
+.question-heading { overflow-wrap: break-word; font-size: var(--text-title2-size); line-height: var(--text-title2-leading); letter-spacing: var(--text-title2-tracking); }
 /* Posts are plain text: keep the writer's line breaks, wrap long words. */
 .post-body { white-space: pre-wrap; overflow-wrap: anywhere; }
 
@@ -98,18 +101,15 @@
 .label-picked svg { width: 0.875em; height: 0.875em; }
 .answer-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--space-2); margin-left: calc(-1 * var(--space-2)); }
 .answer-actions > p { flex-basis: 100%; margin-left: var(--space-2); }
-.verdict { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--space-1); }
-.verdict > span { margin-left: var(--space-2); }
-.verdict .btn[aria-pressed="true"] { font-weight: 600; text-decoration: underline; text-underline-offset: 0.2em; }
 .reasons { border: 0; margin: var(--space-3) 0 0; padding: 0; display: flex; flex-direction: column; }
-.reason { display: flex; align-items: center; gap: var(--space-3); min-height: var(--tap); cursor: pointer; }
-.reason input { width: 1.25rem; height: 1.25rem; margin: 0; accent-color: var(--accent); }
+.reason { display: flex; align-items: center; gap: var(--space-3); min-height: var(--tap); padding-block: var(--space-1); cursor: pointer; }
+.reason input { flex-shrink: 0; width: 1.25rem; height: 1.25rem; margin: 0; accent-color: var(--accent); }
 
 /* Standing: points per field, medals, trust. */
 .standing-list { list-style: none; margin: 0; padding: 0; }
-.standing-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: var(--tap); }
+.standing-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: var(--tap); padding-block: var(--space-2); }
 .standing-row + .standing-row { border-top: var(--hairline) solid var(--separator); }
-.standing-score { display: flex; align-items: center; gap: var(--space-2); white-space: nowrap; }
+.standing-score { display: flex; align-items: center; gap: var(--space-2); white-space: nowrap; flex-shrink: 0; }
 .medal { font-weight: 600; }
 .medal-gold { color: var(--medal-gold); }
 .medal-silver { color: var(--medal-silver); }
@@ -117,21 +117,19 @@
 
 /* Inbox: questions put to you. */
 .inbox-count { color: var(--accent-text); font-weight: 600; }
+.question-title { position: relative; }
 .unseen-dot {
-  display: inline-block;
+  position: absolute;
+  left: -0.875rem;
+  top: 0.5em;
   width: 0.5rem; height: 0.5rem;
-  margin-right: var(--space-2);
   border-radius: 50%;
   background: var(--accent);
-  vertical-align: 0.15em;
 }
 
 .notifications-toggle { align-self: flex-start; margin-left: calc(-1 * var(--space-2)); }
 
 /* Reporting and hidden posts. */
-.post-actions { display: flex; margin-left: calc(-1 * var(--space-2)); }
-.report-button { color: var(--label-secondary); font-size: var(--text-subhead-size); }
-.report-sent { display: inline-flex; align-items: center; min-height: var(--tap); }
 .hidden-note { padding: var(--space-3); border-radius: var(--radius-control); background: var(--fill-tertiary); color: var(--label); }
 
 /* Review (moderators). */
@@ -147,6 +145,40 @@
 .legal { display: flex; flex-direction: column; gap: var(--space-3); padding-top: var(--space-6); max-width: 40rem; }
 .legal h2 { margin-top: var(--space-4); }
 .legal ul { margin: 0; padding-left: 1.25em; display: flex; flex-direction: column; gap: var(--space-2); }
-.draft-note { padding: var(--space-3); border-radius: var(--radius-control); background: var(--fill-tertiary); }
+.draft-note { padding: var(--space-3); margin-bottom: var(--space-4); border-radius: var(--radius-control); background: var(--fill-tertiary); }
 .site-footer { display: flex; gap: var(--space-4); margin-top: var(--space-10); padding-bottom: var(--space-6); }
 .site-footer a { display: inline-flex; align-items: center; justify-content: center; min-height: var(--tap); min-width: var(--tap); color: var(--label-secondary); }
+
+/* Screens with only a message: centred, one action. */
+.message-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-3); min-height: 60vh; text-align: center; }
+.message-action { margin-top: var(--space-3); min-width: 14rem; }
+.screen-top { display: flex; min-height: var(--tap); margin: calc(-1 * var(--space-4)) 0 calc(-1 * var(--space-5)) calc(-1 * var(--space-2)); }
+.back-button { gap: var(--space-1); }
+.back-button svg { width: 0.5rem; height: 0.875rem; }
+
+/* The answer that helped: first, on a soft green card. */
+.answer.is-picked {
+  margin-inline: calc(-1 * var(--space-3));
+  padding-inline: var(--space-3);
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--green-text) 8%, var(--surface));
+}
+.answer.is-picked + .answer { border-top: 0; }
+.btn-compact { min-width: 0; }
+
+/* "Did it turn out right?" with a two-option switch. */
+.verdict { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin-left: var(--space-2); }
+.segmented { display: inline-flex; padding: 0.125rem; border-radius: var(--radius-control); background: var(--fill-tertiary); }
+.segmented button {
+  min-width: 4rem; min-height: var(--tap);
+  border: 0; border-radius: calc(var(--radius-control) - 0.125rem);
+  background: transparent; color: var(--label); font: inherit; cursor: pointer;
+}
+.segmented button[aria-pressed="true"] { background: var(--surface-raised); font-weight: 600; box-shadow: 0 1px 3px rgb(0 0 0 / 0.12); }
+
+/* "Report", quietly at the end of a detail line, with a full tap height. */
+.report-inline {
+  padding: 0.8125rem 0.25rem; margin: -0.8125rem -0.25rem;
+  border: 0; background: none; font: inherit; color: var(--label-secondary); cursor: pointer;
+}
+.report-sent { color: var(--label-secondary); }

@@ -9,10 +9,17 @@ export default function Home() {
   const { state } = useSession();
   return (
     <main className="page home">
-      <h1 className="text-large">Ask once. Reach people who’ve done it.</h1>
-      <p className="text-body secondary">
-        Your question goes to people with real experience of it. You choose the answer that helped.
-      </p>
+      {state.status === 'ready' ? (
+        // Signed in: their own things first, not the pitch they've already read.
+        <h1 className="visually-hidden">Graphinity</h1>
+      ) : (
+        <>
+          <h1 className="text-large">Ask once. Reach people who’ve done it.</h1>
+          <p className="text-body secondary">
+            Your question goes to people with real experience of it. You choose the answer that helped.
+          </p>
+        </>
+      )}
       {state.status === 'signedOut' && (
         <div className="home-action">
           <GoogleButton />

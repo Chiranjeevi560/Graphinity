@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { SquircleLayers } from './Squircle.tsx';
 
 interface Props {
@@ -16,6 +16,8 @@ interface Props {
  */
 export function Dialog({ open, onClose, title, children, actions }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
+  // Each dialog its own id: a page can hold several (one per answer).
+  const titleId = useId();
 
   useEffect(() => {
     const el = ref.current;
@@ -25,10 +27,10 @@ export function Dialog({ open, onClose, title, children, actions }: Props) {
   }, [open]);
 
   return (
-    <dialog ref={ref} className="dialog" aria-labelledby="dialog-title" onClose={onClose} onCancel={e => { e.preventDefault(); onClose(); }}>
+    <dialog ref={ref} className="dialog" aria-labelledby={titleId} onClose={onClose} onCancel={e => { e.preventDefault(); onClose(); }}>
       <div className="dialog-panel sq-host">
         <SquircleLayers radius={1.25} />
-        <h2 id="dialog-title" className="text-title3">{title}</h2>
+        <h2 id={titleId} className="text-title3">{title}</h2>
         <div className="dialog-body text-body">{children}</div>
         <div className="dialog-actions">{actions}</div>
       </div>

@@ -23,7 +23,7 @@ export function ReportButton({ kind, id }: { kind: 'question' | 'answer'; id: st
   const [sent, setSent] = useState(false);
   const legendId = useId();
 
-  if (sent) return <span className="text-footnote secondary report-sent">Reported. Thank you.</span>;
+  if (sent) return <span className="report-sent">Reported</span>;
 
   async function send() {
     if (!reason) return;
@@ -42,19 +42,19 @@ export function ReportButton({ kind, id }: { kind: 'question' | 'answer'; id: st
 
   return (
     <>
-      <button type="button" className="btn btn-plain report-button" onClick={() => { setOpen(true); }}>Report…</button>
+      <button type="button" className="report-inline" onClick={() => { setOpen(true); }}>Report</button>
       <Dialog
         open={open}
         onClose={() => { if (!sending) setOpen(false); }}
         title={kind === 'question' ? 'Report this question' : 'Report this answer'}
         actions={
           <>
-            <Button variant="secondary" disabled={sending} onClick={() => { setOpen(false); }}>Cancel</Button>
+            <button type="button" className="btn btn-plain" disabled={sending} onClick={() => { setOpen(false); }}>Cancel</button>
             <Button disabled={sending || reason === null} onClick={() => { void send(); }}>{sending ? 'Sending…' : 'Send report'}</Button>
           </>
         }
       >
-        <p>Only moderators see reports, never who sent them.</p>
+        <p>Reports are private. The person won’t know it was you.</p>
         <fieldset className="reasons" aria-labelledby={legendId}>
           <legend id={legendId} className="visually-hidden">What’s wrong?</legend>
           {REASONS.map(r => (

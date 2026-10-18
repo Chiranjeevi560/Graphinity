@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Button, LinkButton } from '../components/Button.tsx';
 import { Dialog } from '../components/Dialog.tsx';
-import { Avatar, CountryBadge, FieldTags, joinedLabel } from '../components/Identity.tsx';
+import { Avatar, CountryBadge, FieldTags, Handle, joinedLabel } from '../components/Identity.tsx';
 import { Notifications } from '../components/Notifications.tsx';
 import { Standing, useStanding } from '../components/Standing.tsx';
 import { turnPushOff } from '../lib/push.ts';
@@ -36,7 +36,7 @@ export default function Me({ profile }: { profile: Profile }) {
       <header className="profile-head">
         <Avatar handle={profile.handle} size="large" />
         <div className="profile-names">
-          <h1 className="text-title1">@{profile.handle}</h1>
+          <h1 className="text-title1"><Handle handle={profile.handle} /></h1>
           <div className="profile-meta">
             <CountryBadge country={profile.country} />
             <span className="text-subhead secondary">{joinedLabel(profile.joined)}</span>
