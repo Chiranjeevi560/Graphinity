@@ -2,11 +2,13 @@ import { useState } from 'react';
 import { Button, LinkButton } from '../components/Button.tsx';
 import { Dialog } from '../components/Dialog.tsx';
 import { Avatar, CountryBadge, FieldTags, joinedLabel } from '../components/Identity.tsx';
+import { Standing, useStanding } from '../components/Standing.tsx';
 import { ApiError } from '../lib/api.ts';
 import { navigate } from '../lib/router.ts';
 import { api, auth, type Profile } from '../session.tsx';
 
 export default function Me({ profile }: { profile: Profile }) {
+  const standing = useStanding(profile.handle);
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -42,6 +44,8 @@ export default function Me({ profile }: { profile: Profile }) {
         <h2 className="text-headline">Knows about</h2>
         <FieldTags fields={profile.fields} />
       </section>
+
+      {standing && <Standing standing={standing} />}
 
       <LinkButton to="/me/edit" variant="secondary" className="btn-block">Edit profile</LinkButton>
 

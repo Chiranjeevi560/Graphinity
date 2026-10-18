@@ -84,6 +84,10 @@
   /* Red text on a grey fill (destructive buttons). */
   --red-on-fill: #c00014;
   --green-text: #1c7331;
+  /* Medal names as text: each checked at 4.5:1 (test/contrast.test.ts). */
+  --medal-gold: #8a6100;
+  --medal-silver: #5b6470;
+  --medal-bronze: #8e4a1c;
   --material: rgb(255 255 255 / 0.72);
   --material-solid: #f9f9f9;
   --shadow-card: 0 0.5px 0 rgb(0 0 0 / 0.04), 0 2px 12px rgb(0 0 0 / 0.04);
@@ -113,6 +117,9 @@
     --red-text: #ff6961;
     --red-on-fill: #ffa39d;
     --green-text: #30d158;
+    --medal-gold: #ffd60a;
+    --medal-silver: #c7ccd4;
+    --medal-bronze: #e8a87c;
     --material: rgb(30 30 30 / 0.72);
     --material-solid: #1c1c1e;
     --shadow-card: none;

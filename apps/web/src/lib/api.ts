@@ -17,7 +17,7 @@ const OFFLINE = 'You seem to be offline. Check your connection and try again.';
 const UNKNOWN = 'Something went wrong. Try again in a minute.';
 
 export interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
   /** Send the access token. Required routes fail early when signed out. */
   signedIn?: boolean;

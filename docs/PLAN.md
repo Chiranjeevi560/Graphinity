@@ -68,7 +68,8 @@ Render or Supabase.** Limits checked on the services' own pages on 2026-10-17 ar
 3. ✅ Ask, answer, read: public reading, live matching while typing (built and tested locally;
    editing and deleting posts not offered yet; question pages' link previews and the sitemap of
    questions need a server-side step at deploy, step 7).
-4. Select, helpful, points, medals, trust, change-with-reason, pair cap.
+4. ✅ Select, helpful, points, medals, trust, change-with-reason, pair cap (built and tested locally;
+   medal thresholds bronze 10 / silver 50 / gold 200 are a default for the owner to confirm).
 5. Routing waves, live updates, web push.
 6. Reporting, auto-hide, owner review page, limits, blocking.
 7. Launch prep: privacy policy, terms, hostile review, phone checks, accounts, deploy (server

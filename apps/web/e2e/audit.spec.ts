@@ -22,6 +22,16 @@ interface ScreenReport {
 const reports: ScreenReport[] = [];
 const consoleErrors: string[] = [];
 
+/**
+ * Playwright's WebKit screenshots inject a style element, which our CSP
+ * refuses (two errors per screenshot pair, on every screen; none without
+ * screenshots). Only with AUDIT_SHOTS, only in WebKit, only that message.
+ */
+function realErrors(errors: string[], browserName: string): string[] {
+  if (!process.env.AUDIT_SHOTS || browserName !== 'webkit') return errors;
+  return errors.filter(e => !e.endsWith(":: Refused to apply a stylesheet because its hash, its nonce, or 'unsafe-inline' does not appear in the style-src directive of the Content Security Policy."));
+}
+
 async function settle(page: Page) {
   await page.waitForLoadState('networkidle');
   // Wait out route fades so contrast is measured on final colours.
@@ -55,8 +65,12 @@ async function audit(page: Page, screen: string) {
         if (r.width === 0 || r.height === 0) continue;
         // Links inside running text are exempt (WCAG 2.5.8 "inline").
         if (el.tagName === 'A' && el.closest('p')) continue;
-        // A visually hidden native checkbox is covered by its 44px label row.
-        if (el instanceof HTMLInputElement && el.type === 'checkbox' && el.closest('label.checkbox')) continue;
+        // A native checkbox or radio inside a label row: the whole row is the
+        // target, so measure the row (it must itself be 44px or more).
+        if (el instanceof HTMLInputElement && (el.type === 'checkbox' || el.type === 'radio')) {
+          const row = el.closest('label');
+          if (row && row.getBoundingClientRect().height >= min) continue;
+        }
         if (Math.min(r.width, r.height) < min) {
           small.push({ label: (el.getAttribute('aria-label') ?? el.textContent).trim().slice(0, 40), w: Math.round(r.width), h: Math.round(r.height) });
         }
@@ -230,6 +244,7 @@ test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
   // Signed out, anyone can read the question, and is invited to answer.
   await page.goto('/me');
   await page.getByRole('button', { name: 'Sign out' }).click();
+  await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeVisible();
   await page.goto(questionUrl);
   await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
   await expect(page.getByText('Sign in to answer')).toBeVisible();
@@ -267,6 +282,103 @@ test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
   // CSP violations surface as console errors in every engine.
   // Only the one expected error: the missing profile's 404 from the API.
   const expected = (e: string) => e.startsWith('http://localhost:4173/u/nobody.here :: Failed to load resource: the server responded with a status of 404');
-  expect.soft(consoleErrors.filter(e => !expected(e)), 'console errors').toEqual([]);
+  expect.soft(realErrors(consoleErrors, browserName).filter(e => !expected(e)), 'console errors').toEqual([]);
   await testInfo.attach(`audit-${browserName}.json`, { body: JSON.stringify({ reports, consoleErrors }, null, 2), contentType: 'application/json' });
+});
+
+/** Signs in through the local stand-in as one of its people. */
+async function signIn(page: Page, who: 'Test person A' | 'A brand-new person') {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Continue with Google' }).click();
+  await page.getByRole('button', { name: who }).click();
+  await page.waitForURL(url => !url.pathname.startsWith('/auth/'));
+}
+
+/** Finishes setup if this person hasn't yet (a fixed test person only needs it once). */
+async function setUpIfNeeded(page: Page, handle: string) {
+  // Signing in lands on the home page, then the app sends a newcomer to
+  // setup: wait until it has settled into one or the other.
+  const setup = page.getByRole('heading', { name: 'Choose your name' });
+  await expect(setup.or(page.getByRole('link', { name: 'Ask a question' }))).toBeVisible();
+  if (!(await setup.isVisible())) return;
+  await page.getByLabel('Name').fill(handle);
+  await expect(page.getByText('Available')).toBeVisible();
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByLabel('Country').selectOption('IN');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByRole('button', { name: 'Imports & Customs' }).click();
+  await page.getByText('I’m 18 or older').click();
+  await page.getByRole('button', { name: 'Create profile' }).click();
+  await expect(page).not.toHaveURL(/\/welcome/);
+}
+
+async function signOut(page: Page) {
+  await page.goto('/me');
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeVisible();
+}
+
+test('picking an answer moves points, and the profile shows them', async ({ page, browserName }) => {
+  page.on('console', msg => { if (msg.type() === 'error') consoleErrors.push(`${page.url()} :: ${msg.text().slice(0, 200)}`); });
+  const run = `${browserName}${String(Date.now() % 1_000_000)}`;
+
+  // The asker: a fixed test person, so they can come back later.
+  await signIn(page, 'Test person A');
+  await setUpIfNeeded(page, `asker.${run}`);
+  await page.goto('/ask');
+  const title = `Which customs form do I need for a watch, case ${run}?`;
+  await page.getByLabel('Your question').fill(title);
+  await page.getByRole('button', { name: 'Post question' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
+  const questionUrl = new URL(page.url()).pathname;
+  await signOut(page);
+
+  // Two newcomers answer.
+  const answerers = [`first.${run}`, `second.${run}`];
+  for (const handle of answerers) {
+    await signIn(page, 'A brand-new person');
+    await setUpIfNeeded(page, handle);
+    await page.goto(questionUrl);
+    await page.getByLabel('Your answer').fill(`Form B/L 12 worked for me, says ${handle}.`);
+    await page.getByRole('button', { name: 'Post answer' }).click();
+    await expect(page.getByRole('link', { name: `@${handle}`, exact: true })).toBeVisible();
+    await signOut(page);
+  }
+
+  // The asker comes back, picks the first answer, says it worked, marks the second helpful.
+  await signIn(page, 'Test person A');
+  await page.goto(questionUrl);
+  const first = page.getByRole('listitem').filter({ hasText: `says first.${run}` });
+  const second = page.getByRole('listitem').filter({ hasText: `says second.${run}` });
+  await audit(page, 'question (asker, before picking)');
+  await first.getByRole('button', { name: 'Pick as the answer that helped' }).click();
+  await expect(first.getByText('Picked by the asker')).toBeVisible();
+  await first.getByRole('group', { name: 'Did it turn out right?' }).getByRole('button', { name: 'Yes' }).click();
+  await expect(first.getByText('Turned out right')).toBeVisible();
+  await second.getByRole('button', { name: 'Mark helpful' }).click();
+  await expect(second.getByText('Marked helpful')).toBeVisible();
+  await audit(page, 'question (asker, picked)');
+
+  // Changing the pick asks why, in a dialog.
+  await second.getByRole('button', { name: 'Pick this instead' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Why are you changing your pick?' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Change pick' })).toBeDisabled();
+  await audit(page, 'change pick dialog');
+  await dialog.getByLabel('A better answer came later').check();
+  await dialog.getByRole('button', { name: 'Change pick' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(second.getByText('Picked by the asker')).toBeVisible();
+  await expect(page.getByText('You can change your pick once more.')).toBeVisible();
+
+  // The second answerer's profile now shows 7 points (5 for the pick, 2 for helpful).
+  await page.goto(`/u/${answerers[1] ?? ''}`);
+  await expect(page.getByRole('heading', { name: 'Helped people with' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Helped people with' }).getByRole('listitem').filter({ hasText: 'Imports & Customs' })).toContainText('7 points');
+  await audit(page, 'public profile (with points)');
+  // The first lost the pick's points when it moved.
+  await page.goto(`/u/${answerers[0] ?? ''}`);
+  await expect(page.getByRole('heading', { name: 'Helped people with' })).toHaveCount(0);
+
+  expect.soft(realErrors(consoleErrors, browserName).filter(e => !e.includes('/u/nobody.here')), 'console errors').toEqual([]);
 });

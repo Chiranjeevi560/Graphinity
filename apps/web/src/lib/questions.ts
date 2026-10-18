@@ -15,7 +15,22 @@ export interface Answer {
   body: string;
   answerer: { handle: string };
   createdAt: string;
+  helpful: boolean;
 }
+
+/** The asker's pick. `answerId` is null if the picked answer's author left. */
+export interface Selection {
+  answerId: string | null;
+  changesLeft: number;
+  correct: boolean | null;
+}
+
+export const CHANGE_REASONS = [
+  { value: 'turned_out_wrong', label: 'It turned out wrong' },
+  { value: 'better_answer_later', label: 'A better answer came later' },
+  { value: 'picked_by_mistake', label: 'I picked it by mistake' },
+] as const;
+export type ChangeReason = (typeof CHANGE_REASONS)[number]['value'];
 
 export const TITLE = { min: 15, max: 150 };
 export const DETAILS_MAX = 5000;

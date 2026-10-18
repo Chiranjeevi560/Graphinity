@@ -1,19 +1,21 @@
 import { useEffect, useState } from 'react';
 import { Avatar, CountryBadge, FieldTags, joinedLabel } from '../components/Identity.tsx';
+import { Standing, type StandingData } from '../components/Standing.tsx';
 import { ApiError } from '../lib/api.ts';
 import { Link } from '../lib/router.ts';
 import { api, type Profile } from '../session.tsx';
 
 export default function PublicProfile({ handle }: { handle: string }) {
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [standing, setStanding] = useState<StandingData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // App keys each screen by its path, so a new handle mounts a fresh screen;
   // only a late answer after leaving needs ignoring.
   useEffect(() => {
     let live = true;
-    api<{ profile: Profile }>(`/profiles/${encodeURIComponent(handle)}`)
-      .then(r => { if (live) setProfile(r.profile); })
+    api<{ profile: Profile; standing: StandingData }>(`/profiles/${encodeURIComponent(handle)}`)
+      .then(r => { if (live) { setProfile(r.profile); setStanding(r.standing); } })
       .catch((err: unknown) => { if (live) setError(err instanceof ApiError ? err.message : 'Something went wrong. Try again in a minute.'); });
     return () => { live = false; };
   }, [handle]);
@@ -44,6 +46,7 @@ export default function PublicProfile({ handle }: { handle: string }) {
         <h2 className="text-headline">Knows about</h2>
         <FieldTags fields={profile.fields} />
       </section>
+      {standing && <Standing standing={standing} />}
     </main>
   );
 }

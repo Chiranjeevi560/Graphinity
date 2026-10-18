@@ -4,11 +4,12 @@ import { TextArea } from '../components/Form.tsx';
 import { GoogleButton } from '../components/GoogleButton.tsx';
 import { ApiError } from '../lib/api.ts';
 import { applyMeta } from '../lib/meta.ts';
-import { ANSWER, charCount, questionPath, timeAgo, type Answer, type QuestionSummary } from '../lib/questions.ts';
+import { ANSWER, charCount, questionPath, timeAgo, type Answer, type QuestionSummary, type Selection } from '../lib/questions.ts';
+import { AnswerActions, AnswerLabels } from '../components/AnswerActions.tsx';
 import { Link } from '../lib/router.ts';
 import { api, useSession } from '../session.tsx';
 
-interface Page { question: QuestionSummary & { body: string }; answers: Answer[] }
+interface Page { question: QuestionSummary & { body: string }; answers: Answer[]; selection: Selection | null }
 
 /**
  * The address carries the title's current wording: fix it quietly if an old
@@ -50,7 +51,7 @@ export default function Question({ id }: { id: string }) {
   }
   if (!page) return <main className="page stack-message"><p className="text-body status" role="status">Loading…</p></main>;
 
-  const { question, answers } = page;
+  const { question, answers, selection } = page;
   const me = state.status === 'ready' ? state.profile.handle : null;
   const asked = me === question.asker.handle;
   const answered = me !== null && answers.some(a => a.answerer.handle === me);
@@ -75,13 +76,15 @@ export default function Question({ id }: { id: string }) {
         {answers.length > 0 && (
           <ol className="answer-list">
             {answers.map(a => (
-              <li key={a.id} className="answer">
+              <li key={a.id} className={`answer${selection?.answerId === a.id ? ' is-picked' : ''}`}>
+                <AnswerLabels answer={a} picked={selection?.answerId === a.id} correct={selection?.answerId === a.id ? selection.correct : null} />
                 <p className="text-body post-body">{a.body}</p>
                 <p className="text-footnote secondary">
                   <Link to={`/u/${encodeURIComponent(a.answerer.handle)}`}>@{a.answerer.handle}</Link>
                   {' · '}
                   <time dateTime={a.createdAt}>{timeAgo(a.createdAt, now)}</time>
                 </p>
+                {asked && <AnswerActions questionId={question.id} answer={a} selection={selection} onChanged={reload} />}
               </li>
             ))}
           </ol>
@@ -100,7 +103,7 @@ export default function Question({ id }: { id: string }) {
           <LinkButton to={`/welcome?next=${encodeURIComponent(location.pathname)}`}>Set up profile</LinkButton>
         </section>
       )}
-      {state.status === 'ready' && asked && (
+      {state.status === 'ready' && asked && answers.length === 0 && (
         <p className="text-subhead secondary">This is your question. You’ll see answers here as people reply.</p>
       )}
       {state.status === 'ready' && !asked && !answered && <AnswerForm questionId={question.id} onAnswered={reload} />}
