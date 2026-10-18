@@ -3,7 +3,7 @@ import { SquircleLayers } from './Squircle.tsx';
 
 interface Props {
   open: boolean;
-  onClose(): void;
+  onClose: () => void;
   title: string;
   children: ReactNode;
   /** The buttons, most important last (Apple puts the action on the right). */

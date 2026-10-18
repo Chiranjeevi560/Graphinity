@@ -23,7 +23,7 @@ export const auth: Auth = createAuth({
   siteOrigin: location.origin,
   storage: tabStorage(),
   fetch: (...args) => fetch(...args),
-  redirect: url => location.assign(url),
+  redirect: url => { location.assign(url); },
   now: () => Math.floor(Date.now() / 1000),
 });
 
@@ -33,8 +33,8 @@ const store = createSessionStore({ auth, api });
 
 interface SessionValue {
   state: SessionState;
-  reload(): Promise<void>;
-  setProfile(profile: Profile): void;
+  reload: () => Promise<void>;
+  setProfile: (profile: Profile) => void;
 }
 
 const SessionContext = createContext<SessionValue | null>(null);

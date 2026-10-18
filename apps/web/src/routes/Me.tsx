@@ -46,10 +46,10 @@ export default function Me({ profile }: { profile: Profile }) {
       <LinkButton to="/me/edit" variant="secondary" className="btn-block">Edit profile</LinkButton>
 
       <section className="profile-footer">
-        <button type="button" className="btn btn-plain" onClick={async () => { await auth.signOut(); navigate('/', { replace: true }); }}>
+        <button type="button" className="btn btn-plain" onClick={() => { void auth.signOut().then(() => { navigate('/', { replace: true }); }); }}>
           Sign out
         </button>
-        <button type="button" className="btn btn-plain danger" onClick={() => setConfirming(true)}>Delete account…</button>
+        <button type="button" className="btn btn-plain danger" onClick={() => { setConfirming(true); }}>Delete account…</button>
       </section>
 
       <Dialog
@@ -58,8 +58,8 @@ export default function Me({ profile }: { profile: Profile }) {
         title="Delete your account?"
         actions={
           <>
-            <Button variant="secondary" onClick={() => setConfirming(false)} disabled={deleting}>Cancel</Button>
-            <Button className="btn-destructive" onClick={deleteAccount} disabled={deleting}>
+            <Button variant="secondary" onClick={() => { setConfirming(false); }} disabled={deleting}>Cancel</Button>
+            <Button className="btn-destructive" onClick={() => { void deleteAccount(); }} disabled={deleting}>
               {deleting ? 'Deleting…' : 'Delete account'}
             </Button>
           </>

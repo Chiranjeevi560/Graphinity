@@ -68,14 +68,15 @@ export function createAuth(deps: AuthDeps) {
   let access: { token: string; expiresAt: number } | null = null;
   let refreshing: Promise<string | null> | null = null;
   const listeners = new Set<() => void>();
-  const notify = () => listeners.forEach(l => l());
+  const notify = () => { listeners.forEach(l => { l(); }); };
 
   const authHeaders = { apikey: deps.supabaseKey, 'content-type': 'application/json' };
 
-  function keep(session: TokenResponse) {
+  function keep(session: TokenResponse): string {
     const expiresAt = session.expires_at ?? deps.now() + session.expires_in;
     access = { token: session.access_token, expiresAt };
     storage.setItem(REFRESH_KEY, session.refresh_token);
+    return session.access_token;
   }
 
   function forget() {
@@ -155,8 +156,7 @@ export function createAuth(deps: AuthDeps) {
           // refresh token and try again on the next request.
           if (res.status === 400 || res.status === 401 || res.status === 403) { forget(); return null; }
           if (!res.ok) return null;
-          keep(await res.json() as TokenResponse);
-          return access!.token;
+          return keep(await res.json() as TokenResponse);
         } catch {
           // Offline: keep the refresh token for next time, but no token now.
           return null;

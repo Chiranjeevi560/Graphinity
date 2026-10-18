@@ -31,7 +31,7 @@ export default function AuthCallback() {
         await reload();
         if (alive) navigate(returnTo, { replace: true });
       })
-      .catch(err => {
+      .catch((err: unknown) => {
         if (alive) setError(err instanceof SignInError ? signInMessages[err.reason] : signInMessages.rejected);
       });
     return () => { alive = false; };

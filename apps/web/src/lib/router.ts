@@ -3,7 +3,7 @@
 import { createElement, useSyncExternalStore, type AnchorHTMLAttributes, type MouseEvent } from 'react';
 
 const listeners = new Set<() => void>();
-const notify = () => listeners.forEach(l => l());
+const notify = () => { listeners.forEach(l => { l(); }); };
 
 if (typeof window !== 'undefined') window.addEventListener('popstate', notify);
 

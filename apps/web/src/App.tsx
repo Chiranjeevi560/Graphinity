@@ -110,7 +110,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean
       <main className="page stack-message">
         <h1 className="text-title2">This page couldn’t load</h1>
         <p className="text-body secondary">Check your internet connection, then reload the page.</p>
-        <Button onClick={() => location.reload()}>Reload</Button>
+        <Button onClick={() => { location.reload(); }}>Reload</Button>
       </main>
     );
   }

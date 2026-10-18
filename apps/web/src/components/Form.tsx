@@ -6,7 +6,7 @@ export type FieldStatus = { tone: 'neutral' | 'good' | 'bad'; text: string } | n
 interface TextFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'onChange' | 'prefix'> {
   label: string;
   value: string;
-  onChange(value: string): void;
+  onChange: (value: string) => void;
   prefix?: string;
   status?: FieldStatus;
   hint?: string;
@@ -26,7 +26,7 @@ export function TextField({ label, value, onChange, prefix, status, hint, ...res
           id={id}
           className="input"
           value={value}
-          onChange={(e: ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
+          onChange={(e: ChangeEvent<HTMLInputElement>) => { onChange(e.target.value); }}
           aria-describedby={note ? noteId : undefined}
           aria-invalid={status?.tone === 'bad' || undefined}
           {...rest}
@@ -41,7 +41,7 @@ export function TextField({ label, value, onChange, prefix, status, hint, ...res
 interface SelectFieldProps {
   label: string;
   value: string;
-  onChange(value: string): void;
+  onChange: (value: string) => void;
   options: Array<{ value: string; label: string }>;
   hint?: string;
 }
@@ -54,7 +54,7 @@ export function SelectField({ label, value, onChange, options, hint }: SelectFie
       <div className="input-box sq-host">
         <SquircleLayers radius={0.75} focusRing />
         {/* The native picker: on iPhone it opens the system wheel, which people already know. */}
-        <select id={id} className="input select" value={value} onChange={e => onChange(e.target.value)} aria-describedby={hint ? `${id}-note` : undefined}>
+        <select id={id} className="input select" value={value} onChange={e => { onChange(e.target.value); }} aria-describedby={hint ? `${id}-note` : undefined}>
           {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
         <svg className="select-chevron" viewBox="0 0 12 8" aria-hidden="true"><path d="M1 1.5l5 5 5-5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
@@ -68,7 +68,7 @@ interface ChipPickerProps {
   legend: string;
   options: Array<{ slug: string; name: string }>;
   selected: ReadonlySet<string>;
-  onToggle(slug: string): void;
+  onToggle: (slug: string) => void;
   max: number;
 }
 
@@ -87,7 +87,7 @@ export function ChipPicker({ legend, options, selected, onToggle, max }: ChipPic
               className={`chip sq-host${on ? ' is-on' : ''}`}
               aria-pressed={on}
               disabled={!on && full}
-              onClick={() => onToggle(o.slug)}
+              onClick={() => { onToggle(o.slug); }}
             >
               <SquircleLayers radius={0.75} focusRing />
               <span className="chip-label">{o.name}</span>
@@ -102,10 +102,10 @@ export function ChipPicker({ legend, options, selected, onToggle, max }: ChipPic
   );
 }
 
-export function Checkbox({ checked, onChange, children }: { checked: boolean; onChange(v: boolean): void; children: ReactNode }) {
+export function Checkbox({ checked, onChange, children }: { checked: boolean; onChange: (v: boolean) => void; children: ReactNode }) {
   return (
     <label className="checkbox">
-      <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} />
+      <input type="checkbox" checked={checked} onChange={e => { onChange(e.target.checked); }} />
       <span className="checkbox-box sq-host" aria-hidden="true">
         <SquircleLayers radius={0.375} />
         <svg viewBox="0 0 14 11"><path d="M1.5 5.5l3.5 3.5 7.5-7.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
