@@ -58,6 +58,7 @@ These must stay true. If one stops being true, revisit everything that depends o
 | Someone posting as another person, or answering their own question | RLS: questions and answers only as `app.current_user_id()`; the answer policy also refuses the asker. No UPDATE or DELETE granted yet | `questions.integration.test.ts`; fails when the policy check is removed |
 | Hidden or spoofing characters in posts | Control characters refused in the API and by database checks; titles one line with single spaces | `text.test.ts` and database tests |
 | Getting points that didn't happen | See T8a. Every rule tested by an attack that must fail, and each test proven to fail when its rule is removed | `points.db.integration.test.ts`, `points.integration.test.ts` |
+| Learning who was asked a question | Routes readable only by their recipient (and the server's routing job, which sets its own `app.system` flag; no request does); only the job can create them; never to the asker; 5 a day per person, in the database | `routing.integration.test.ts`; fails when the policy or budget is loosened |
 | Search query injection | Matching builds its query only from letters and digits, passed as a parameter | `text.test.ts`; operator characters return no query |
 | Identity in the database | Only a chosen name, country, fields, 18+ time. No Google name or email copied | Integration test checks the stored row |
 | Supply chain | Install scripts disabled, exact versions, lockfile, versions over 2 weeks old, audit in CI, actions pinned to commits, read-only CI token | `.npmrc`, `ci.yml` |

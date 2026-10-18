@@ -3,6 +3,7 @@
 // refuses an answer to your own question even if this code forgot to check.
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Database } from '../db.ts';
+import type { Events } from '../events.ts';
 import { cleanBody, cleanLine, prefixQuery, textProblem, type TextProblem } from '../text.ts';
 import { fail, pgCode, pgConstraint, signedIn } from './common.ts';
 import { MAX_CHANGES } from './points.ts';
@@ -55,8 +56,8 @@ interface QuestionRow {
 }
 
 // ponytail: answer counts are counted per row; keep a counter column when lists get slow.
-const QUESTION_SELECT = `
-  SELECT q.id::text AS id, q.title, q.body, q.field, f.name AS field_name, q.country, c.name AS country_name,
+const questionSelect = (extraColumns = '') => `
+  SELECT ${extraColumns} q.id::text AS id, q.title, q.body, q.field, f.name AS field_name, q.country, c.name AS country_name,
          p.handle AS asker, q.created_at,
          (SELECT count(*) FROM app.answers a WHERE a.question_id = q.id)::int AS answer_count
   FROM app.questions q
@@ -87,14 +88,14 @@ function refuseText(reply: FastifyReply, what: keyof typeof messages, problem: T
   return fail(reply, 400, `invalid_${what}`, messages[what][problem], { reason: problem });
 }
 
-export function registerQuestionRoutes(app: FastifyInstance, { db }: { db: Database }) {
+export function registerQuestionRoutes(app: FastifyInstance, { db, events }: { db: Database; events: Events }) {
   // Newest first, a page at a time. `before` is the last id of the previous page.
   app.get('/questions', {
     schema: { querystring: { type: 'object', additionalProperties: false, properties: { before: idSchema } } },
   }, async req => {
     const { before } = req.query as { before?: string };
     const rows = await db.withUser(null, async q => (await q.query<QuestionRow>(
-      `${QUESTION_SELECT} WHERE ($1::bigint IS NULL OR q.id < $1::bigint) ORDER BY q.id DESC LIMIT ${PAGE_SIZE + 1}`,
+      `${questionSelect()} WHERE ($1::bigint IS NULL OR q.id < $1::bigint) ORDER BY q.id DESC LIMIT ${PAGE_SIZE + 1}`,
       [before ?? null])).rows);
     const page = rows.slice(0, PAGE_SIZE);
     return { questions: page.map(summary), next: rows.length > PAGE_SIZE ? page.at(-1)?.id ?? null : null };
@@ -122,11 +123,15 @@ export function registerQuestionRoutes(app: FastifyInstance, { db }: { db: Datab
   });
 
   app.get('/questions/:id', {
+    // Signed in is optional: it only marks the question seen if it was put to you.
+    config: { auth: 'optional' },
     schema: { params: { type: 'object', properties: { id: idSchema }, required: ['id'] } },
   }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const found = await db.withUser(null, async q => {
-      const question = (await q.query<QuestionRow>(`${QUESTION_SELECT} WHERE q.id = $1`, [id])).rows[0];
+    const viewer = req.user?.id ?? null;
+    const found = await db.withUser(viewer, async q => {
+      if (viewer) await q.query('UPDATE app.routes SET seen_at = now() WHERE question_id = $1 AND profile_id = $2 AND seen_at IS NULL', [id, viewer]);
+      const question = (await q.query<QuestionRow>(`${questionSelect()} WHERE q.id = $1`, [id])).rows[0];
       if (!question) return null;
       const answers = (await q.query<{ id: string; body: string; answerer: string; created_at: Date; helpful: boolean }>(
         `SELECT a.id::text AS id, a.body, p.handle AS answerer, a.created_at,
@@ -150,6 +155,20 @@ export function registerQuestionRoutes(app: FastifyInstance, { db }: { db: Datab
         changesLeft: MAX_CHANGES - found.selection.changes,
         correct: found.selection.correct,
       },
+    };
+  });
+
+  // Questions put to you, newest first, and how many you haven't opened.
+  app.get('/me/inbox', { config: { auth: 'required' } }, async req => {
+    const user = signedIn(req);
+    const rows = await db.withUser(user.id, async q => (await q.query<QuestionRow & { routed_at: Date; seen: boolean }>(
+      `${questionSelect('r.routed_at, r.seen_at IS NOT NULL AS seen,')}
+       JOIN app.routes r ON r.question_id = q.id AND r.profile_id = $1
+       ORDER BY r.routed_at DESC LIMIT 30`,
+      [user.id])).rows);
+    return {
+      questions: rows.map(r => ({ ...summary(r), routedAt: r.routed_at.toISOString(), seen: r.seen })),
+      unseen: rows.filter(r => !r.seen).length,
     };
   });
 
@@ -189,6 +208,8 @@ export function registerQuestionRoutes(app: FastifyInstance, { db }: { db: Datab
       if (pgCode(err) === '23503') return fail(reply, 400, 'invalid_request', 'Choose a field and country from the lists.');
       throw err;
     }
+    // Put it to people now, rather than at the routing job's next run.
+    events.asked(id);
     return reply.code(201).send({ question: { id } });
   });
 
@@ -208,7 +229,7 @@ export function registerQuestionRoutes(app: FastifyInstance, { db }: { db: Datab
     const text = cleanBody((req.body as { body: string }).body);
     const problem = textProblem(text, LIMITS.answer.min, LIMITS.answer.max);
     if (problem) return refuseText(reply, 'answer', problem);
-    let outcome: { kind: 'missing' } | { kind: 'own' } | { kind: 'ok'; id: string };
+    let outcome: { kind: 'missing' } | { kind: 'own' } | { kind: 'ok'; id: string; askerId: string };
     try {
       outcome = await db.withUser(user.id, async q => {
         const question = (await q.query<{ asker_id: string }>('SELECT asker_id FROM app.questions WHERE id = $1', [id])).rows[0];
@@ -217,7 +238,7 @@ export function registerQuestionRoutes(app: FastifyInstance, { db }: { db: Datab
         const answerId = inserted((await q.query<{ id: string }>(
           'INSERT INTO app.answers (question_id, answerer_id, body) VALUES ($1, $2, $3) RETURNING id::text AS id',
           [id, user.id, text])).rows);
-        return { kind: 'ok' as const, id: answerId };
+        return { kind: 'ok' as const, id: answerId, askerId: question.asker_id };
       });
     } catch (err) {
       if (pgCode(err) === '23505' && pgConstraint(err) === 'answers_question_id_answerer_id_key') {
@@ -230,6 +251,7 @@ export function registerQuestionRoutes(app: FastifyInstance, { db }: { db: Datab
     }
     if (outcome.kind === 'missing') return fail(reply, 404, 'not_found', 'This question doesn’t exist. It may have been deleted.');
     if (outcome.kind === 'own') return fail(reply, 409, 'own_question', 'You can’t answer your own question.');
+    events.publish(outcome.askerId, { type: 'answered', questionId: id });
     return reply.code(201).send({ answer: { id: outcome.id } });
   });
 }

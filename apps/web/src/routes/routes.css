@@ -114,3 +114,14 @@
 .medal-gold { color: var(--medal-gold); }
 .medal-silver { color: var(--medal-silver); }
 .medal-bronze { color: var(--medal-bronze); }
+
+/* Inbox: questions put to you. */
+.inbox-count { color: var(--accent-text); font-weight: 600; }
+.unseen-dot {
+  display: inline-block;
+  width: 0.5rem; height: 0.5rem;
+  margin-right: var(--space-2);
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: 0.15em;
+}

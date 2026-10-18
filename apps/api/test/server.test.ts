@@ -10,6 +10,7 @@ function fakeDb(overrides: Partial<Database> = {}): Database {
   return {
     ping: () => Promise.resolve({ schemaVersion: 7 }),
     withUser: () => Promise.reject(new Error('not used')),
+    asSystem: () => Promise.reject(new Error('not used')),
     query: () => Promise.reject(new Error('not used')),
     assertRestricted: () => Promise.resolve(),
     close: () => Promise.resolve(),

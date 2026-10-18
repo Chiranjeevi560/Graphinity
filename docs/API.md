@@ -179,3 +179,17 @@ latest verdict) and is `null` until 3 different askers have said. Who gave whom 
 The pair cap: one asker can give one person points 3 times in 30 days. After that, picks and marks
 still work, but no points move for them.
 
+## Routing and the inbox
+
+New questions are put to people in waves by a job inside the server (every minute, and straight
+after each new question): 10 people at once, 30 more after 15 minutes without an answer, 100 more
+after another hour. People are chosen from those who know the question's field: people in the
+question's country first, then points in that field, then how much they answered in the last 30
+days. Two places in every ten are kept for people who joined in the last 14 days. Nobody gets more
+than 5 a day, and never their own question. Who was asked is visible only to them.
+
+### `GET /me/inbox` (signed in)
+
+`{ questions: [summary + { routedAt, seen }], unseen }`, newest first, up to 30. Opening a question
+(`GET /questions/:id` while signed in) marks it seen.
+

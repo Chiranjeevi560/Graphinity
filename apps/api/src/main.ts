@@ -3,6 +3,8 @@ import { createSupabaseAdmin } from './auth-admin.ts';
 import { loadConfig, ConfigError } from './config.ts';
 import { createDatabase } from './db.ts';
 import { completePendingDeletions } from './deletions.ts';
+import { createEvents } from './events.ts';
+import { routeDueQuestions } from './routing.ts';
 import { systemClock } from './rate-limit.ts';
 import { buildServer } from './server.ts';
 
@@ -37,12 +39,14 @@ try {
 }
 
 const authAdmin = createSupabaseAdmin({ supabaseUrl: config.supabaseUrl, secretKey: config.supabaseSecretKey });
+const events = createEvents();
 const app = await buildServer({
   config,
   db,
   clock: systemClock,
   auth: createTokenVerifier({ issuer: `${config.supabaseUrl}/auth/v1`, keys: supabaseKeys(config.supabaseUrl) }),
   authAdmin,
+  events,
 });
 logger.current = app.log;
 
@@ -57,6 +61,33 @@ runDeletions();
 const deletionTimer = setInterval(runDeletions, 5 * 60_000);
 deletionTimer.unref();
 app.addHook('onClose', (_instance, done) => { clearInterval(deletionTimer); done(); });
+
+// Put questions to people: right after each new question, and every
+// minute for the next waves. One run at a time; asks during a run are
+// picked up by one more run straight after it.
+let routing: Promise<void> | null = null;
+let again = false;
+const runRouting = () => {
+  if (routing) { again = true; return; }
+  routing = routeDueQuestions(db)
+    .then(results => {
+      for (const { questionId, asked } of results) {
+        for (const person of asked) events.publish(person, { type: 'routed', questionId });
+      }
+      const people = results.reduce((n, r) => n + r.asked.length, 0);
+      if (people) app.log.info({ questions: results.length, people }, 'routed questions');
+    })
+    .catch((err: unknown) => { app.log.warn({ kind: err instanceof Error ? err.name : 'unknown' }, 'routing run failed'); })
+    .finally(() => {
+      routing = null;
+      if (again) { again = false; runRouting(); }
+    });
+};
+events.onAsked(runRouting);
+runRouting();
+const routingTimer = setInterval(runRouting, 60_000);
+routingTimer.unref();
+app.addHook('onClose', (_instance, done) => { clearInterval(routingTimer); done(); });
 
 // Render sends SIGTERM before replacing or stopping the instance. Finish
 // in-flight requests, then release database connections. A failure while

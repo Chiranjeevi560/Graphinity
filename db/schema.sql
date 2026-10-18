@@ -1024,8 +1024,74 @@ DROP TRIGGER IF EXISTS verdicts_stamp ON app.verdicts;
 CREATE TRIGGER verdicts_stamp BEFORE INSERT OR UPDATE ON app.verdicts
   FOR EACH ROW EXECUTE FUNCTION app.stamp_verdict();
 
+-- ---------------------------------------------------------------------------
+-- Routing: who a question was put to, in waves. Who was asked is private:
+-- each person sees only their own routes. Only the server's routing job
+-- (app.is_system(), set by its own transactions, never by a request) may
+-- create them. A person gets at most 5 a day, and never their own question.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION app.is_system() RETURNS boolean
+  LANGUAGE sql STABLE
+  SET search_path = pg_catalog
+AS $$ SELECT coalesce(current_setting('app.system', true), '') = 'on' $$;
+REVOKE ALL ON FUNCTION app.is_system() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app.is_system() TO app_api;
+
+CREATE TABLE IF NOT EXISTS app.routes (
+  question_id  bigint NOT NULL REFERENCES app.questions (id) ON DELETE CASCADE,
+  profile_id   uuid NOT NULL REFERENCES app.profiles (id) ON DELETE CASCADE,
+  wave         smallint NOT NULL CHECK (wave BETWEEN 1 AND 3),
+  routed_at    timestamptz NOT NULL DEFAULT now(),
+  seen_at      timestamptz,
+  PRIMARY KEY (question_id, profile_id)
+);
+CREATE INDEX IF NOT EXISTS routes_inbox ON app.routes (profile_id, routed_at DESC);
+ALTER TABLE app.routes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.routes FORCE ROW LEVEL SECURITY;
+GRANT SELECT ON app.routes TO app_api;
+GRANT INSERT (question_id, profile_id, wave) ON app.routes TO app_api;
+GRANT UPDATE (seen_at) ON app.routes TO app_api;
+DROP POLICY IF EXISTS routes_read_own ON app.routes;
+CREATE POLICY routes_read_own ON app.routes FOR SELECT TO app_api
+  USING (profile_id = app.current_user_id() OR app.is_system());
+DROP POLICY IF EXISTS routes_insert_system ON app.routes;
+CREATE POLICY routes_insert_system ON app.routes FOR INSERT TO app_api
+  WITH CHECK (app.is_system());
+DROP POLICY IF EXISTS routes_seen_own ON app.routes;
+CREATE POLICY routes_seen_own ON app.routes FOR UPDATE TO app_api
+  USING (profile_id = app.current_user_id())
+  WITH CHECK (profile_id = app.current_user_id());
+
+CREATE OR REPLACE FUNCTION app.guard_route() RETURNS trigger
+  LANGUAGE plpgsql
+  SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+  IF TG_OP = 'UPDATE' THEN
+    -- Seen once, seen for good; the time is the database's.
+    NEW.seen_at := coalesce(OLD.seen_at, CASE WHEN NEW.seen_at IS NOT NULL THEN clock_timestamp() END);
+    RETURN NEW;
+  END IF;
+  IF EXISTS (SELECT 1 FROM app.questions q WHERE q.id = NEW.question_id AND q.asker_id = NEW.profile_id) THEN
+    RAISE EXCEPTION 'a question is never put to its own asker' USING ERRCODE = 'check_violation';
+  END IF;
+  NEW.routed_at := clock_timestamp();
+  NEW.seen_at := NULL;
+  -- The daily budget: past it, the route is quietly not made.
+  IF (SELECT count(*) FROM app.routes r
+      WHERE r.profile_id = NEW.profile_id AND r.routed_at > clock_timestamp() - interval '1 day') >= 5 THEN
+    RETURN NULL;
+  END IF;
+  RETURN NEW;
+END
+$$;
+REVOKE ALL ON FUNCTION app.guard_route() FROM PUBLIC;
+DROP TRIGGER IF EXISTS routes_guard ON app.routes;
+CREATE TRIGGER routes_guard BEFORE INSERT OR UPDATE ON app.routes
+  FOR EACH ROW EXECUTE FUNCTION app.guard_route();
+
 -- Bump on every change to this file.
-INSERT INTO app.schema_meta (id, version) VALUES (true, 6)
+INSERT INTO app.schema_meta (id, version) VALUES (true, 7)
   ON CONFLICT (id) DO UPDATE SET version = EXCLUDED.version, applied_at = now();
 
 COMMIT;

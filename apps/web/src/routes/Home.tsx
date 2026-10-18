@@ -1,5 +1,6 @@
 import { LinkButton } from '../components/Button.tsx';
 import { GoogleButton } from '../components/GoogleButton.tsx';
+import { Inbox } from '../components/Inbox.tsx';
 import { QuestionList } from '../components/QuestionList.tsx';
 import { useSession } from '../session.tsx';
 
@@ -27,6 +28,7 @@ export default function Home() {
       {state.status === 'unreachable' && (
         <div className="home-action"><p className="text-body secondary" role="alert">{state.message}</p></div>
       )}
+      {state.status === 'ready' && <Inbox />}
       <section className="home-questions" aria-labelledby="recent-heading">
         <h2 id="recent-heading" className="text-title3">Recent questions</h2>
         <QuestionList />

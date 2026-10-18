@@ -14,6 +14,12 @@ export interface Database {
    */
   withUser<T>(userId: string | null, fn: (q: Queryable) => Promise<T>): Promise<T>;
   /**
+   * Runs fn in one transaction as the server itself, for background jobs
+   * (routing questions to people). Policies that allow it check
+   * app.is_system(); no request handler uses this.
+   */
+  asSystem<T>(fn: (q: Queryable) => Promise<T>): Promise<T>;
+  /**
    * One statement with no signed-in identity and no transaction: for reads
    * that every visitor may make (row-level security still applies, as
    * anonymous). One round trip instead of four.
@@ -47,6 +53,35 @@ export function createDatabase(connectionString: string, options: DatabaseOption
   // Without a listener, a dropped idle connection crashes the process.
   pool.on('error', err => options.onIdleError?.(err));
 
+  async function transaction<T>(fn: (q: Queryable) => Promise<T>, userId: string, system: '' | 'on'): Promise<T> {
+    const client = await pool.connect();
+    // The pool only listens for errors on idle connections. A connection
+    // that drops while a request holds it emits 'error' with no listener,
+    // which crashes the whole process. Catch it here; the failing query
+    // already reports the problem to the request.
+    let broken: Error | undefined;
+    const onError = (err: Error) => { broken = err; };
+    client.on('error', onError);
+    try {
+      await client.query('BEGIN');
+      // Third argument true = local to this transaction, so the identity
+      // can never leak to the next request that reuses this connection.
+      await client.query("SELECT set_config('app.user_id', $1, true), set_config('app.system', $2, true)", [userId, system]);
+      const result = await fn(client);
+      await client.query('COMMIT');
+      return result;
+    } catch (err) {
+      await client.query('ROLLBACK').catch((rollbackErr: unknown) => {
+        broken ??= rollbackErr instanceof Error ? rollbackErr : new Error('rollback failed');
+      });
+      throw err;
+    } finally {
+      client.off('error', onError);
+      // Passing the error destroys the connection instead of reusing it.
+      client.release(broken);
+    }
+  }
+
   return {
     async ping() {
       const { rows } = await pool.query<{ version: number }>('SELECT version FROM app.schema_meta');
@@ -55,34 +90,8 @@ export function createDatabase(connectionString: string, options: DatabaseOption
       return { schemaVersion: version };
     },
 
-    async withUser(userId, fn) {
-      const client = await pool.connect();
-      // The pool only listens for errors on idle connections. A connection
-      // that drops while a request holds it emits 'error' with no listener,
-      // which crashes the whole process. Catch it here; the failing query
-      // already reports the problem to the request.
-      let broken: Error | undefined;
-      const onError = (err: Error) => { broken = err; };
-      client.on('error', onError);
-      try {
-        await client.query('BEGIN');
-        // Third argument true = local to this transaction, so the identity
-        // can never leak to the next request that reuses this connection.
-        await client.query("SELECT set_config('app.user_id', $1, true)", [userId ?? '']);
-        const result = await fn(client);
-        await client.query('COMMIT');
-        return result;
-      } catch (err) {
-        await client.query('ROLLBACK').catch((rollbackErr: unknown) => {
-          broken ??= rollbackErr instanceof Error ? rollbackErr : new Error('rollback failed');
-        });
-        throw err;
-      } finally {
-        client.off('error', onError);
-        // Passing the error destroys the connection instead of reusing it.
-        client.release(broken);
-      }
-    },
+    withUser: (userId, fn) => transaction(fn, userId ?? '', ''),
+    asSystem: fn => transaction(fn, '', 'on'),
 
     query: (text, values) => pool.query(text, values),
 
