@@ -1,57 +1,31 @@
 // The sign-in and profile flow end to end: the real server, the real token
 // verifier (trusting a test key), and a real Postgres as the restricted role.
-import { randomUUID } from 'node:crypto';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { createTokenVerifier, subjectHash } from '../src/auth.ts';
+import { subjectHash } from '../src/auth.ts';
 import { completePendingDeletions } from '../src/deletions.ts';
-import { buildServer, defaultLimits } from '../src/server.ts';
-import { createTestDatabase, type TestDatabase } from './helpers/database.ts';
-import { fakeAuthAdmin, TEST_ISSUER, testIssuer } from './helpers/tokens.ts';
+import { IP_HASH_KEY, startApp, type TestApp } from './helpers/app.ts';
 import { handleExamples } from './handles.test.ts';
 import { must, type Body } from './helpers/must.ts';
 
-const KEY = Buffer.alloc(32, 9);
-let t: TestDatabase;
-let issuer: Awaited<ReturnType<typeof testIssuer>>;
-let admin: ReturnType<typeof fakeAuthAdmin>;
+const KEY = IP_HASH_KEY;
 let now = Date.parse('2026-10-17T10:00:00Z');
-let app: Awaited<ReturnType<typeof buildServer>>;
+let h: TestApp;
+let t: TestApp['t'];
+let issuer: TestApp['issuer'];
+let admin: TestApp['admin'];
 
 beforeAll(async () => {
-  t = await createTestDatabase();
-  issuer = await testIssuer();
-  admin = fakeAuthAdmin();
-  app = await buildServer({
-    config: { production: true, webOrigin: 'https://graphinity.pages.dev', trustProxyHops: 0, ipHashKey: KEY },
-    db: t.database,
-    clock: { now: () => now },
-    auth: createTokenVerifier({ issuer: TEST_ISSUER, keys: issuer.keys }),
-    authAdmin: admin,
-    // Generous limits: these tests are about profiles, not rate limiting.
-    limits: { ...defaultLimits, visitor: { capacity: 10_000, refillPerSecond: 1000, maxKeys: 10 }, userWrites: { capacity: 1000, refillPerSecond: 100, maxKeys: 100 } },
-    logStream: { write: () => {} },
-  });
-  return async () => { await app.close(); await t.close(); };
+  h = await startApp(() => now);
+  ({ t, issuer, admin } = h);
+  return h.close;
 });
-
 
 beforeEach(() => {
   now = Date.parse('2026-10-17T10:00:00Z');
 });
 
-/** A new person: their id and a valid token. */
-async function person() {
-  const id = randomUUID();
-  return { id, token: await issuer.sign({}, { sub: id }) };
-}
-
-function call(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, token?: string, payload?: object) {
-  return app.inject({
-    method, url,
-    headers: token ? { authorization: `Bearer ${token}` } : {},
-    ...(payload ? { payload } : {}),
-  });
-}
+const person = () => h.person();
+const call: TestApp['call'] = (...args) => h.call(...args);
 
 const valid = { handle: 'chiru', country: 'IN', fields: ['imports-customs', 'watches-luxury'], adult: true };
 

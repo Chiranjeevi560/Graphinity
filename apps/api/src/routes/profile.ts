@@ -1,10 +1,10 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import type { SignedInUser } from '../auth.ts';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { AuthAdmin } from '../auth-admin.ts';
 import type { Database, Queryable } from '../db.ts';
 import { finishDeletion, lockOut, type DeletionDeps } from '../deletions.ts';
 import { handleProblem, handleProblemMessages, normalizeHandle } from '../handles.ts';
 import type { Clock } from '../rate-limit.ts';
+import { fail, pgCode, pgConstraint, signedIn } from './common.ts';
 
 export interface ProfileDeps {
   db: Database;
@@ -48,12 +48,6 @@ async function loadOwn(q: Queryable, userId: string): Promise<ProfileRow> {
   return profile;
 }
 
-/** Routes marked auth: 'required' run only after the auth hook set the user. */
-function signedIn(req: FastifyRequest): SignedInUser {
-  if (!req.user) throw new Error('auth-required route ran without a user');
-  return req.user;
-}
-
 /** What anyone may see. No id, no timestamps beyond the month joined. */
 function publicProfile(p: ProfileRow) {
   return {
@@ -76,12 +70,7 @@ const fieldsSchema = {
   items: { type: 'string', pattern: '^[a-z]+(-[a-z]+)*$', maxLength: 40 },
 } as const;
 
-function fail(reply: FastifyReply, status: number, error: string, message: string, extra: object = {}) {
-  return reply.code(status).send({ error, message, ...extra });
-}
 
-const pgCode = (err: unknown) => (err as { code?: string }).code;
-const pgConstraint = (err: unknown) => (err as { constraint?: string }).constraint;
 
 /** Turns database refusals into answers a person can act on. Returns false if unrecognised. */
 function explainDbError(err: unknown, reply: FastifyReply): boolean {

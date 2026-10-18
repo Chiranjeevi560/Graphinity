@@ -6,6 +6,7 @@ import type { Config } from './config.ts';
 import type { Database } from './db.ts';
 import { TokenBuckets, visitorAddress, visitorKey, type BucketOptions, type Clock } from './rate-limit.ts';
 import { registerProfileRoutes } from './routes/profile.ts';
+import { registerQuestionRoutes } from './routes/questions.ts';
 
 declare module 'fastify' {
   interface FastifyContextConfig {
@@ -228,6 +229,7 @@ export async function buildServer(deps: Deps) {
   });
 
   registerProfileRoutes(app, { db, authAdmin: deps.authAdmin, clock, subjectKey: config.ipHashKey, log: app.log });
+  registerQuestionRoutes(app, { db });
 
   return app;
 }

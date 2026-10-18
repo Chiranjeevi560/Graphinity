@@ -52,8 +52,9 @@ Render or Supabase.** Limits checked on the services' own pages on 2026-10-17 ar
   every token itself; all data goes through the server.
 - **Keep-awake**: a Cloudflare Worker cron hits `/health` every 10 minutes. `/health` touches the
   database, so neither the server sleeps nor the database pauses.
-- **Matching**: Postgres full-text search plus trigram similarity, ranked by field, country,
-  freshness and whether it was solved.
+- **Matching**: Postgres full-text search with prefix matching (finds words still being typed),
+  ranked by relevance. Trigram typo tolerance was left out on purpose: on Supabase it needs grants
+  in the `extensions` schema we couldn't verify; add it if matching misses misspelled questions.
 - **Routing**: waves (10 people, then 30 after 15 minutes, then wider), ranked by expertise,
   responsiveness and country, with a daily notification budget per person and reserved slots
   for newcomers.

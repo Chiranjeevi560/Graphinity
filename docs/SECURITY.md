@@ -55,6 +55,9 @@ These must stay true. If one stops being true, revisit everything that depends o
 | Deleted account's live token | Keyed hash of the id remembered for 2 h, refreshed when Supabase confirms the deletion, and checked on every signed-in request | Integration test; fails when the check is removed |
 | Half-finished deletion (Supabase down) | The id is kept in `app.pending_auth_deletions` until Supabase confirms; a job retries with backoff; the account is refused while pending; a deferred database trigger refuses any profile for a pending id (also closes the create/delete race) | Integration tests; each fails when its protection is removed |
 | Input "fixed" instead of refused | Fastify's coercion and property-stripping turned off | Integration test; fails with the defaults |
+| Someone posting as another person, or answering their own question | RLS: questions and answers only as `app.current_user_id()`; the answer policy also refuses the asker. No UPDATE or DELETE granted yet | `questions.integration.test.ts`; fails when the policy check is removed |
+| Hidden or spoofing characters in posts | Control characters refused in the API and by database checks; titles one line with single spaces | `text.test.ts` and database tests |
+| Search query injection | Matching builds its query only from letters and digits, passed as a parameter | `text.test.ts`; operator characters return no query |
 | Identity in the database | Only a chosen name, country, fields, 18+ time. No Google name or email copied | Integration test checks the stored row |
 | Supply chain | Install scripts disabled, exact versions, lockfile, versions over 2 weeks old, audit in CI, actions pinned to commits, read-only CI token | `.npmrc`, `ci.yml` |
 
@@ -68,7 +71,7 @@ Each line answers: *if a hostile researcher spent a day on this, what would they
 | T2 | Use the public Supabase key to query tables directly | Tables in unexposed schema `app`; no grants to `anon`/`authenticated` | In place, tested |
 | T3 | Flood the server so it is slow or suspended | Global + per-visitor limits; durable per-account daily limits later | Partly in place (step 6 adds per-account limits) |
 | T4 | Forge their address to dodge limits | Measured hop count; HMAC key | In place; hop count must be measured at deploy |
-| T5 | Inject script into pages (XSS) | React escapes text; strict CSP; plain-text posts | CSP in place; posts arrive in step 3 |
+| T5 | Inject script into pages (XSS) | React escapes text; strict CSP; plain-text posts, links never made clickable | In place |
 | T6 | Steal a sign-in token | Access token in memory, refresh token in sessionStorage; CSP with no inline or third-party scripts | In place |
 | T7 | Forge the OAuth return (login CSRF), or replay a Google ID token | Our own state checked in the tab that started it, plus an OIDC nonce whose raw value never leaves the tab | In place |
 | T8 | Farm points with a second account | Pair cap, trust counted once per asker, shared-network flags | Step 4 |

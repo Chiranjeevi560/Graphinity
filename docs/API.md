@@ -21,11 +21,14 @@ Base URL: `http://localhost:3000` locally; the Render URL in production.
 | Status | `error` | When |
 |---|---|---|
 | 400 | `invalid_request` | Missing or malformed input, or a database rule refused it |
+| 400 | `invalid_title` / `invalid_details` / `invalid_answer` | Text breaks the rules. Includes `reason`: `too_short`, `too_long`, `invalid_characters` |
 | 400 | `invalid_handle` | Name breaks the rules. Includes `reason`: `length`, `characters`, `edges`, `dots`, `digits`, `reserved` |
 | 401 | `signed_out` | No token, a bad or expired token, or the account was deleted |
+| 403 | `no_profile` | Asking or answering before setting up a profile |
 | 404 | `not_found` / `no_profile` | Nothing there / set up your profile first |
 | 409 | `handle_taken` / `profile_exists` / `handle_change_too_soon` | The last one includes `availableAt` (ISO time) |
-| 413 | `too_large` | Body over the limit (4 KB) |
+| 409 | `already_answered` / `own_question` | One answer per person per question; never on your own |
+| 413 | `too_large` | Body over the limit (4 KB; 48 KB when asking or answering while signed in) |
 | 415 | `unsupported` | Wrong content type |
 | 429 | `rate_limited` | Too many requests. `Retry-After` gives the seconds to wait |
 | 500 | `server_error` | Our fault. Details are never returned or logged |
@@ -87,3 +90,51 @@ delete the sign-in.
   longer than usual; it will finish automatically." }`: Supabase didn't answer. The server retries
   every 5 minutes at first, backing off to 6 hours, until Supabase confirms. The account is refused
   everywhere meanwhile, and the database won't accept a new profile for it. Calling again is safe.
+
+## Questions and answers
+
+Text is plain. Titles are made one line with single spaces; details and answers keep line breaks
+(Windows breaks become `\n`, tabs become two spaces); both are trimmed. Lengths count characters as
+people do (an emoji is one). Limits: title 15–150, details up to 5,000, answer 20–10,000. Ids are
+positive integers, sent as text. No response contains anyone's account id.
+
+The question summary:
+
+```json
+{
+  "id": "42",
+  "title": "How do I import a watch into the UAE?",
+  "field": { "slug": "imports-customs", "name": "Imports & Customs" },
+  "country": { "code": "AE", "name": "United Arab Emirates" },
+  "asker": { "handle": "chiru" },
+  "createdAt": "2026-10-18T10:00:00.000Z",
+  "answerCount": 3
+}
+```
+
+`country` is `null` for a question about anywhere.
+
+### `GET /questions?before=:id`
+
+Newest first, 20 at a time: `{ questions: [summary], next }`. Pass `next` as `before` for the
+following page; `next` is `null` on the last page.
+
+### `GET /questions/similar?q=:text`
+
+Up to 5 questions matching any word of `q`, including a word still being typed:
+`{ questions: [{ id, title, answerCount }] }`. Used while someone writes a question. Text with no
+letters or digits returns an empty list.
+
+### `GET /questions/:id`
+
+`{ question: summary + { body }, answers: [{ id, body, answerer: { handle }, createdAt }] }`,
+answers oldest first. 404 `not_found` if there's no such question.
+
+### `POST /questions` (signed in, counts as a write)
+
+`{ title, details?, field, country? }` → 201 `{ question: { id } }`. `country` may be `null`.
+
+### `POST /questions/:id/answers` (signed in, counts as a write)
+
+`{ body }` → 201 `{ answer: { id } }`. 409 `own_question` or `already_answered`, 404 `not_found`.
+

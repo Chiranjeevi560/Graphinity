@@ -87,7 +87,7 @@ describe('security headers', () => {
 
 describe('errors', () => {
   it('404 says what happened in plain words', async () => {
-    const res = await (await server()).inject('/questions/does-not-exist');
+    const res = await (await server()).inject('/no/such/address');
     expect(res.statusCode).toBe(404);
     expect(res.json()).toEqual({ error: 'not_found', message: 'There is nothing at this address.' });
   });

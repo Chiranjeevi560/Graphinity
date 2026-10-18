@@ -613,8 +613,77 @@ CREATE TRIGGER profiles_handle_change
   BEFORE INSERT OR UPDATE ON app.profiles
   FOR EACH ROW EXECUTE FUNCTION app.stamp_handle_change();
 
+-- ---------------------------------------------------------------------------
+-- Questions and answers. Anyone can read them; only the signed-in author
+-- can write their own. Text is plain: trimmed, no control characters (a
+-- question title is one line; bodies keep line breaks). Deleting an
+-- account deletes its questions and answers (cascade from profiles).
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS app.questions (
+  id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  asker_id    uuid NOT NULL REFERENCES app.profiles (id) ON DELETE CASCADE,
+  field       text NOT NULL REFERENCES app.fields (slug),
+  -- The country the question is about, if any. Routing prefers people there.
+  country     text REFERENCES app.countries (code),
+  title       text NOT NULL CHECK (
+                char_length(title) BETWEEN 15 AND 150
+                AND title = btrim(title)
+                AND title !~ '[[:cntrl:]]'
+                AND title !~ '\s{2,}'),
+  body        text NOT NULL DEFAULT '' CHECK (
+                char_length(body) <= 5000
+                AND body = btrim(body)
+                AND body !~ '[\x01-\x09\x0B-\x1F\x7F]'),
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  -- What matching searches: the title counts more than the details.
+  search      tsvector GENERATED ALWAYS AS (
+                setweight(to_tsvector('english', title), 'A') || setweight(to_tsvector('english', body), 'B')
+              ) STORED
+);
+CREATE INDEX IF NOT EXISTS questions_search ON app.questions USING gin (search);
+CREATE INDEX IF NOT EXISTS questions_recent ON app.questions (created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS questions_asker ON app.questions (asker_id);
+ALTER TABLE app.questions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.questions FORCE ROW LEVEL SECURITY;
+GRANT SELECT, INSERT ON app.questions TO app_api;
+DROP POLICY IF EXISTS questions_read ON app.questions;
+CREATE POLICY questions_read ON app.questions FOR SELECT TO app_api USING (true);
+DROP POLICY IF EXISTS questions_insert_own ON app.questions;
+CREATE POLICY questions_insert_own ON app.questions FOR INSERT TO app_api
+  WITH CHECK (asker_id = app.current_user_id());
+
+CREATE TABLE IF NOT EXISTS app.answers (
+  id           bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  question_id  bigint NOT NULL REFERENCES app.questions (id) ON DELETE CASCADE,
+  answerer_id  uuid NOT NULL REFERENCES app.profiles (id) ON DELETE CASCADE,
+  body         text NOT NULL CHECK (
+                 char_length(body) BETWEEN 20 AND 10000
+                 AND body = btrim(body)
+                 AND body !~ '[\x01-\x09\x0B-\x1F\x7F]'),
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  -- One answer per person per question.
+  UNIQUE (question_id, answerer_id)
+);
+CREATE INDEX IF NOT EXISTS answers_question ON app.answers (question_id, created_at);
+CREATE INDEX IF NOT EXISTS answers_answerer ON app.answers (answerer_id);
+ALTER TABLE app.answers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.answers FORCE ROW LEVEL SECURITY;
+GRANT SELECT, INSERT ON app.answers TO app_api;
+DROP POLICY IF EXISTS answers_read ON app.answers;
+CREATE POLICY answers_read ON app.answers FOR SELECT TO app_api USING (true);
+-- Your own answer, never to your own question.
+DROP POLICY IF EXISTS answers_insert_own ON app.answers;
+CREATE POLICY answers_insert_own ON app.answers FOR INSERT TO app_api
+  WITH CHECK (
+    answerer_id = app.current_user_id()
+    AND NOT EXISTS (
+      SELECT 1 FROM app.questions q
+      WHERE q.id = answers.question_id AND q.asker_id = answers.answerer_id
+    )
+  );
+
 -- Bump on every change to this file.
-INSERT INTO app.schema_meta (id, version) VALUES (true, 4)
+INSERT INTO app.schema_meta (id, version) VALUES (true, 5)
   ON CONFLICT (id) DO UPDATE SET version = EXCLUDED.version, applied_at = now();
 
 COMMIT;
