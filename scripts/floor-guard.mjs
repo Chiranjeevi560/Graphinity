@@ -44,10 +44,11 @@ const CODE = /\.(ts|tsx|js|mjs|cjs|sql|sh|css|ya?ml)$/;
 
 // The owner approves a new exception or changed number by adding a trailer
 // to a commit message in the range, e.g. "Constraints-approved: E1, E2".
-const approved = new Set(
-  [...(git(['log', `${mergeBase}..HEAD`, '--format=%B']) ?? '').matchAll(/^Constraints-approved:\s*(.+)$/gm)]
-    .flatMap(m => m[1].split(/[,\s]+/).filter(Boolean)),
-);
+// A changed number is approved by naming its whole row, one trailer per row
+// (row names contain commas), e.g. "Constraints-approved: Coverage, server".
+const approvals = [...(git(['log', `${mergeBase}..HEAD`, '--format=%B']) ?? '').matchAll(/^Constraints-approved:\s*(.+)$/gm)].map(m => m[1]);
+const approved = new Set(approvals.flatMap(a => a.split(/[,\s]+/).filter(Boolean)));
+const rowApproved = row => approvals.some(a => a.trim() === row);
 const findings = [];
 const flag = (rule, f, text) => findings.push({ rule, file: f, text: text.trim().slice(0, 120) });
 
@@ -90,7 +91,10 @@ for (const f of (git(['diff', '--name-only', '--diff-filter=D', mergeBase, '--']
   if (/\.(test|spec)\.ts$/.test(f)) flag('test-deleted', f, '(file deleted)');
 }
 
-// A number in CONSTRAINTS.md that went down on the same row.
+// Any changed number on a CONSTRAINTS.md row, up or down. Deliberately not
+// direction-aware: a row can hold a maximum and a minimum side by side, and
+// guessing which is which wrongly would let a loosening through silently.
+// Tightening costs one "Constraints-approved:" trailer; loosening stays loud.
 const nums = s => (s.match(/\d+(\.\d+)?/g) ?? []).map(Number);
 const rowKey = s => s.split('|')[1]?.trim();
 const before = removed.filter(l => /CONSTRAINTS\.md$/.test(l.file));
@@ -99,8 +103,7 @@ for (const r of before) {
   const a = after.find(x => rowKey(x.text) && rowKey(x.text) === rowKey(r.text));
   if (!a) continue;
   const old = nums(r.text);
-  // Budgets that are maxima (bytes, ms, CLS) may only go down; minima only up.
-  // Either way, a change to a number on a constraint row needs a human: flag it.
+  if (rowApproved(rowKey(a.text))) continue;
   if (nums(a.text).some((n, i) => old[i] !== undefined && n !== old[i])) flag('threshold-changed', r.file, `${r.text.trim()}  ->  ${a.text.trim()}`);
 }
 

@@ -73,6 +73,10 @@ One command per stage: `npm run check:fast` (seconds), `npm run check:task` (abo
   localhost to https). Deploys keep it; a test checks both.
 - The `Constraints-approved:` and `Assertions-changed:` trailers are honour-based: the guard can't
   tell who wrote them. The owner can audit them with
-  `git log --grep='Constraints-approved\|Assertions-changed'`.
+  `git log --grep='Constraints-approved\|Assertions-changed'`. A new exception is approved by its ID
+  (`Constraints-approved: E3`); a changed number by its whole row name, one trailer per row
+  (`Constraints-approved: Coverage, server`).
+- The guard flags any changed number on a row, tightening included. It can't tell a maximum from a
+  minimum on the same row, and a wrong guess would let a loosening through silently.
 - The project's own tests are the circular kind of check. The external judges are axe, Lighthouse,
   osv-scanner, npm audit, gitleaks and Semgrep.
