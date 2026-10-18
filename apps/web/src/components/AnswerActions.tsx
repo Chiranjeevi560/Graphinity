@@ -49,14 +49,19 @@ export function AnswerActions({ questionId, answer, selection, onChanged }: Prop
     setError(null);
     try {
       await work();
-      await onChanged();
-      return true;
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'That didn’t save. Try again in a minute.');
-      return false;
-    } finally {
       setBusy(false);
+      return false;
     }
+    try {
+      await onChanged();
+    } catch {
+      // Saved: saying "didn't save" here would make people do it twice.
+      setError('Saved, but the page couldn’t update. Reload it to see the change.');
+    }
+    setBusy(false);
+    return true;
   }
 
   const pick = (why?: ChangeReason) => run(() => api(`/questions/${questionId}/selection`, {

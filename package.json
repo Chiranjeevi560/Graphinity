@@ -49,7 +49,7 @@
     {
       "name": "main script (brotli)",
       "path": "apps/web/dist/assets/index-*.js",
-      "limit": "62.06 kB"
+      "limit": "62.42 kB"
     },
     {
       "name": "styles (brotli)",
@@ -59,7 +59,7 @@
     {
       "name": "all scripts (brotli)",
       "path": "apps/web/dist/assets/*.js",
-      "limit": "85.95 kB"
+      "limit": "86.53 kB"
     }
   ]
 }

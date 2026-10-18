@@ -381,7 +381,19 @@ test('picking an answer moves points, and the profile shows them', async ({ page
     await setUpIfNeeded(page, handle);
     await page.goto(questionUrl);
     await page.getByLabel('Your answer').fill(`Form B/L 12 worked for me, says ${handle}.`);
+    // For the second, the page can't update after posting: it must say the answer is posted,
+    // not invite a second try.
+    const refresh = (url: URL) => /^\/questions\/[0-9]+$/.test(url.pathname) && url.origin !== new URL(page.url()).origin;
+    const errorsBefore = consoleErrors.length;
+    if (handle === answerers[1]) await page.route(refresh, route => route.request().method() === 'GET' ? route.abort() : route.continue());
     await page.getByRole('button', { name: 'Post answer' }).click();
+    if (handle === answerers[1]) {
+      await expect(page.getByRole('status').filter({ hasText: 'Your answer is posted. Reload the page to see it.' })).toBeVisible();
+      await page.unroute(refresh);
+      // The browser logs the failure this step caused on purpose; anything else still counts.
+      consoleErrors.push(...consoleErrors.splice(errorsBefore).filter(e => !e.endsWith(':: Failed to load resource: net::ERR_FAILED')));
+      await page.reload();
+    }
     await expect(page.getByRole('link', { name: `@${handle}`, exact: true })).toBeVisible();
     await signOut(page);
   }
@@ -520,7 +532,7 @@ test('a moderator removes a reported question', async ({ page, browserName }) =>
   await dialog.getByLabel('Spam or advertising').check();
   await dialog.getByLabel('Anything to add? (optional)').fill('Advertising a shop');
   await dialog.getByRole('button', { name: 'Send report' }).click();
-  await expect(page.getByRole('article').getByText('Reported')).toBeVisible();
+  await expect(page.getByRole('article').getByText('Reported')).toBeFocused();
 
   // The review lists it; the moderator removes it.
   await page.goto('/me');
@@ -531,6 +543,11 @@ test('a moderator removes a reported question', async ({ page, browserName }) =>
   await audit(page, 'review');
   await item.getByRole('button', { name: 'Remove' }).click();
   await expect(item.getByText('Removed.')).toBeVisible();
+  // Removing doesn't take away blocking the author, a separate step.
+  await expect(item.getByRole('button', { name: 'Keep' })).toHaveCount(0);
+  await item.getByRole('button', { name: `Block @spammer.${run}` }).click();
+  await expect(item.getByText(`@spammer.${run} is blocked from posting.`)).toBeVisible();
+  await expect(item.getByRole('button')).toHaveCount(0);
   // A moderator can still open it (the page sends the sign-in when there is one).
   await page.goto(questionUrl);
   await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();

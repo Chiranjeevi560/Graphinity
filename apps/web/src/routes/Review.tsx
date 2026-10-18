@@ -26,7 +26,11 @@ export default function ReviewPage() {
   const [review, setReview] = useState<Review | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [done, setDone] = useState<Record<string, string>>({});
+  // Kept apart: a decision on the post and a block on its author are separate
+  // steps, and a failure must leave the buttons there to try again.
+  const [decided, setDecided] = useState<Record<string, string>>({});
+  const [blocked, setBlocked] = useState<Record<string, true>>({});
+  const [failed, setFailed] = useState<Record<string, string>>({});
 
   useEffect(() => {
     let live = true;
@@ -36,17 +40,25 @@ export default function ReviewPage() {
     return () => { live = false; };
   }, []);
 
-  async function act(key: string, label: string, work: () => Promise<unknown>) {
+  async function act(key: string, work: () => Promise<unknown>, saved: () => void) {
     setBusy(key);
+    setFailed(({ [key]: _, ...rest }) => rest);
     try {
       await work();
-      setDone(d => ({ ...d, [key]: label }));
+      saved();
     } catch (err) {
-      setDone(d => ({ ...d, [key]: err instanceof ApiError ? err.message : 'That didn’t save. Try again.' }));
+      setFailed(f => ({ ...f, [key]: err instanceof ApiError ? err.message : 'That didn’t save. Try again.' }));
     } finally {
       setBusy(null);
     }
   }
+
+  const decide = (item: Item, key: string, decision: 'keep' | 'remove') => act(key,
+    () => api('/review/decision', { method: 'POST', signedIn: true, body: { kind: item.kind, id: item.id, decision } }),
+    () => { setDecided(d => ({ ...d, [key]: decision === 'keep' ? 'Kept. It’s visible again.' : 'Removed.' })); });
+  const block = (item: Item, key: string) => act(key,
+    () => api('/review/block', { method: 'POST', signedIn: true, body: { handle: item.author.handle, reason: item.reasons.join(', ') } }),
+    () => { setBlocked(b => ({ ...b, [item.author.handle]: true })); });
 
   if (error) return <main className="page stack-message"><h1 className="text-title2">{error}</h1></main>;
   if (!review) return <main className="page stack-message"><p className="text-body status" role="status">Loading…</p></main>;
@@ -75,20 +87,20 @@ export default function ReviewPage() {
                   </ul>
                 )}
                 <p className="text-footnote"><Link to={`/q/${item.questionId}`}>Open the question</Link></p>
-                {done[key] ? <p className="text-subhead" role="status">{done[key]}</p> : (
+                {decided[key] && <p className="text-subhead" role="status">{decided[key]}</p>}
+                {blocked[item.author.handle] && <p className="text-subhead" role="status">@{item.author.handle} is blocked from posting.</p>}
+                {failed[key] && <p className="form-note tone-bad" role="alert">{failed[key]}</p>}
+                {(!decided[key] || !blocked[item.author.handle]) && (
                   <div className="review-actions">
-                    <button type="button" className="btn btn-plain" disabled={busy !== null}
-                      onClick={() => { void act(key, 'Kept. It’s visible again.', () => api('/review/decision', { method: 'POST', signedIn: true, body: { kind: item.kind, id: item.id, decision: 'keep' } })); }}>
-                      Keep
-                    </button>
-                    <button type="button" className="btn btn-plain danger" disabled={busy !== null}
-                      onClick={() => { void act(key, 'Removed.', () => api('/review/decision', { method: 'POST', signedIn: true, body: { kind: item.kind, id: item.id, decision: 'remove' } })); }}>
-                      Remove
-                    </button>
-                    <button type="button" className="btn btn-plain danger" disabled={busy !== null}
-                      onClick={() => { void act(key, `@${item.author.handle} is blocked from posting.`, () => api('/review/block', { method: 'POST', signedIn: true, body: { handle: item.author.handle, reason: item.reasons.join(', ') } })); }}>
-                      Block @{item.author.handle}
-                    </button>
+                    {!decided[key] && <>
+                      <button type="button" className="btn btn-plain" disabled={busy !== null} onClick={() => { void decide(item, key, 'keep'); }}>Keep</button>
+                      <button type="button" className="btn btn-plain danger" disabled={busy !== null} onClick={() => { void decide(item, key, 'remove'); }}>Remove</button>
+                    </>}
+                    {!blocked[item.author.handle] && (
+                      <button type="button" className="btn btn-plain danger" disabled={busy !== null} onClick={() => { void block(item, key); }}>
+                        Block @{item.author.handle}
+                      </button>
+                    )}
                   </div>
                 )}
               </li>

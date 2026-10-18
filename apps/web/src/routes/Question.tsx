@@ -129,6 +129,7 @@ function AnswerForm({ questionId, onAnswered }: { questionId: string; onAnswered
   const [body, setBody] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [posted, setPosted] = useState(false);
   const length = charCount(body.trim());
   const canSend = length >= ANSWER.min && length <= ANSWER.max && !sending;
 
@@ -139,12 +140,16 @@ function AnswerForm({ questionId, onAnswered }: { questionId: string; onAnswered
     setError(null);
     try {
       await api(`/questions/${questionId}/answers`, { method: 'POST', signedIn: true, body: { body } });
-      await onAnswered();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Your answer couldn’t be posted. Try again in a minute.');
       setSending(false);
+      return;
     }
+    // Posted. If the page can't update, say so rather than inviting a second post.
+    await onAnswered().catch(() => { setPosted(true); });
   }
+
+  if (posted) return <p className="text-body" role="status">Your answer is posted. Reload the page to see it.</p>;
 
   const hint = length < ANSWER.min
     ? 'Share what you did and what happened.'

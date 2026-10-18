@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { ApiError } from '../lib/api.ts';
 import { api } from '../session.tsx';
 import { Button } from './Button.tsx';
@@ -22,8 +22,13 @@ export function ReportButton({ kind, id }: { kind: 'question' | 'answer'; id: st
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
   const legendId = useId();
+  const sentRef = useRef<HTMLSpanElement>(null);
 
-  if (sent) return <span className="report-sent">Reported</span>;
+  // The Report button is gone once sent, and focus would fall to the top of
+  // the page: put it on the confirmation instead, which is also announced.
+  useEffect(() => { if (sent) sentRef.current?.focus(); }, [sent]);
+
+  if (sent) return <span ref={sentRef} className="report-sent" role="status" tabIndex={-1}>Reported</span>;
 
   async function send() {
     if (!reason) return;
