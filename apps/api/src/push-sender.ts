@@ -4,6 +4,7 @@
 import type { Database } from './db.ts';
 import type { PersonEvent } from './events.ts';
 import { encryptPush, isPushService, vapidHeader, type VapidKeys } from './push.ts';
+import { errorKind } from './jobs.ts';
 
 interface Log { warn(obj: object, msg: string): void }
 
@@ -38,7 +39,7 @@ export function createPushSender(deps: { db: Database; vapid: VapidKeys; fetch: 
         });
         status = res.status;
       } catch (err) {
-        deps.log.warn({ kind: err instanceof Error ? err.name : 'unknown' }, 'push failed');
+        deps.log.warn({ kind: errorKind(err) }, 'push failed');
         continue;
       }
       // 404/410: the browser unsubscribed or the subscription expired.

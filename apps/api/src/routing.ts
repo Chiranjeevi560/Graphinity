@@ -3,6 +3,7 @@
 // 100 more after another hour. The database (db/schema.sql, app.routes)
 // enforces the daily budget per person and never routes to the asker.
 import type { Database, Queryable } from './db.ts';
+import { errorKind } from './jobs.ts';
 
 export const WAVES = [
   { wave: 1, size: 10, afterMinutes: 0 },
@@ -88,7 +89,7 @@ export async function routeDueQuestions(db: Database, log?: { warn(obj: object, 
     try {
       routed.push({ questionId: w.questionId, asked: await db.asSystem(q => routeWave(q, w.questionId, w.wave, w.size)) });
     } catch (err) {
-      log?.warn({ kind: err instanceof Error ? err.name : 'unknown' }, 'routing a question failed');
+      log?.warn({ kind: errorKind(err) }, 'routing a question failed');
     }
   }
   return routed;

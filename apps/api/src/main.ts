@@ -4,6 +4,7 @@ import { loadConfig, ConfigError } from './config.ts';
 import { createDatabase } from './db.ts';
 import { completePendingDeletions } from './deletions.ts';
 import { createEvents } from './events.ts';
+import { errorKind, serial } from './jobs.ts';
 import { expireNetworkMarks } from './networks.ts';
 import { createLimiter, createPushSender } from './push-sender.ts';
 import { routeDueQuestions } from './routing.ts';
@@ -58,9 +59,9 @@ logger.current = app.log;
 const runDeletions = () => {
   completePendingDeletions({ db, authAdmin, subjectKey: config.ipHashKey, log: app.log })
     .then(r => { if (r.completed || r.failed) app.log.info(r, 'pending deletions'); })
-    .catch((err: unknown) => { app.log.warn({ kind: err instanceof Error ? err.name : 'unknown' }, 'pending deletions run failed'); });
+    .catch((err: unknown) => { app.log.warn({ kind: errorKind(err) }, 'pending deletions run failed'); });
   // Network marks are kept 30 days.
-  expireNetworkMarks(db).catch((err: unknown) => { app.log.warn({ kind: err instanceof Error ? err.name : 'unknown' }, 'network mark expiry failed'); });
+  expireNetworkMarks(db).catch((err: unknown) => { app.log.warn({ kind: errorKind(err) }, 'network mark expiry failed'); });
 };
 runDeletions();
 const deletionTimer = setInterval(runDeletions, 5 * 60_000);
@@ -74,31 +75,22 @@ if (config.vapid) {
   // so requests always find a free database connection (the pool has 5).
   const limit = createLimiter(2);
   events.onPublish((userId, event) => {
-    limit(() => push(userId, event)).catch((err: unknown) => { app.log.warn({ kind: err instanceof Error ? err.name : 'unknown' }, 'push run failed'); });
+    limit(() => push(userId, event)).catch((err: unknown) => { app.log.warn({ kind: errorKind(err) }, 'push run failed'); });
   });
 }
 
 // Put questions to people: right after each new question, and every
 // minute for the next waves. One run at a time; asks during a run are
 // picked up by one more run straight after it.
-let routing: Promise<void> | null = null;
-let again = false;
-const runRouting = () => {
-  if (routing) { again = true; return; }
-  routing = routeDueQuestions(db, app.log)
-    .then(results => {
-      for (const { questionId, asked } of results) {
-        for (const person of asked) events.publish(person, { type: 'routed', questionId });
-      }
-      const people = results.reduce((n, r) => n + r.asked.length, 0);
-      if (people) app.log.info({ questions: results.length, people }, 'routed questions');
-    })
-    .catch((err: unknown) => { app.log.warn({ kind: err instanceof Error ? err.name : 'unknown' }, 'routing run failed'); })
-    .finally(() => {
-      routing = null;
-      if (again) { again = false; runRouting(); }
-    });
-};
+const runRouting = serial(() => routeDueQuestions(db, app.log)
+  .then(results => {
+    for (const { questionId, asked } of results) {
+      for (const person of asked) events.publish(person, { type: 'routed', questionId });
+    }
+    const people = results.reduce((n, r) => n + r.asked.length, 0);
+    if (people) app.log.info({ questions: results.length, people }, 'routed questions');
+  })
+  .catch((err: unknown) => { app.log.warn({ kind: errorKind(err) }, 'routing run failed'); }));
 events.onAsked(runRouting);
 runRouting();
 const routingTimer = setInterval(runRouting, 60_000);
@@ -116,7 +108,7 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
     app.close()
       .then(() => db.close())
       .then(() => process.exit(0), (err: unknown) => {
-        app.log.error({ kind: err instanceof Error ? err.name : 'unknown' }, 'shutdown failed');
+        app.log.error({ kind: errorKind(err) }, 'shutdown failed');
         process.exit(1);
       });
   });

@@ -44,6 +44,9 @@ describe('reporting', () => {
     expect((await h.call('POST', `/questions/${q}/report`, undefined, { reason: 'spam' })).statusCode).toBe(401);
     expect((await report(author.token, q)).json<Body>().error).toBe('own_post');
     expect((await report(reader.token, q, 'nonsense')).statusCode).toBe(400);
+    // A note that displays as something other than what it says.
+    expect((await report(reader.token, q, 'spam', 'see \u202Eeman ruoy')).json<Body>().error).toBe('invalid_note');
+    expect((await report(reader.token, '999999999', 'spam')).statusCode).toBe(404);
     expect((await report(reader.token, q, 'spam', 'Selling fake tickets')).statusCode).toBe(201);
     expect((await report(reader.token, q, 'abuse')).statusCode).toBe(201);
     const { rows } = await h.t.owner.query('SELECT reason FROM app.reports WHERE question_id = $1', [q]);
@@ -150,6 +153,9 @@ describe('blocking', () => {
     const q = await ask(author.token);
     expect((await h.call('POST', '/review/block', troll.token, { handle: author.handle })).statusCode).toBe(403);
     expect((await h.call('POST', '/review/block', mod.token, { handle: mod.handle })).json<Body>().error).toBe('not_yourself');
+    // Unknown and impossible names alike: nobody to block.
+    expect((await h.call('POST', '/review/block', mod.token, { handle: 'nobody.here.at.all' })).statusCode).toBe(404);
+    expect((await h.call('POST', '/review/block', mod.token, { handle: '../x' })).statusCode).toBe(404);
     expect((await h.call('POST', '/review/block', mod.token, { handle: troll.handle, reason: 'Spam \u202E' })).json<Body>().error).toBe('invalid_reason');
     expect((await h.call('POST', '/review/block', mod.token, { handle: troll.handle, reason: 'Spam' })).statusCode).toBe(200);
     expect((await h.call('POST', '/questions', troll.token, { title: 'Buy cheap followers here, best price today!', field: 'travel' })).json<Body>().error).toBe('blocked');

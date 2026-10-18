@@ -3,6 +3,7 @@
 // website's word for who someone is.
 import { createHmac } from 'node:crypto';
 import { createRemoteJWKSet, errors, jwtVerify, type JWTPayload, type JWTVerifyGetKey } from 'jose';
+import { errorKind } from './jobs.ts';
 
 export interface SignedInUser {
   id: string;
@@ -75,7 +76,7 @@ export function createTokenVerifier({ issuer, keys }: VerifierOptions): TokenVer
         // matching JOSEError broadly would sign everyone out during a Supabase
         // hiccup; anything not listed here is "can't check right now".
         if (TOKEN_PROBLEMS.some(type => err instanceof type)) throw new AuthError((err as errors.JOSEError).code);
-        throw new AuthUnavailableError(err instanceof Error ? err.name : 'unknown');
+        throw new AuthUnavailableError(errorKind(err));
       }
       if (typeof payload.exp !== 'number' || typeof payload.iat !== 'number' || payload.exp - payload.iat > MAX_TOKEN_LIFETIME_SECONDS + 60) {
         throw new AuthError('lifetime');

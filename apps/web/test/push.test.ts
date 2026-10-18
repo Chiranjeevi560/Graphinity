@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, type Api } from '../src/lib/api.ts';
-import { isPushOn, turnPushOn } from '../src/lib/push.ts';
+import { isPushOn, pushSupport, turnPushOff, turnPushOn } from '../src/lib/push.ts';
 
 // A browser with push: one service worker, subscriptions that remember
 // whether they were cancelled.
@@ -93,5 +93,33 @@ describe('whether notifications are on', () => {
     const { api, calls } = fakeApi();
     expect(await isPushOn(api)).toBe(false);
     expect(calls).toEqual([]);
+  });
+});
+
+describe('turning notifications off', () => {
+  it('removes the device from the server and cancels it in the browser, even if the server can’t be reached', async () => {
+    current = subscription();
+    const sub = current;
+    const { api, calls } = fakeApi(refuse(503, 'unavailable'));
+    await turnPushOff(api);
+    expect(calls).toEqual([{ path: '/me/push', method: 'DELETE' }]);
+    expect(sub.cancelled).toBe(true);
+  });
+
+  it('does nothing when already off', async () => {
+    const { api, calls } = fakeApi();
+    await turnPushOff(api);
+    expect(calls).toEqual([]);
+  });
+});
+
+describe('where notifications are possible', () => {
+  it('tells iPhone visitors to add the site to the Home Screen first', () => {
+    vi.stubGlobal('window', {});
+    vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)', platform: 'iPhone', maxTouchPoints: 5 });
+    vi.stubGlobal('matchMedia', () => ({ matches: false }));
+    expect(pushSupport()).toBe('install-first');
+    vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 (X11; Linux x86_64)', platform: 'Linux', maxTouchPoints: 0 });
+    expect(pushSupport()).toBe('unsupported');
   });
 });

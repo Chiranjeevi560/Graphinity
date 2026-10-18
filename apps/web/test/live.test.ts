@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Auth } from '../src/lib/auth.ts';
-import { parseEvents, startLive, type LiveEvent } from '../src/lib/live.ts';
+import { announce, onLive, parseEvents, startLive, type LiveEvent } from '../src/lib/live.ts';
 
 describe('reading live events', () => {
   it('reads whole messages and keeps a half-received one for later', () => {
@@ -51,5 +51,23 @@ describe('staying connected', () => {
     await vi.advanceTimersByTimeAsync(120_000);
     expect(fetch).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe('passing events to screens', () => {
+  it('reaches every screen listening, and none that stopped', () => {
+    vi.stubGlobal('window', new EventTarget());
+    vi.stubGlobal('CustomEvent', CustomEvent);
+    const a: LiveEvent[] = [], b: LiveEvent[] = [];
+    const stopA = onLive(e => a.push(e));
+    const stopB = onLive(e => b.push(e));
+    announce({ type: 'routed', questionId: '3' });
+    stopB();
+    announce({ type: 'answered', questionId: '4' });
+    stopA();
+    announce({ type: 'answered', questionId: '5' });
+    expect(a).toEqual([{ type: 'routed', questionId: '3' }, { type: 'answered', questionId: '4' }]);
+    expect(b).toEqual([{ type: 'routed', questionId: '3' }]);
+    vi.unstubAllGlobals();
   });
 });

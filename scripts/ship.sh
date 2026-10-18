@@ -3,8 +3,8 @@
 #
 #   sh scripts/ship.sh <message-file> <paths...>
 #
-# Typecheck, lint, tests, build and size budgets run first; nothing is
-# committed unless all pass. The floor guard then reads the commit's
+# Typecheck, lint, tests with the coverage ratchet, build and size budgets
+# run first; nothing is committed unless all pass. The floor guard then reads the commit's
 # trailers; if it objects, the commit stays local (fix it with
 # `git commit --amend`) and nothing is pushed. Logs go to .local/ship/,
 # never to the terminal through a pipe, so a failure can't be hidden.
@@ -42,7 +42,7 @@ step() { # name, command...
 }
 step typecheck npm run typecheck
 step lint npm run lint
-step test npm test
+step test npm run test:coverage
 step build npm run build
 step size npm run check:size
 echo "SHIP: checks passed ($(grep -E 'Tests ' "$logs/test.log" | tr -s ' ' | tr '\n' ';'))"

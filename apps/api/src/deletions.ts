@@ -6,6 +6,7 @@
 import { subjectHash } from './auth.ts';
 import type { AuthAdmin } from './auth-admin.ts';
 import type { Database, Queryable } from './db.ts';
+import { errorKind } from './jobs.ts';
 
 /** Longer than the longest token we accept (auth.ts), so no live token outlasts it. */
 const REVOKE_FOR = '2 hours';
@@ -38,7 +39,7 @@ export async function finishDeletion(deps: DeletionDeps, userId: string): Promis
     await deps.authAdmin.deleteUser(userId);
   } catch (err) {
     // The id is personal data: log only what kind of failure it was.
-    deps.log.warn({ kind: err instanceof Error ? err.name : 'unknown' }, 'sign-in deletion failed; will retry');
+    deps.log.warn({ kind: errorKind(err) }, 'sign-in deletion failed; will retry');
     return false;
   }
   await deps.db.withUser(null, async q => {

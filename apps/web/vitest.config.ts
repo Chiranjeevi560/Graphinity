@@ -4,5 +4,8 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     include: ['test/**/*.test.ts'],
+    // The coverage ratchet in CONSTRAINTS.md: today's number less its 0.5
+    // point tolerance. Applies whenever coverage is measured (test:coverage).
+    coverage: { thresholds: { lines: 35.94 } },
   },
 });

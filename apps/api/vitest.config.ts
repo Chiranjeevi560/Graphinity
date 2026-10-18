@@ -10,5 +10,8 @@ export default defineConfig({
     include: ['test/**/*.test.ts'],
     // Integration tests each create their own database; keep runs predictable.
     fileParallelism: false,
+    // The coverage ratchet in CONSTRAINTS.md: today's numbers less its 0.5
+    // point tolerance. Applies whenever coverage is measured (test:coverage).
+    coverage: { thresholds: { lines: 89.86, branches: 85.65 } },
   },
 });

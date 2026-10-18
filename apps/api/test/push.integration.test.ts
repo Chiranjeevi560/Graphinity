@@ -131,3 +131,18 @@ describe('sending', () => {
     expect(warnings).toEqual([]);
   });
 });
+
+describe('a server without push keys', () => {
+  it('says notifications aren’t available, rather than taking subscriptions it can’t use', async () => {
+    const off = await startApp(() => Date.now());
+    try {
+      const p = await off.person();
+      expect((await off.call('GET', '/push/key')).json<Body>().error).toBe('push_off');
+      const res = await off.call('PUT', '/me/push', p.token, device().body);
+      expect(res.statusCode).toBe(404);
+      expect(res.json<Body>().error).toBe('push_off');
+    } finally {
+      await off.close();
+    }
+  });
+});
