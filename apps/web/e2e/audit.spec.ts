@@ -88,12 +88,31 @@ test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
   await page.goto('/this/does/not/exist');
   await audit(page, 'not found');
 
+  // A malformed profile link reached inside the app is "not found", not the
+  // error screen. (Loaded directly, the local preview server itself answers
+  // 404 before the app runs; what Cloudflare does is checked after deploy.)
+  await page.goto('/');
+  await page.evaluate(() => { history.pushState(null, '', '/u/%E0'); window.dispatchEvent(new PopStateEvent('popstate')); });
+  await expect(page.getByRole('heading', { name: 'This page doesn’t exist' })).toBeVisible();
+
   await page.goto('/u/nobody.here');
   await expect(page.getByText('There’s no one with that name.')).toBeVisible();
   await audit(page, 'public profile (missing)');
 
-  // Sign in through the local stand-in.
+  // Coming back to this page from the browser's back/forward cache must
+  // leave a working button. Test browsers reload instead of using that cache,
+  // so hold the button in its "leaving" state by blocking the trip to sign-in,
+  // then fire the event a cache restore fires.
   await page.goto('/');
+  // A 204 answer cancels the navigation, so the page (and the button) stays.
+  await page.route('**/auth/v1/authorize**', route => route.fulfill({ status: 204 }));
+  await page.getByRole('button', { name: 'Continue with Google' }).click();
+  await expect(page.getByRole('button', { name: 'Opening Google…' })).toBeDisabled();
+  await page.evaluate(() => { window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })); });
+  await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeEnabled();
+  await page.unroute('**/auth/v1/authorize**');
+
+  // Sign in through the local stand-in.
   await page.getByRole('button', { name: 'Continue with Google' }).click();
   await page.getByRole('button', { name: 'A brand-new person' }).click();
   await expect(page).toHaveURL(/\/welcome$/);
@@ -106,6 +125,10 @@ test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
   await page.getByRole('button', { name: 'Continue' }).click();
 
   await expect(page.getByRole('heading', { name: 'Where do you live?' })).toBeVisible();
+  // Choosing the empty option must stay empty, not snap back to a guess.
+  await page.getByLabel('Country').selectOption('');
+  await expect(page.getByLabel('Country')).toHaveValue('');
+  await expect(page.getByRole('button', { name: 'Continue' })).toBeDisabled();
   await page.getByLabel('Country').selectOption('IN');
   await audit(page, 'welcome 2: country');
   await page.getByRole('button', { name: 'Continue' }).click();
@@ -143,6 +166,8 @@ test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
   await audit(page, 'goodbye');
 
   // CSP violations surface as console errors in every engine.
-  expect.soft(consoleErrors.filter(e => !e.includes('404')), 'console errors').toEqual([]);
+  // Only the one expected error: the missing profile's 404 from the API.
+  const expected = (e: string) => e.startsWith('http://localhost:4173/u/nobody.here :: Failed to load resource: the server responded with a status of 404');
+  expect.soft(consoleErrors.filter(e => !expected(e)), 'console errors').toEqual([]);
   await testInfo.attach(`audit-${browserName}.json`, { body: JSON.stringify({ reports, consoleErrors }, null, 2), contentType: 'application/json' });
 });
