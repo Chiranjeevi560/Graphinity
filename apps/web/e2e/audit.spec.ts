@@ -309,7 +309,8 @@ async function setUpIfNeeded(page: Page, handle: string) {
   await page.getByRole('button', { name: 'Imports & Customs' }).click();
   await page.getByText('I’m 18 or older').click();
   await page.getByRole('button', { name: 'Create profile' }).click();
-  await expect(page).not.toHaveURL(/\/welcome/);
+  // Setup ends by moving to the home page; let that finish before going on.
+  await expect(page.getByRole('link', { name: 'Ask a question' })).toBeVisible();
 }
 
 async function signOut(page: Page) {
