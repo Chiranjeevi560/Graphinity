@@ -1,0 +1,142 @@
+import { useEffect, useState, type SubmitEvent } from 'react';
+import { Button, LinkButton } from '../components/Button.tsx';
+import { TextArea } from '../components/Form.tsx';
+import { GoogleButton } from '../components/GoogleButton.tsx';
+import { ApiError } from '../lib/api.ts';
+import { applyMeta } from '../lib/meta.ts';
+import { ANSWER, charCount, questionPath, timeAgo, type Answer, type QuestionSummary } from '../lib/questions.ts';
+import { Link } from '../lib/router.ts';
+import { api, useSession } from '../session.tsx';
+
+interface Page { question: QuestionSummary & { body: string }; answers: Answer[] }
+
+/**
+ * The address carries the title's current wording: fix it quietly if an old
+ * or shortened link was used, and give search engines the one true address.
+ */
+function present(page: Page) {
+  const path = questionPath(page.question);
+  if (location.pathname !== path) history.replaceState(null, '', path);
+  applyMeta({ title: `${page.question.title} – Graphinity`, index: true }, path, import.meta.env.VITE_SITE_ORIGIN);
+}
+
+export default function Question({ id }: { id: string }) {
+  const { state } = useSession();
+  const [page, setPage] = useState<Page | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [now] = useState(Date.now);
+
+  async function reload() {
+    const loaded = await api<Page>(`/questions/${id}`);
+    setPage(loaded);
+    present(loaded);
+  }
+
+  useEffect(() => {
+    let live = true;
+    api<Page>(`/questions/${id}`)
+      .then(loaded => { if (live) { setPage(loaded); present(loaded); } })
+      .catch((err: unknown) => { if (live) setError(err instanceof ApiError ? err.message : 'This question couldn’t load. Try again in a minute.'); });
+    return () => { live = false; };
+  }, [id]);
+
+  if (error) {
+    return (
+      <main className="page stack-message">
+        <h1 className="text-title2">{error}</h1>
+        <p className="text-body secondary">Go to the <Link to="/">home page</Link> to see recent questions.</p>
+      </main>
+    );
+  }
+  if (!page) return <main className="page stack-message"><p className="text-body status" role="status">Loading…</p></main>;
+
+  const { question, answers } = page;
+  const me = state.status === 'ready' ? state.profile.handle : null;
+  const asked = me === question.asker.handle;
+  const answered = me !== null && answers.some(a => a.answerer.handle === me);
+
+  return (
+    <main className="page question-page">
+      <article className="question">
+        <h1 className="text-title1 question-heading">{question.title}</h1>
+        <p className="text-footnote secondary question-meta">
+          <span>{question.field.name}</span>
+          {question.country && <span>{question.country.name}</span>}
+          <span>Asked by <Link to={`/u/${encodeURIComponent(question.asker.handle)}`}>@{question.asker.handle}</Link></span>
+          <span><time dateTime={question.createdAt}>{timeAgo(question.createdAt, now)}</time></span>
+        </p>
+        {question.body && <p className="text-body post-body">{question.body}</p>}
+      </article>
+
+      <section className="answers" aria-labelledby="answers-heading">
+        <h2 id="answers-heading" className="text-title3">
+          {answers.length === 0 ? 'No answers yet' : answers.length === 1 ? '1 answer' : `${String(answers.length)} answers`}
+        </h2>
+        {answers.length > 0 && (
+          <ol className="answer-list">
+            {answers.map(a => (
+              <li key={a.id} className="answer">
+                <p className="text-body post-body">{a.body}</p>
+                <p className="text-footnote secondary">
+                  <Link to={`/u/${encodeURIComponent(a.answerer.handle)}`}>@{a.answerer.handle}</Link>
+                  {' · '}
+                  <time dateTime={a.createdAt}>{timeAgo(a.createdAt, now)}</time>
+                </p>
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
+
+      {state.status === 'signedOut' && (
+        <section className="answer-cta">
+          <p className="text-body">Have you done this yourself? Sign in to answer.</p>
+          <GoogleButton returnTo={location.pathname} />
+        </section>
+      )}
+      {state.status === 'needsProfile' && (
+        <section className="answer-cta">
+          <p className="text-body">Set up your profile to answer. It takes a minute, and you’ll come straight back here.</p>
+          <LinkButton to={`/welcome?next=${encodeURIComponent(location.pathname)}`}>Set up profile</LinkButton>
+        </section>
+      )}
+      {state.status === 'ready' && asked && (
+        <p className="text-subhead secondary">This is your question. You’ll see answers here as people reply.</p>
+      )}
+      {state.status === 'ready' && !asked && !answered && <AnswerForm questionId={question.id} onAnswered={reload} />}
+    </main>
+  );
+}
+
+function AnswerForm({ questionId, onAnswered }: { questionId: string; onAnswered: () => Promise<void> }) {
+  const [body, setBody] = useState('');
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const length = charCount(body.trim());
+  const canSend = length >= ANSWER.min && length <= ANSWER.max && !sending;
+
+  async function send(e: SubmitEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!canSend) return;
+    setSending(true);
+    setError(null);
+    try {
+      await api(`/questions/${questionId}/answers`, { method: 'POST', signedIn: true, body: { body } });
+      await onAnswered();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Your answer couldn’t be posted. Try again in a minute.');
+      setSending(false);
+    }
+  }
+
+  const hint = length < ANSWER.min
+    ? 'Share what you did and what happened.'
+    : length > ANSWER.max - 500 ? `${String(ANSWER.max - length)} characters left` : '';
+
+  return (
+    <form className="answer-form" onSubmit={e => { void send(e); }}>
+      <TextArea label="Your answer" value={body} onChange={setBody} rows={6} hint={hint} status={error ? { tone: 'bad', text: error } : null} />
+      <Button type="submit" className="btn-block" disabled={!canSend}>{sending ? 'Posting…' : 'Post answer'}</Button>
+    </form>
+  );
+}

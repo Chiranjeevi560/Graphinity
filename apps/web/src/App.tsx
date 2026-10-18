@@ -12,6 +12,8 @@ const Welcome = lazy(() => import('./routes/Welcome.tsx'));
 const Me = lazy(() => import('./routes/Me.tsx'));
 const EditProfile = lazy(() => import('./routes/EditProfile.tsx'));
 const PublicProfile = lazy(() => import('./routes/PublicProfile.tsx'));
+const Ask = lazy(() => import('./routes/Ask.tsx'));
+const Question = lazy(() => import('./routes/Question.tsx'));
 const Goodbye = lazy(() => import('./routes/Goodbye.tsx'));
 const NotFound = lazy(() => import('./routes/NotFound.tsx'));
 // A gallery of the design system for reviewing it; never part of a production build.
@@ -33,6 +35,9 @@ function route(path: string, state: SessionState): ReactNode {
     const handle = safeDecode(profileMatch[1]);
     return handle === null ? <NotFound /> : <PublicProfile handle={handle} />;
   }
+  // Questions are public: readable before sign-in finishes loading.
+  const questionMatch = /^\/q\/([1-9][0-9]{0,15})(?:\/[^/]*)?$/.exec(path);
+  if (questionMatch?.[1]) return <Question id={questionMatch[1]} />;
   if (Design && path === '/design') return <Design />;
 
   // Everything below depends on who is signed in.
@@ -47,6 +52,8 @@ function route(path: string, state: SessionState): ReactNode {
       return <Redirect to="/" />;
     case '/me':
       return state.status === 'ready' ? <Me profile={state.profile} /> : <Redirect to="/" />;
+    case '/ask':
+      return state.status === 'ready' ? <Ask profile={state.profile} /> : <Redirect to="/" />;
     case '/me/edit':
       return state.status === 'ready' ? <EditProfile profile={state.profile} /> : <Redirect to="/" />;
     default:

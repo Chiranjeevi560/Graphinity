@@ -53,3 +53,41 @@
 .profile-section { display: flex; flex-direction: column; gap: var(--space-3); }
 .profile-footer { display: flex; flex-direction: column; align-items: center; gap: 0; margin-top: var(--space-4); }
 .link-button:hover { text-decoration: none; }
+
+/* Questions: lists, the question page, answers. */
+.home-questions { display: flex; flex-direction: column; gap: var(--space-3); margin-top: var(--space-8); }
+
+.question-list, .similar-list, .answer-list { list-style: none; margin: 0; padding: 0; }
+.question-row + .question-row, .answer + .answer { border-top: var(--hairline) solid var(--separator); }
+.question-link {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-height: var(--tap);
+  padding: var(--space-3) 0;
+  color: inherit;
+}
+/* Whole-row links, not links inside a sentence: no underline (base.css underlines those). */
+.question-link, .question-link:hover, .similar-link, .similar-link:hover { text-decoration: none; }
+@media (hover: hover) { .question-link:hover .question-title { color: var(--accent-text); } }
+.question-title { overflow-wrap: anywhere; }
+
+/* "Field · Country · 3 answers · 2 hours ago" */
+.question-meta { display: flex; flex-wrap: wrap; gap: 0 var(--space-1); }
+.question-meta > span + span::before { content: "·"; margin-right: var(--space-1); }
+
+.similar { display: flex; flex-direction: column; gap: var(--space-1); margin-top: calc(-1 * var(--space-2)); }
+.similar-link { display: flex; flex-direction: column; min-height: var(--tap); justify-content: center; padding: var(--space-2) 0; color: inherit; }
+.similar-list li + li { border-top: var(--hairline) solid var(--separator); }
+
+.question-page { display: flex; flex-direction: column; gap: var(--space-8); padding-top: var(--space-6); }
+.question { display: flex; flex-direction: column; gap: var(--space-3); }
+.question-heading { overflow-wrap: anywhere; }
+/* Posts are plain text: keep the writer's line breaks, wrap long words. */
+.post-body { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.answers { display: flex; flex-direction: column; gap: var(--space-2); }
+.answer { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4) 0; }
+.answer-cta { display: flex; flex-direction: column; gap: var(--space-3); }
+@media (min-width: 30rem) { .answer-cta .btn { align-self: flex-start; min-width: 18rem; } }
+.answer-form { display: flex; flex-direction: column; gap: var(--space-3); }

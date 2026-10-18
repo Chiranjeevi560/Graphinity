@@ -131,3 +131,14 @@
 
 /* Plain inline status line (e.g. "Checking…") */
 .status { color: var(--label-secondary); }
+
+/* Multi-line text: grows with its content where supported, otherwise scrolls. */
+.textarea-box { align-items: stretch; }
+.textarea {
+  min-height: 7.5rem;
+  max-height: 60vh;
+  padding: var(--space-3);
+  resize: vertical;
+  field-sizing: content;
+  line-height: var(--text-body-leading);
+}

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type SubmitEvent } from 'react';
 import { Button } from '../components/Button.tsx';
 import { Checkbox, ChipPicker, SelectField, TextField } from '../components/Form.tsx';
 import { ApiError } from '../lib/api.ts';
+import { safePath } from '../lib/auth.ts';
 import { navigate } from '../lib/router.ts';
 import { api, useSession, type Profile } from '../session.tsx';
 import { guessCountry, useHandleCheck, useMeta } from './profile-form.ts';
@@ -54,7 +55,8 @@ export default function Welcome() {
         body: { handle, country, fields: [...fields], adult: true },
       });
       setProfile(profile);
-      navigate('/', { replace: true });
+      // Back to where they were going (a question they wanted to answer), on this site only.
+      navigate(safePath(new URLSearchParams(location.search).get('next') ?? '/'), { replace: true });
     } catch (err) {
       if (err instanceof ApiError && (err.code === 'handle_taken' || err.code === 'invalid_handle')) {
         // Someone took the name meanwhile: back to the name step, with the reason.

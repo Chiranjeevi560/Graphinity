@@ -16,7 +16,10 @@ export function pageMeta(path: string): PageMeta {
   const profile = /^\/u\/([^/]+)$/.exec(path)?.[1];
   // Profiles stay out of search until the owner decides they should be found.
   if (profile) return { title: `@${safeDecode(profile)} – ${SITE}`, index: false };
+  // A question screen replaces this with the question's own title once loaded.
+  if (path.startsWith('/q/')) return { title: `Question – ${SITE}`, index: false };
   const titles: Record<string, string> = {
+    '/ask': 'Ask a question',
     '/welcome': 'Set up your profile',
     '/me': 'Your profile',
     '/me/edit': 'Edit profile',

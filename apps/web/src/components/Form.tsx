@@ -1,4 +1,4 @@
-import { useId, type ChangeEvent, type InputHTMLAttributes, type ReactNode } from 'react';
+import { useId, type ChangeEvent, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from 'react';
 import { SquircleLayers } from './Squircle.tsx';
 
 export type FieldStatus = { tone: 'neutral' | 'good' | 'bad'; text: string } | null;
@@ -114,3 +114,37 @@ export function Checkbox({ checked, onChange, children }: { checked: boolean; on
     </label>
   );
 }
+
+interface TextAreaProps extends Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'onChange'> {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  hint?: string;
+  status?: FieldStatus;
+}
+
+/** Grows with what's typed (where the browser can), so long answers stay readable. */
+export function TextArea({ label, value, onChange, hint, status, ...rest }: TextAreaProps) {
+  const id = useId();
+  const noteId = `${id}-note`;
+  const note = status?.text ?? hint;
+  return (
+    <div className="form-row">
+      <label className="form-label" htmlFor={id}>{label}</label>
+      <div className="input-box textarea-box sq-host">
+        <SquircleLayers radius={0.75} focusRing />
+        <textarea
+          id={id}
+          className="input textarea"
+          value={value}
+          onChange={e => { onChange(e.target.value); }}
+          aria-describedby={note ? noteId : undefined}
+          aria-invalid={status?.tone === 'bad' || undefined}
+          {...rest}
+        />
+      </div>
+      <p id={noteId} className={`form-note tone-${status?.tone ?? 'neutral'}`} aria-live="polite">{note}</p>
+    </div>
+  );
+}
+

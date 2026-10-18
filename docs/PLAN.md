@@ -65,7 +65,9 @@ Render or Supabase.** Limits checked on the services' own pages on 2026-10-17 ar
 1. ✅ Foundations: repo, CI, schema base, server factory, design system, app shell.
 2. ✅ Sign-in and profile: Google, display name, country, fields, delete account (built and tested
    locally; first real Google sign-in pending accounts, see SETUP-ACCOUNTS.md).
-3. Ask, answer, read: public reading, live matching while typing.
+3. ✅ Ask, answer, read: public reading, live matching while typing (built and tested locally;
+   editing and deleting posts not offered yet; question pages' link previews and the sitemap of
+   questions need a server-side step at deploy, step 7).
 4. Select, helpful, points, medals, trust, change-with-reason, pair cap.
 5. Routing waves, live updates, web push.
 6. Reporting, auto-hide, owner review page, limits, blocking.

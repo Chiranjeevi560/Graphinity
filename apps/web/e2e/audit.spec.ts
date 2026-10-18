@@ -66,6 +66,17 @@ async function audit(page: Page, screen: string) {
     if (overflow) report.overflow.push(width);
     for (const s of small) report.smallTargets.push({ width, ...s });
   }
+  // AUDIT_SHOTS=1 saves each screen at phone width in both modes, for looking at by eye.
+  if (process.env.AUDIT_SHOTS) {
+    await page.setViewportSize({ width: 375, height: 812 });
+    for (const scheme of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await settle(page);
+      const name = screen.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+      await page.screenshot({ path: `test-results/shots/${test.info().project.name}/${name}-${scheme}.png`, fullPage: true });
+    }
+    await page.emulateMedia({ colorScheme: 'light' });
+  }
   if (original) await page.setViewportSize(original);
   reports.push(report);
   // Saved after every screen, so a later failure can't hide earlier findings.
@@ -169,8 +180,35 @@ test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
   await audit(page, 'welcome 3: fields');
   await page.getByRole('button', { name: 'Create profile' }).click();
 
-  await expect(page.getByText(`@${handle}`)).toBeVisible();
+  await expect(page.getByRole('link', { name: `Your profile, @${handle}` })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Ask a question' })).toBeVisible();
   await audit(page, 'home (signed in)');
+
+  // Asking. The title is unique per run, so matching can be checked exactly.
+  const run = `${browserName}${String(Date.now() % 1_000_000)}`;
+  const title = `How do I import a vintage watch into the UAE, case ${run}?`;
+  await page.getByRole('link', { name: 'Ask a question' }).click();
+  await expect(page.getByRole('heading', { name: 'Ask a question' })).toBeVisible();
+  await audit(page, 'ask (empty)');
+  await page.getByLabel('Your question').fill(title);
+  await page.getByLabel('Details (optional)').fill('Bought in Geneva.\nShipping to Dubai next month.');
+  await page.getByLabel('About a country').selectOption('AE');
+  await page.getByRole('button', { name: 'Post question' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
+  await expect(page).toHaveURL(/\/q\/\d+\/how-do-i-import-a-vintage-watch-into-the-uae-case-/);
+  await expect(page).toHaveTitle(`${title} – Graphinity`);
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /^index/);
+  await expect(page.getByText('This is your question.')).toBeVisible();
+  await audit(page, 'question (yours)');
+  const questionUrl = new URL(page.url()).pathname;
+
+  // Typing a similar question shows it, from half-typed words.
+  await page.goto('/ask');
+  await page.getByLabel('Your question').fill(`vintage watch case ${run.slice(0, -2)}`);
+  await expect(page.getByRole('region', { name: 'Similar questions already asked' }).getByRole('link', { name: new RegExp(run) })).toBeVisible();
+  await audit(page, 'ask (similar questions)');
+  await page.goto('/');
+  await expect(page.getByRole('link', { name: new RegExp(run) }).first()).toBeVisible();
 
   await page.goto('/me');
   await expect(page.getByRole('heading', { name: `@${handle}` })).toBeVisible();
@@ -188,6 +226,37 @@ test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
   await page.goto(`/u/${handle}`);
   await expect(page.getByRole('heading', { name: `@${handle}` })).toBeVisible();
   await audit(page, 'public profile');
+
+  // Signed out, anyone can read the question, and is invited to answer.
+  await page.goto('/me');
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  await page.goto(questionUrl);
+  await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
+  await expect(page.getByText('Sign in to answer')).toBeVisible();
+  await audit(page, 'question (signed out)');
+
+  // A newcomer signs in from the question, sets up, and comes straight back to answer.
+  await page.getByRole('button', { name: 'Continue with Google' }).click();
+  await page.getByRole('button', { name: 'A brand-new person' }).click();
+  await expect(page).toHaveURL(new RegExp(`${questionUrl}$`));
+  await page.getByRole('link', { name: 'Set up profile' }).click();
+  const answerer = `answer.${run}`;
+  await page.getByLabel('Name').fill(answerer);
+  await expect(page.getByText('Available')).toBeVisible();
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByLabel('Country').selectOption('AE');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByRole('button', { name: 'Imports & Customs' }).click();
+  await page.getByText('I’m 18 or older').click();
+  await page.getByRole('button', { name: 'Create profile' }).click();
+  await expect(page).toHaveURL(new RegExp(`${questionUrl}$`));
+  await page.getByLabel('Your answer').fill('Declare it on arrival and keep the Swiss export papers.\nDuty was 5% for me.');
+  await audit(page, 'question (answering)');
+  await page.getByRole('button', { name: 'Post answer' }).click();
+  await expect(page.getByRole('heading', { name: '1 answer' })).toBeVisible();
+  await expect(page.getByRole('link', { name: `@${answerer}`, exact: true })).toBeVisible();
+  await expect(page.getByLabel('Your answer')).toHaveCount(0);
+  await audit(page, 'question (answered)');
 
   await page.goto('/me');
   await page.getByRole('button', { name: 'Delete account…' }).click();
