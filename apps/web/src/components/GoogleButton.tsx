@@ -21,9 +21,11 @@ export function GoogleButton({ returnTo = '/' }: { returnTo?: string }) {
       type="button"
       className="btn btn-google sq-host"
       disabled={leaving}
-      onClick={async () => {
+      onClick={() => {
         setLeaving(true);
-        await auth.startSignIn(returnTo);
+        // If the browser can't start sign-in (no crypto, storage refused),
+        // give the button back rather than leave it stuck.
+        auth.startSignIn(returnTo).catch(() => { setLeaving(false); });
       }}
     >
       <SquircleLayers radius={0.75} edge focusRing />

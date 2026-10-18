@@ -14,11 +14,13 @@ import './routes/routes.css';
 // error then reaches the error boundary, which explains what to do.
 window.addEventListener('vite:preloadError', event => {
   const key = 'graphinity:reloaded-at';
-  let last = 0;
-  try { last = Number(sessionStorage.getItem(key)) || 0; } catch {}
-  if (Date.now() - last < 10_000) return;
+  // Without storage the guard can't remember reloading, so a broken deploy
+  // would reload forever: show the error screen instead.
+  try {
+    if (Date.now() - (Number(sessionStorage.getItem(key)) || 0) < 10_000) return;
+    sessionStorage.setItem(key, String(Date.now()));
+  } catch { return; }
   event.preventDefault();
-  try { sessionStorage.setItem(key, String(Date.now())); } catch {}
   location.reload();
 });
 
@@ -26,7 +28,9 @@ window.addEventListener('vite:preloadError', event => {
 // press feedback must appear on touch-down.
 document.addEventListener('touchstart', () => {}, { passive: true });
 
-createRoot(document.getElementById('root')!).render(
+const root = document.getElementById('root');
+if (!root) throw new Error('index.html is missing #root');
+createRoot(root).render(
   <StrictMode>
     <SessionProvider>
       <App />

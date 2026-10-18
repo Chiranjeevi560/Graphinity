@@ -112,6 +112,23 @@ test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
   await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeEnabled();
   await page.unroute('**/auth/v1/authorize**');
 
+  // If the browser can't start sign-in (here: hashing refused), the button
+  // comes back instead of staying stuck on "Opening Google…".
+  await page.evaluate(() => { crypto.subtle.digest = () => Promise.reject(new Error('blocked')); });
+  await page.getByRole('button', { name: 'Continue with Google' }).click();
+  await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeEnabled();
+
+  // A file from an old deploy failing to load, with storage blocked: the page
+  // must not reload itself (it couldn't remember doing so, and would loop).
+  const reloaded = await page.evaluate(() => {
+    Object.defineProperty(window, 'sessionStorage', { get() { throw new DOMException('blocked', 'SecurityError'); } });
+    const e = new Event('vite:preloadError', { cancelable: true });
+    window.dispatchEvent(e);
+    return e.defaultPrevented;
+  });
+  expect(reloaded).toBe(false);
+  await page.goto('/');
+
   // Sign in through the local stand-in.
   await page.getByRole('button', { name: 'Continue with Google' }).click();
   await page.getByRole('button', { name: 'A brand-new person' }).click();
