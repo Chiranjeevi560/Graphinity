@@ -193,3 +193,21 @@ than 5 a day, and never their own question. Who was asked is visible only to the
 `{ questions: [summary + { routedAt, seen }], unseen }`, newest first, up to 30. Opening a question
 (`GET /questions/:id` while signed in) marks it seen.
 
+## Live updates
+
+### `GET /events` (signed in)
+
+A stream of server-sent events while the site is open:
+
+```
+event: answered
+data: {"questionId":"42"}
+```
+
+`routed` (a question was put to you) and `answered` (someone answered your question). Messages carry
+only the question id; screens fetch the rest the normal way. A comment line every 10 seconds keeps
+the connection open. The stream ends a minute before the sign-in token expires; the website then
+reconnects with a fresh token, so a deleted or signed-out account stops hearing. At most 3 open per
+person and 300 in total (429 past that). Read it with `fetch` and the `authorization` header
+(`EventSource` can't send one).
+

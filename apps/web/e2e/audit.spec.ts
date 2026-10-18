@@ -32,8 +32,35 @@ function realErrors(errors: string[], browserName: string): string[] {
   return errors.filter(e => !e.endsWith(":: Refused to apply a stylesheet because its hash, its nonce, or 'unsafe-inline' does not appear in the style-src directive of the Content Security Policy."));
 }
 
+// Requests in flight per page, except the live-updates stream, which stays
+// open on purpose (so "network idle" never comes once someone signs in).
+const inFlight = new WeakMap<Page, Set<object>>();
+function track(page: Page): Set<object> {
+  let pending = inFlight.get(page);
+  if (pending) return pending;
+  const set = new Set<object>();
+  inFlight.set(page, set);
+  // Page loads are covered by waitForLoadState (and WebKit never reports the
+  // callback page as finished, since the app rewrites its address at once).
+  page.on('request', r => { if (r.resourceType() !== 'document' && !r.url().endsWith('/events')) set.add(r); });
+  page.on('requestfinished', r => { set.delete(r); });
+  page.on('requestfailed', r => { set.delete(r); });
+  pending = set;
+  return pending;
+}
+
 async function settle(page: Page) {
-  await page.waitForLoadState('networkidle');
+  const pending = track(page);
+  await page.waitForLoadState('load');
+  // Quiet for 200 ms: nothing loading but the stream. A request stuck for
+  // 10 s fails the audit rather than measuring a half-loaded screen.
+  const started = Date.now();
+  let quietSince = started;
+  while (Date.now() - quietSince < 200) {
+    if (pending.size > 0) quietSince = Date.now();
+    if (Date.now() - started > 10_000) throw new Error(`still loading after 10 s: ${[...pending].map(r => (r as { url(): string }).url()).join(', ')}`);
+    await page.waitForTimeout(50);
+  }
   // Wait out route fades so contrast is measured on final colours.
   await page.waitForFunction(() => document.getAnimations().every(a => a.playState !== 'running'));
 }
@@ -291,7 +318,9 @@ async function signIn(page: Page, who: 'Test person A' | 'A brand-new person') {
   await page.goto('/');
   await page.getByRole('button', { name: 'Continue with Google' }).click();
   await page.getByRole('button', { name: who }).click();
-  await page.waitForURL(url => !url.pathname.startsWith('/auth/'));
+  // The app finishes sign-in by moving to home or to setup; wait for either,
+  // or a test's next page.goto collides with that move (seen in WebKit).
+  await expect(page.getByRole('heading', { name: 'Choose your name' }).or(page.getByRole('link', { name: 'Ask a question' }))).toBeVisible();
 }
 
 /** Finishes setup if this person hasn't yet (a fixed test person only needs it once). */
@@ -382,4 +411,42 @@ test('picking an answer moves points, and the profile shows them', async ({ page
   await expect(page.getByRole('heading', { name: 'Helped people with' })).toHaveCount(0);
 
   expect.soft(realErrors(consoleErrors, browserName).filter(e => !e.includes('/u/nobody.here')), 'console errors').toEqual([]);
+});
+
+test('a new answer reaches the asker live, without reloading', async ({ browser, browserName }) => {
+  const run = `${browserName}${String(Date.now() % 1_000_000)}`;
+  const askerContext = await browser.newContext();
+  const answererContext = await browser.newContext();
+  try {
+    const asker = await askerContext.newPage();
+    await signIn(asker, 'Test person A');
+    await setUpIfNeeded(asker, `asker.${run}`);
+    await asker.goto('/ask');
+    const title = `Is there a night bus from the airport, case ${run}?`;
+    await asker.getByLabel('Your question').fill(title);
+    await asker.getByRole('button', { name: 'Post question' }).click();
+    await expect(asker.getByRole('heading', { level: 1, name: title })).toBeVisible();
+    const questionUrl = new URL(asker.url()).pathname;
+    // The asker waits on the home page.
+    await asker.goto('/');
+    await expect(asker.getByRole('link', { name: 'Ask a question' })).toBeVisible();
+
+    const answerer = await answererContext.newPage();
+    await signIn(answerer, 'A brand-new person');
+    await setUpIfNeeded(answerer, `night.${run}`);
+    await answerer.goto(questionUrl);
+    await answerer.getByLabel('Your answer').fill('Yes, the N1 leaves every 30 minutes until 2am.');
+    await answerer.getByRole('button', { name: 'Post answer' }).click();
+    await expect(answerer.getByRole('heading', { name: '1 answer' })).toBeVisible();
+
+    // Without reloading, the asker hears about it and can go straight there.
+    const banner = asker.getByRole('link', { name: 'New answer to your question' });
+    await expect(banner).toBeVisible({ timeout: 10_000 });
+    await audit(asker, 'live banner');
+    await banner.click();
+    await expect(asker.getByText('the N1 leaves every 30 minutes')).toBeVisible();
+  } finally {
+    await askerContext.close();
+    await answererContext.close();
+  }
 });

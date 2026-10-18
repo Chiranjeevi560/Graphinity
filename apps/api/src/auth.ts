@@ -6,6 +6,8 @@ import { createRemoteJWKSet, errors, jwtVerify, type JWTPayload, type JWTVerifyG
 
 export interface SignedInUser {
   id: string;
+  /** When the token stops being valid, in seconds since the epoch. */
+  expiresAt: number;
 }
 
 export interface TokenVerifier {
@@ -85,7 +87,7 @@ export function createTokenVerifier({ issuer, keys }: VerifierOptions): TokenVer
       if (payload.role !== 'authenticated') throw new AuthError('role');
       if (payload.is_anonymous === true) throw new AuthError('anonymous');
       if (typeof payload.sub !== 'string' || !UUID.test(payload.sub)) throw new AuthError('sub');
-      return { id: payload.sub.toLowerCase() };
+      return { id: payload.sub.toLowerCase(), expiresAt: payload.exp };
     },
   };
 }

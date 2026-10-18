@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { onLive } from '../lib/live.ts';
 import { questionPath, timeAgo, type QuestionSummary } from '../lib/questions.ts';
 import { Link } from '../lib/router.ts';
 import { api } from '../session.tsx';
@@ -12,11 +13,15 @@ export function Inbox() {
 
   useEffect(() => {
     let live = true;
-    api<{ questions: InboxQuestion[]; unseen: number }>('/me/inbox', { signedIn: true })
-      .then(res => { if (live) setInbox(res); })
-      // The inbox is extra on this screen: if it can't load, the rest still works.
-      .catch(() => {});
-    return () => { live = false; };
+    const load = () => {
+      api<{ questions: InboxQuestion[]; unseen: number }>('/me/inbox', { signedIn: true })
+        .then(res => { if (live) setInbox(res); })
+        // The inbox is extra on this screen: if it can't load, the rest still works.
+        .catch(() => {});
+    };
+    load();
+    const stop = onLive(e => { if (e.type === 'routed') load(); });
+    return () => { live = false; stop(); };
   }, []);
 
   if (!inbox || inbox.questions.length === 0) return null;

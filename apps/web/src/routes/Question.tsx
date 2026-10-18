@@ -3,6 +3,7 @@ import { Button, LinkButton } from '../components/Button.tsx';
 import { TextArea } from '../components/Form.tsx';
 import { GoogleButton } from '../components/GoogleButton.tsx';
 import { ApiError } from '../lib/api.ts';
+import { onLive } from '../lib/live.ts';
 import { applyMeta } from '../lib/meta.ts';
 import { ANSWER, charCount, questionPath, timeAgo, type Answer, type QuestionSummary, type Selection } from '../lib/questions.ts';
 import { AnswerActions, AnswerLabels } from '../components/AnswerActions.tsx';
@@ -40,6 +41,13 @@ export default function Question({ id }: { id: string }) {
       .catch((err: unknown) => { if (live) setError(err instanceof ApiError ? err.message : 'This question couldn’t load. Try again in a minute.'); });
     return () => { live = false; };
   }, [id]);
+
+  // A new answer to this question appears without reloading the page.
+  useEffect(() => onLive(e => {
+    if (e.type === 'answered' && e.questionId === id) {
+      api<Page>(`/questions/${id}`).then(loaded => { setPage(loaded); }).catch(() => { /* next visit shows it */ });
+    }
+  }), [id]);
 
   if (error) {
     return (

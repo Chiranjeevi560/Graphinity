@@ -18,9 +18,10 @@ async function rejected(token: string) {
 }
 
 describe('createTokenVerifier', () => {
-  it('accepts a genuine token and returns the user id', async () => {
+  it('accepts a genuine token and returns the user id and when the token expires', async () => {
     const sub = '7b1c3f0e-1d2a-4c5b-9e8f-0a1b2c3d4e5f';
-    expect(await verifier.verify(await issuer.sign({}, { sub }))).toEqual({ id: sub });
+    const issuedAt = Math.floor(Date.now() / 1000);
+    expect(await verifier.verify(await issuer.sign({}, { sub, issuedAt, lifetime: 3600 }))).toEqual({ id: sub, expiresAt: issuedAt + 3600 });
   });
 
   it('refuses an expired token', async () => {

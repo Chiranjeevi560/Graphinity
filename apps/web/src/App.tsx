@@ -3,7 +3,7 @@ import { Button } from './components/Button.tsx';
 import { Avatar } from './components/Identity.tsx';
 import { applyMeta, pageMeta } from './lib/meta.ts';
 import { Link, navigate, usePath } from './lib/router.ts';
-import { useSession, type SessionState } from './session.tsx';
+import { auth, useSession, type SessionState } from './session.tsx';
 
 // Each screen is its own chunk, so a phone downloads only what it shows.
 const Home = lazy(() => import('./routes/Home.tsx'));
@@ -16,6 +16,8 @@ const Ask = lazy(() => import('./routes/Ask.tsx'));
 const Question = lazy(() => import('./routes/Question.tsx'));
 const Goodbye = lazy(() => import('./routes/Goodbye.tsx'));
 const NotFound = lazy(() => import('./routes/NotFound.tsx'));
+// Live updates only matter once signed in: loaded then, not by every reader.
+const LiveBanner = lazy(() => import('./components/LiveBanner.tsx').then(m => ({ default: m.LiveBanner })));
 // A gallery of the design system for reviewing it; never part of a production build.
 const Design = import.meta.env.DEV ? lazy(() => import('./routes/Design.tsx')) : null;
 
@@ -69,6 +71,18 @@ export function App() {
   const path = usePath();
   const { state } = useSession();
   useEffect(() => { applyMeta(pageMeta(path), path, import.meta.env.VITE_SITE_ORIGIN); }, [path]);
+  // Live updates for as long as someone is signed in with a profile.
+  const live = state.status === 'ready';
+  useEffect(() => {
+    if (!live) return;
+    let stop: (() => void) | null = null;
+    let cancelled = false;
+    void import('./lib/live.ts').then(({ announce, startLive }) => {
+      if (cancelled) return;
+      stop = startLive({ origin: import.meta.env.VITE_API_ORIGIN, auth, fetch: (...args) => fetch(...args), onEvent: announce });
+    });
+    return () => { cancelled = true; stop?.(); };
+  }, [live]);
   return (
     <>
       <header className="bar">
@@ -90,6 +104,7 @@ export function App() {
           <div className="route" key={path}>{route(path, state)}</div>
         </Suspense>
       </ErrorBoundary>
+      {live && <Suspense fallback={null}><LiveBanner /></Suspense>}
     </>
   );
 }

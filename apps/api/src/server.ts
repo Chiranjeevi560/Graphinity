@@ -7,6 +7,7 @@ import type { Database } from './db.ts';
 import { TokenBuckets, visitorAddress, visitorKey, type BucketOptions, type Clock } from './rate-limit.ts';
 import { registerProfileRoutes } from './routes/profile.ts';
 import { createEvents, type Events } from './events.ts';
+import { registerLiveRoutes } from './routes/live.ts';
 import { registerPointRoutes } from './routes/points.ts';
 import { registerQuestionRoutes } from './routes/questions.ts';
 
@@ -235,6 +236,7 @@ export async function buildServer(deps: Deps) {
   registerProfileRoutes(app, { db, authAdmin: deps.authAdmin, clock, subjectKey: config.ipHashKey, log: app.log });
   const events = deps.events ?? createEvents();
   registerQuestionRoutes(app, { db, events });
+  registerLiveRoutes(app, { events, clock });
   registerPointRoutes(app, { db });
 
   return app;

@@ -104,3 +104,31 @@
 @media (prefers-reduced-motion: reduce) {
   @keyframes route-in { from { opacity: 0; } }
 }
+
+/* Live note: bottom centre, above the home indicator, out of the way. */
+.live-banner-region {
+  position: fixed;
+  inset: auto 0 calc(env(safe-area-inset-bottom) + var(--space-4));
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 10;
+}
+.live-banner {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  padding: 0 var(--space-5);
+  border-radius: 999px;
+  background: var(--material-solid);
+  color: var(--label);
+  box-shadow: 0 0.5px 0 var(--separator), 0 6px 24px rgb(0 0 0 / 0.16);
+  font-weight: 600;
+  text-decoration: none;
+}
+.live-banner:hover { text-decoration: none; }
+@media (prefers-reduced-motion: no-preference) {
+  .live-banner { animation: live-in var(--spring-move-duration, 0.4s) var(--spring-move, ease-out); }
+}
+@keyframes live-in { from { opacity: 0; transform: translateY(0.75rem); } }
