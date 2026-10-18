@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { assertNoInlineScripts, contentSecurityPolicy, pagesHeadersFile } from '../headers.ts';
+import { must } from './must.ts';
 
 const options = { connectSrc: ['https://api.example.onrender.com'] };
 
@@ -34,7 +35,7 @@ describe('_headers file', () => {
   const file = pagesHeadersFile(options);
 
   it('applies the security headers to every path', () => {
-    const block = file.split('\n\n')[0]!;
+    const block = must(file.split('\n\n')[0], 'the first block');
     expect(block.split('\n')[0]).toBe('/*');
     for (const h of ['Content-Security-Policy', 'Strict-Transport-Security', 'X-Content-Type-Options: nosniff', 'Referrer-Policy: same-origin']) {
       expect(block).toContain(h);
@@ -49,10 +50,10 @@ describe('_headers file', () => {
 
 describe('assertNoInlineScripts', () => {
   it('accepts external module scripts', () => {
-    expect(() => assertNoInlineScripts('<script type="module" crossorigin src="/assets/index-abc.js"></script>')).not.toThrow();
+    expect(() => { assertNoInlineScripts('<script type="module" crossorigin src="/assets/index-abc.js"></script>'); }).not.toThrow();
   });
 
   it('rejects an inline script, which the policy would silently block in production', () => {
-    expect(() => assertNoInlineScripts('<script>window.x = 1</script>')).toThrow(/inline script/);
+    expect(() => { assertNoInlineScripts('<script>window.x = 1</script>'); }).toThrow(/inline script/);
   });
 });

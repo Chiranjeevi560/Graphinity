@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { cornerExtent, squirclePath } from '../src/lib/squircle.ts';
+import { must } from './must.ts';
 
 /** Walks the path's commands and returns the pen position after each one. */
 function trace(path: string): Array<[number, number]> {
@@ -29,11 +30,12 @@ describe('squirclePath', () => {
       const p = cornerExtent(w, h, r);
       const pts = trace(squirclePath(w, h, r));
       // After each corner's three segments (curve, arc, curve) the pen sits on an edge.
-      const ends = [pts[3]!, pts[7]!, pts[11]!, pts[15]!];
+      const ends = [3, 7, 11, 15].map(i => must(pts[i], `point ${i}`));
       const expected = [[w, p], [w - p, h], [0, h - p], [p, 0]];
       ends.forEach((pt, i) => {
-        expect(pt[0], `${w}x${h} corner ${i}`).toBeCloseTo(expected[i]![0]!, 2);
-        expect(pt[1], `${w}x${h} corner ${i}`).toBeCloseTo(expected[i]![1]!, 2);
+        const [x, y] = must(expected[i], `corner ${i}`);
+        expect(pt[0], `${w}x${h} corner ${i}`).toBeCloseTo(must(x), 2);
+        expect(pt[1], `${w}x${h} corner ${i}`).toBeCloseTo(must(y), 2);
       });
       // The closing Z then draws the top edge back to the start at (w - p, 0).
       expect(pts[0]).toEqual([Math.round((w - p) * 1000) / 1000, 0]);

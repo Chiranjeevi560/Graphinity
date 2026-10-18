@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError, createApi } from '../src/lib/api.ts';
 import type { Auth } from '../src/lib/auth.ts';
+import { must } from './must.ts';
 
 function fakeAuth(tokens: Array<string | null>) {
   let cleared = false;
   const auth = {
-    getAccessToken: async () => tokens.shift() ?? null,
+    getAccessToken: () => Promise.resolve(tokens.shift() ?? null),
     hasSession: () => false,
     clear: () => { cleared = true; },
   } as unknown as Auth;
@@ -14,9 +15,9 @@ function fakeAuth(tokens: Array<string | null>) {
 
 function fetchSequence(responses: Array<() => Response>) {
   const seen: Array<{ url: string; auth: string | undefined }> = [];
-  const f = (async (url: string, init: RequestInit) => {
+  const f = ((url: string, init: RequestInit) => {
     seen.push({ url, auth: (init.headers as Record<string, string>).authorization });
-    return responses.shift()!();
+    return Promise.resolve(must(responses.shift(), `a response for ${url}`)());
   }) as unknown as typeof fetch;
   return { f, seen };
 }
@@ -51,14 +52,14 @@ describe('api', () => {
   it('passes the server’s plain-words message and extra details through', async () => {
     const { auth } = fakeAuth(['t']);
     const { f } = fetchSequence([json({ error: 'handle_change_too_soon', message: 'You changed your name recently.', availableAt: '2026-10-24T10:00:00.000Z' }, 409)]);
-    const err = await createApi({ origin: 'https://api.test', auth, fetch: f })('/me/profile', { method: 'PATCH', body: {}, signedIn: true }).catch(e => e);
+    const err = await createApi({ origin: 'https://api.test', auth, fetch: f })('/me/profile', { method: 'PATCH', body: {}, signedIn: true }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect(err).toMatchObject({ status: 409, code: 'handle_change_too_soon', message: 'You changed your name recently.', details: { availableAt: '2026-10-24T10:00:00.000Z' } });
   });
 
   it('says plainly when the network is down', async () => {
     const { auth } = fakeAuth([]);
-    const f = (async () => { throw new TypeError('Failed to fetch'); }) as unknown as typeof fetch;
+    const f = (() => Promise.reject(new TypeError('Failed to fetch'))) as unknown as typeof fetch;
     await expect(createApi({ origin: 'https://api.test', auth, fetch: f })('/meta')).rejects.toMatchObject({ code: 'offline', message: 'You seem to be offline. Check your connection and try again.' });
   });
 

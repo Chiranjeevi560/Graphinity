@@ -1,13 +1,14 @@
 // The sign-in and profile flow end to end: the real server, the real token
 // verifier (trusting a test key), and a real Postgres as the restricted role.
 import { randomUUID } from 'node:crypto';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createTokenVerifier, subjectHash } from '../src/auth.ts';
 import { completePendingDeletions } from '../src/deletions.ts';
 import { buildServer, defaultLimits } from '../src/server.ts';
 import { createTestDatabase, type TestDatabase } from './helpers/database.ts';
 import { fakeAuthAdmin, TEST_ISSUER, testIssuer } from './helpers/tokens.ts';
 import { handleExamples } from './handles.test.ts';
+import { must, type Body } from './helpers/must.ts';
 
 const KEY = Buffer.alloc(32, 9);
 let t: TestDatabase;
@@ -30,12 +31,9 @@ beforeAll(async () => {
     limits: { ...defaultLimits, visitor: { capacity: 10_000, refillPerSecond: 1000, maxKeys: 10 }, userWrites: { capacity: 1000, refillPerSecond: 100, maxKeys: 100 } },
     logStream: { write: () => {} },
   });
+  return async () => { await app.close(); await t.close(); };
 });
 
-afterAll(async () => {
-  await app?.close();
-  await t?.close();
-});
 
 beforeEach(() => {
   now = Date.parse('2026-10-17T10:00:00Z');
@@ -78,16 +76,16 @@ describe('creating a profile', () => {
     const p = await person();
     const res = await call('POST', '/me/profile', p.token, { ...valid, handle: '  Chiru.Create ' });
     expect(res.statusCode).toBe(201);
-    expect(res.json().profile).toEqual({
+    expect(res.json<Body>().profile).toEqual({
       handle: 'chiru.create',
       country: { code: 'IN', name: 'India' },
       fields: [{ slug: 'imports-customs', name: 'Imports & Customs' }, { slug: 'watches-luxury', name: 'Watches & Luxury' }],
       joined: '2026-10',
       handleChangeAvailableAt: null,
     });
-    expect((await call('GET', '/me', p.token)).json().profile.handle).toBe('chiru.create');
-    const { rows } = await t.owner.query('SELECT adult_confirmed_at FROM app.profiles WHERE id = $1', [p.id]);
-    expect(rows[0].adult_confirmed_at.toISOString()).toBe('2026-10-17T10:00:00.000Z');
+    expect((await call('GET', '/me', p.token)).json<Body>().profile?.handle).toBe('chiru.create');
+    const { rows } = await t.owner.query<{ adult_confirmed_at: Date }>('SELECT adult_confirmed_at FROM app.profiles WHERE id = $1', [p.id]);
+    expect(must(rows[0], 'the profile row').adult_confirmed_at.toISOString()).toBe('2026-10-17T10:00:00.000Z');
   });
 
   it('requires the 18+ confirmation to be exactly true', async () => {
@@ -123,7 +121,7 @@ describe('creating a profile', () => {
     const p = await person();
     await call('POST', '/me/profile', p.token, { ...valid, handle: 'only.once' });
     const res = await call('POST', '/me/profile', p.token, { ...valid, handle: 'twice.now' });
-    expect(res.json().error).toBe('profile_exists');
+    expect(res.json<Body>().error).toBe('profile_exists');
   });
 
   it('needs 1 to 8 known fields and a known country', async () => {
@@ -140,7 +138,7 @@ describe('creating a profile', () => {
       const res = await call('POST', '/me/profile', p.token, { ...body, handle: 'field.check' });
       expect(res.statusCode, JSON.stringify(body)).toBe(400);
     }
-    expect((await call('GET', '/me', p.token)).json().profile).toBeNull();
+    expect((await call('GET', '/me', p.token)).json<Body>().profile).toBeNull();
   });
 });
 
@@ -150,7 +148,7 @@ describe('editing a profile', () => {
     await call('POST', '/me/profile', p.token, { ...valid, handle: 'editor' });
     const res = await call('PATCH', '/me/profile', p.token, { country: 'AE', fields: ['travel'] });
     expect(res.statusCode).toBe(200);
-    expect(res.json().profile).toMatchObject({ country: { code: 'AE', name: 'United Arab Emirates' }, fields: [{ slug: 'travel', name: 'Travel' }] });
+    expect(res.json<Body>().profile).toMatchObject({ country: { code: 'AE', name: 'United Arab Emirates' }, fields: [{ slug: 'travel', name: 'Travel' }] });
   });
 
   it('allows a name change once a week, timed by the database clock', async () => {
@@ -186,7 +184,7 @@ describe('editing a profile', () => {
 
   it('says to set up a profile first if there is none', async () => {
     const p = await person();
-    expect((await call('PATCH', '/me/profile', p.token, { country: 'IN' })).json().error).toBe('no_profile');
+    expect((await call('PATCH', '/me/profile', p.token, { country: 'IN' })).json<Body>().error).toBe('no_profile');
   });
 });
 
@@ -196,7 +194,7 @@ describe('looking people up', () => {
     await call('POST', '/me/profile', p.token, { ...valid, handle: 'public.one' });
     const res = await call('GET', '/profiles/Public.One');
     expect(res.statusCode).toBe(200);
-    expect(Object.keys(res.json().profile).sort()).toEqual(['country', 'fields', 'handle', 'joined']);
+    expect(Object.keys(must(res.json<Body>().profile, 'a profile')).sort()).toEqual(['country', 'fields', 'handle', 'joined']);
     expect(res.body).not.toContain(p.id);
   });
 
@@ -212,8 +210,8 @@ describe('looking people up', () => {
 
   it('serves the field and country lists', async () => {
     const res = await call('GET', '/meta');
-    expect(res.json().fields).toHaveLength(20);
-    expect(res.json().countries).toHaveLength(250);
+    expect(res.json<Body>().fields).toHaveLength(20);
+    expect(res.json<Body>().countries).toHaveLength(250);
     expect(res.headers['cache-control']).toBe('public, max-age=3600');
   });
 });
@@ -223,7 +221,7 @@ describe('deleting an account', () => {
     const p = await person();
     await call('POST', '/me/profile', p.token, { ...valid, handle: 'not.yet' });
     expect((await call('DELETE', '/me', p.token, {})).statusCode).toBe(400);
-    expect((await call('GET', '/me', p.token)).json().profile).not.toBeNull();
+    expect((await call('GET', '/me', p.token)).json<Body>().profile).not.toBeNull();
   });
 
   it('removes every row and the sign-in, and the old token stops working at once', async () => {
@@ -240,7 +238,7 @@ describe('deleting an account', () => {
     expect((await call('GET', '/me', p.token)).statusCode).toBe(401);
     expect((await call('POST', '/me/profile', p.token, { ...valid, handle: 'back.again' })).statusCode).toBe(401);
     // Only a keyed hash is remembered, never the id.
-    const revoked = await t.owner.query('SELECT subject_hash FROM app.revoked_subjects');
+    const revoked = await t.owner.query<{ subject_hash: string }>('SELECT subject_hash FROM app.revoked_subjects');
     expect(revoked.rows.map(r => r.subject_hash)).toContain(subjectHash(p.id, KEY));
     expect(JSON.stringify(revoked.rows)).not.toContain(p.id);
   });
@@ -352,8 +350,8 @@ describe('the database itself', () => {
 
   it('agrees with the API on every name example', async () => {
     for (const [handle, problem] of handleExamples) {
-      const { rows } = await t.api.query('SELECT app.is_valid_handle($1) AS ok', [handle]);
-      expect(rows[0].ok, handle).toBe(problem === null);
+      const { rows } = await t.api.query<{ ok: boolean }>('SELECT app.is_valid_handle($1) AS ok', [handle]);
+      expect(must(rows[0]).ok, handle).toBe(problem === null);
     }
   });
 });

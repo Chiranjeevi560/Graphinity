@@ -3,6 +3,7 @@ import { generateKeyPair, SignJWT, UnsecuredJWT } from 'jose';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AuthError, AuthUnavailableError, createTokenVerifier, subjectHash, supabaseKeys, type TokenVerifier } from '../src/auth.ts';
 import { TEST_ISSUER, testIssuer } from './helpers/tokens.ts';
+import { must } from './helpers/must.ts';
 
 let issuer: Awaited<ReturnType<typeof testIssuer>>;
 let verifier: TokenVerifier;
@@ -39,7 +40,7 @@ describe('createTokenVerifier', () => {
   it('refuses a token whose contents were edited after signing', async () => {
     const token = await issuer.sign({}, { sub: '7b1c3f0e-1d2a-4c5b-9e8f-0a1b2c3d4e5f' });
     const [h, p, s] = token.split('.');
-    const payload = JSON.parse(Buffer.from(p!, 'base64url').toString());
+    const payload = JSON.parse(Buffer.from(must(p, 'the payload part'), 'base64url').toString()) as Record<string, unknown>;
     payload.sub = '00000000-0000-4000-8000-000000000000';
     await rejected(`${h}.${Buffer.from(JSON.stringify(payload)).toString('base64url')}.${s}`);
   });
@@ -86,7 +87,7 @@ describe('createTokenVerifier', () => {
   });
 
   it('reports key-loading failures as unavailable, not as a bad token', async () => {
-    const broken = createTokenVerifier({ issuer: TEST_ISSUER, keys: async () => { throw new TypeError('fetch failed'); } });
+    const broken = createTokenVerifier({ issuer: TEST_ISSUER, keys: () => Promise.reject(new TypeError('fetch failed')) });
     await expect(broken.verify(await issuer.sign())).rejects.toBeInstanceOf(AuthUnavailableError);
   });
 });

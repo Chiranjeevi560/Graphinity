@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createAuth, safePath, SignInError, type AuthDeps } from '../src/lib/auth.ts';
 import { challengeFor, randomToken } from '../src/lib/pkce.ts';
+import { must } from './must.ts';
 
 // localStorage must never be used for anything sign-in related. Any access fails the test.
 const original = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
@@ -34,11 +35,9 @@ function harness(responses: Array<() => Response> = []) {
     supabaseKey: 'sb_publishable_test',
     siteOrigin: 'https://graphinity.pages.dev',
     storage,
-    fetch: (async (url: string, init: RequestInit) => {
-      calls.push({ url: String(url), init });
-      const next = responses.shift();
-      if (!next) throw new Error(`unexpected fetch ${url}`);
-      return next();
+    fetch: ((url: string, init: RequestInit) => {
+      calls.push({ url, init });
+      return Promise.resolve(must(responses.shift(), `a response for ${url}`)());
     }) as unknown as typeof fetch,
     redirect: url => { redirectedTo = url; },
     now: () => clock,
@@ -50,11 +49,21 @@ function harness(responses: Array<() => Response> = []) {
 const json = (body: object, status = 200) => () => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 const session = (n: number, expiresIn = 3600) => ({ access_token: `access-${n}`, refresh_token: `refresh-${n}`, expires_in: expiresIn });
 
+/** The sign-in waiting in session storage between leaving and coming back. */
+function pendingSignIn(h: ReturnType<typeof harness>): { verifier: string; state: string } {
+  return JSON.parse(must(h.storage.map.get('graphinity:signin'), 'a pending sign-in')) as { verifier: string; state: string };
+}
+
+function bodyOf(call: { init: RequestInit }): unknown {
+  if (typeof call.init.body !== 'string') throw new Error('test expected a JSON string body');
+  return JSON.parse(call.init.body);
+}
+
 /** Starts sign-in and returns the parameters Supabase would send back. */
 async function startAndReturn(h: ReturnType<typeof harness>, returnTo = '/') {
   await h.auth.startSignIn(returnTo);
   const authorize = new URL(h.redirectedTo);
-  const callback = new URL(authorize.searchParams.get('redirect_to')!);
+  const callback = new URL(must(authorize.searchParams.get('redirect_to'), 'redirect_to'));
   callback.searchParams.set('code', 'one-time-code');
   return { authorize, params: callback.searchParams };
 }
@@ -80,9 +89,9 @@ describe('starting sign-in', () => {
     expect(authorize.origin + authorize.pathname).toBe('https://proj.supabase.co/auth/v1/authorize');
     expect(authorize.searchParams.get('provider')).toBe('google');
     expect(authorize.searchParams.get('code_challenge_method')).toBe('s256');
-    const pending = JSON.parse(h.storage.map.get('graphinity:signin')!);
+    const pending = pendingSignIn(h);
     expect(authorize.searchParams.get('code_challenge')).toBe(await challengeFor(pending.verifier));
-    const back = new URL(authorize.searchParams.get('redirect_to')!);
+    const back = new URL(must(authorize.searchParams.get('redirect_to'), 'redirect_to'));
     expect(back.origin + back.pathname).toBe('https://graphinity.pages.dev/auth/callback');
     expect(back.searchParams.get('state')).toBe(pending.state);
     // The verifier itself never leaves the browser.
@@ -102,11 +111,11 @@ describe('finishing sign-in', () => {
   it('exchanges the code with the verifier, keeps the access token in memory only', async () => {
     const h = harness([json(session(1))]);
     const { params } = await startAndReturn(h, '/me');
-    const pending = JSON.parse(h.storage.map.get('graphinity:signin')!);
+    const pending = pendingSignIn(h);
     expect(await h.auth.completeSignIn(params)).toEqual({ returnTo: '/me' });
-    const call = h.calls[0]!;
+    const call = must(h.calls[0], 'the token call');
     expect(call.url).toBe('https://proj.supabase.co/auth/v1/token?grant_type=pkce');
-    expect(JSON.parse(String(call.init.body))).toEqual({ auth_code: 'one-time-code', code_verifier: pending.verifier });
+    expect(bodyOf(call)).toEqual({ auth_code: 'one-time-code', code_verifier: pending.verifier });
     expect((call.init.headers as Record<string, string>).apikey).toBe('sb_publishable_test');
     expect(await h.auth.getAccessToken()).toBe('access-1');
     // Session storage holds only the refresh token; the pending sign-in is gone.
@@ -166,7 +175,7 @@ describe('staying signed in', () => {
     const h = await signedIn([json(session(2))]);
     h.tick(3600 - 59);
     expect(await h.auth.getAccessToken()).toBe('access-2');
-    expect(JSON.parse(String(h.calls[1]!.init.body))).toEqual({ refresh_token: 'refresh-1' });
+    expect(bodyOf(must(h.calls[1], 'the refresh call'))).toEqual({ refresh_token: 'refresh-1' });
     expect(h.storage.map.get('graphinity:refresh')).toBe('refresh-2');
   });
 
@@ -208,6 +217,6 @@ describe('staying signed in', () => {
     await h.auth.signOut();
     expect(h.storage.map.size).toBe(0);
     expect(await h.auth.getAccessToken()).toBeNull();
-    expect(h.calls[1]!.url).toBe('https://proj.supabase.co/auth/v1/logout');
+    expect(must(h.calls[1], 'the logout call').url).toBe('https://proj.supabase.co/auth/v1/logout');
   });
 });

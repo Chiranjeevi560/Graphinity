@@ -1,10 +1,11 @@
 // Runs against a real Postgres. Each run creates a throwaway database, applies
 // the schema twice, connects as a least-privilege login role exactly as the
 // API does in production, and checks what that role can and cannot do.
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import type pg from 'pg';
 import { createDatabase, type Database } from '../src/db.ts';
 import { createTestDatabase, schema, type TestDatabase } from './helpers/database.ts';
+import { must } from './helpers/must.ts';
 
 // The version the schema file says it is, so tests don't need editing on every change.
 const VERSION = Number(/VALUES \(true, (\d+)\)/.exec(schema)?.[1]);
@@ -17,10 +18,7 @@ let database: Database;
 beforeAll(async () => {
   t = await createTestDatabase();
   ({ owner, api, database } = t);
-});
-
-afterAll(async () => {
-  await t?.close();
+  return async () => { await t.close(); };
 });
 
 async function refused(sql: string): Promise<string> {
@@ -42,7 +40,7 @@ describe('schema', () => {
 
   it('turns on and forces row-level security on every table in app', async () => {
     // Guards future tables too: forgetting RLS on a new table fails this test.
-    const { rows } = await owner.query(`
+    const { rows } = await owner.query<{ relname: string; relrowsecurity: boolean; relforcerowsecurity: boolean }>(`
       SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity
       FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
       WHERE n.nspname = 'app' AND c.relkind IN ('r', 'p')`);
@@ -87,18 +85,18 @@ describe('the API login role', () => {
   });
 
   it('cannot become the owner role', async () => {
-    const { rows } = await owner.query('SELECT current_user AS name');
-    expect(await refused(`SET ROLE ${rows[0].name}`)).toBe('42501');
+    const { rows } = await owner.query<{ name: string }>('SELECT current_user AS name');
+    expect(await refused(`SET ROLE ${must(rows[0]).name}`)).toBe('42501');
   });
 });
 
 describe('withUser', () => {
   it('sets the identity only inside its own transaction', async () => {
     const id = '00000000-0000-4000-8000-000000000001';
-    const inside = await database.withUser(id, async q => (await q.query('SELECT app.current_user_id() AS id')).rows[0]?.id);
+    const inside = await database.withUser(id, async q => (await q.query<{ id: string | null }>('SELECT app.current_user_id() AS id')).rows[0]?.id);
     expect(inside).toBe(id);
     // The same pooled connection, next transaction: identity must be gone.
-    const after = await database.withUser(null, async q => (await q.query('SELECT app.current_user_id() AS id')).rows[0]?.id);
+    const after = await database.withUser(null, async q => (await q.query<{ id: string | null }>('SELECT app.current_user_id() AS id')).rows[0]?.id);
     expect(after).toBeNull();
   });
 

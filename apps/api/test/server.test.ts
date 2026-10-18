@@ -2,16 +2,17 @@ import { describe, expect, it } from 'vitest';
 import { AuthError } from '../src/auth.ts';
 import type { Database } from '../src/db.ts';
 import { buildServer, defaultLimits, type Limits } from '../src/server.ts';
+import type { Body } from './helpers/must.ts';
 
 const ORIGIN = 'https://graphinity.pages.dev';
 
 function fakeDb(overrides: Partial<Database> = {}): Database {
   return {
-    ping: async () => ({ schemaVersion: 7 }),
-    withUser: async () => { throw new Error('not used'); },
+    ping: () => Promise.resolve({ schemaVersion: 7 }),
+    withUser: () => Promise.reject(new Error('not used')),
     query: () => Promise.reject(new Error('not used')),
-    assertRestricted: async () => {},
-    close: async () => {},
+    assertRestricted: () => Promise.resolve(),
+    close: () => Promise.resolve(),
     ...overrides,
   };
 }
@@ -22,14 +23,14 @@ function logCollector() {
 }
 
 async function server(opts: { db?: Database; limits?: Partial<Limits>; hops?: number; logs?: ReturnType<typeof logCollector> } = {}) {
-  let t = 0;
+  const t = 0;
   const app = await buildServer({
     config: { production: true, webOrigin: ORIGIN, trustProxyHops: opts.hops ?? 0, ipHashKey: Buffer.alloc(32, 1) },
     db: opts.db ?? fakeDb(),
     clock: { now: () => t },
     // No signed-in routes are exercised here; profile.integration.test.ts covers them.
-    auth: { verify: async () => { throw new AuthError('unused'); } },
-    authAdmin: { deleteUser: async () => {} },
+    auth: { verify: () => Promise.reject(new AuthError('unused')) },
+    authAdmin: { deleteUser: () => Promise.resolve() },
     limits: { ...defaultLimits, ...opts.limits },
     logStream: (opts.logs ?? logCollector()).stream,
   });
@@ -45,7 +46,7 @@ describe('health', () => {
   });
 
   it('reports 503 without details when the database fails', async () => {
-    const app = await server({ db: fakeDb({ ping: async () => { throw new Error('password authentication failed for user x'); } }) });
+    const app = await server({ db: fakeDb({ ping: () => Promise.reject(new Error('password authentication failed for user x')) }) });
     const res = await app.inject('/health');
     expect(res.statusCode).toBe(503);
     expect(res.body).not.toContain('password');
@@ -94,7 +95,7 @@ describe('errors', () => {
   it('500 hides the error message from both the visitor and the log', async () => {
     const logs = logCollector();
     const app = await server({ logs });
-    app.get('/boom', async () => { throw new Error('duplicate key (email)=(someone@example.com)'); });
+    app.get('/boom', () => { throw new Error('duplicate key (email)=(someone@example.com)'); });
     const res = await app.inject('/boom');
     expect(res.statusCode).toBe(500);
     expect(res.body).not.toContain('someone@example.com');
@@ -113,7 +114,7 @@ describe('rate limits', () => {
     expect(codes).toEqual([200, 200, 429]);
     const res = await app.inject('/health');
     expect(Number(res.headers['retry-after'])).toBeGreaterThan(0);
-    expect(res.json().message).toMatch(/Wait a minute/);
+    expect(res.json<Body>().message).toMatch(/Wait a minute/);
   });
 
   it('lets the website read a "too many requests" answer, so people see the real reason', async () => {
@@ -184,10 +185,10 @@ describe('body size', () => {
   it('refuses bodies over the anonymous limit before the route runs', async () => {
     const app = await server();
     let ran = false;
-    app.post('/echo', async () => { ran = true; return {}; });
+    app.post('/echo', () => { ran = true; return {}; });
     const res = await app.inject({ method: 'POST', url: '/echo', payload: { text: 'x'.repeat(defaultLimits.anonymousBodyBytes) } });
     expect(res.statusCode).toBe(413);
-    expect(res.json().error).toBe('too_large');
+    expect(res.json<Body>().error).toBe('too_large');
     expect(ran).toBe(false);
   });
 });

@@ -36,9 +36,10 @@ export function fakeAuthAdmin() {
   return {
     deleted,
     failNextDelete() { failNext = true; },
-    async deleteUser(id: string) {
-      if (failNext) { failNext = false; throw new Error('supabase unavailable'); }
+    deleteUser(id: string) {
+      if (failNext) { failNext = false; return Promise.reject(new Error('supabase unavailable')); }
       deleted.push(id);
+      return Promise.resolve();
     },
   };
 }
