@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { auth } from '../session.tsx';
 import { SquircleLayers } from './Squircle.tsx';
 
@@ -8,6 +8,14 @@ import { SquircleLayers } from './Squircle.tsx';
  */
 export function GoogleButton({ returnTo = '/' }: { returnTo?: string }) {
   const [leaving, setLeaving] = useState(false);
+  // Pressing Back on Google's page can restore this page exactly as it was
+  // left (the browser's back/forward cache), button still disabled. Re-enable
+  // it whenever the page is shown again.
+  useEffect(() => {
+    const onShow = (e: PageTransitionEvent) => { if (e.persisted) setLeaving(false); };
+    window.addEventListener('pageshow', onShow);
+    return () => { window.removeEventListener('pageshow', onShow); };
+  }, []);
   return (
     <button
       type="button"

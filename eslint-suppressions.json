@@ -79,9 +79,6 @@
   "apps/web/src/App.tsx": {
     "@typescript-eslint/no-confusing-void-expression": {
       "count": 1
-    },
-    "@typescript-eslint/no-non-null-assertion": {
-      "count": 1
     }
   },
   "apps/web/src/components/Dialog.tsx": {
@@ -192,9 +189,6 @@
       "count": 1
     },
     "jsx-a11y/no-autofocus": {
-      "count": 1
-    },
-    "react-hooks/set-state-in-effect": {
       "count": 1
     }
   },
