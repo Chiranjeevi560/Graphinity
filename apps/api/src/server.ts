@@ -9,6 +9,7 @@ import { registerProfileRoutes } from './routes/profile.ts';
 import { createEvents, type Events } from './events.ts';
 import { registerLiveRoutes } from './routes/live.ts';
 import { registerPointRoutes } from './routes/points.ts';
+import { registerPushRoutes } from './routes/push.ts';
 import { registerQuestionRoutes } from './routes/questions.ts';
 
 declare module 'fastify' {
@@ -52,6 +53,8 @@ export interface Deps {
   authAdmin: AuthAdmin;
   /** Who should hear about what. Defaults to a fresh in-process hub. */
   events?: Events;
+  /** The web push public key, or null/absent when push is off. */
+  vapidPublicKey?: string | null;
   limits?: Limits;
   /** Where logs go. Defaults to stdout. */
   logStream?: { write(line: string): void };
@@ -237,6 +240,7 @@ export async function buildServer(deps: Deps) {
   const events = deps.events ?? createEvents();
   registerQuestionRoutes(app, { db, events });
   registerLiveRoutes(app, { events, clock });
+  registerPushRoutes(app, { db, vapidPublicKey: deps.vapidPublicKey ?? null });
   registerPointRoutes(app, { db });
 
   return app;

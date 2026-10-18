@@ -253,6 +253,7 @@ test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
 
   await page.goto('/me');
   await expect(page.getByRole('heading', { name: `@${handle}` })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Turn on for this device' })).toBeVisible();
   await audit(page, 'your profile');
 
   await page.getByRole('button', { name: 'Delete account…' }).click();

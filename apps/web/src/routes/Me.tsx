@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { Button, LinkButton } from '../components/Button.tsx';
 import { Dialog } from '../components/Dialog.tsx';
 import { Avatar, CountryBadge, FieldTags, joinedLabel } from '../components/Identity.tsx';
+import { Notifications } from '../components/Notifications.tsx';
 import { Standing, useStanding } from '../components/Standing.tsx';
+import { turnPushOff } from '../lib/push.ts';
 import { ApiError } from '../lib/api.ts';
 import { navigate } from '../lib/router.ts';
 import { api, auth, type Profile } from '../session.tsx';
@@ -17,6 +19,8 @@ export default function Me({ profile }: { profile: Profile }) {
     setDeleting(true);
     setDeleteError(null);
     try {
+      // This browser's subscription goes with the account (the server's rows cascade).
+      await turnPushOff(api).catch(() => {});
       await api('/me', { method: 'DELETE', signedIn: true, body: { confirm: true } });
       auth.clear();
       navigate('/goodbye', { replace: true });
@@ -47,10 +51,12 @@ export default function Me({ profile }: { profile: Profile }) {
 
       {standing && <Standing standing={standing} />}
 
+      <Notifications />
+
       <LinkButton to="/me/edit" variant="secondary" className="btn-block">Edit profile</LinkButton>
 
       <section className="profile-footer">
-        <button type="button" className="btn btn-plain" onClick={() => { void auth.signOut().then(() => { navigate('/', { replace: true }); }); }}>
+        <button type="button" className="btn btn-plain" onClick={() => { void turnPushOff(api).catch(() => {}).then(() => auth.signOut()).then(() => { navigate('/', { replace: true }); }); }}>
           Sign out
         </button>
         <button type="button" className="btn btn-plain danger" onClick={() => { setConfirming(true); }}>Delete account…</button>

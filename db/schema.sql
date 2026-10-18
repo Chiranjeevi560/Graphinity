@@ -1090,8 +1090,56 @@ DROP TRIGGER IF EXISTS routes_guard ON app.routes;
 CREATE TRIGGER routes_guard BEFORE INSERT OR UPDATE ON app.routes
   FOR EACH ROW EXECUTE FUNCTION app.guard_route();
 
+-- ---------------------------------------------------------------------------
+-- Web push: where to send notifications for each person's devices. Each
+-- person sees and removes only their own; the server's job (is_system)
+-- reads them to send, and removes ones the push service says are gone.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS app.push_subscriptions (
+  id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  profile_id  uuid NOT NULL REFERENCES app.profiles (id) ON DELETE CASCADE,
+  -- The API also checks it is one of the browsers' push services.
+  endpoint    text NOT NULL UNIQUE CHECK (endpoint ~ '^https://' AND char_length(endpoint) <= 1000),
+  -- The browser's public key and auth secret, base64url.
+  p256dh      text NOT NULL CHECK (p256dh ~ '^[A-Za-z0-9_-]{87}$'),
+  auth        text NOT NULL CHECK (auth ~ '^[A-Za-z0-9_-]{22}$'),
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS push_subscriptions_profile ON app.push_subscriptions (profile_id);
+ALTER TABLE app.push_subscriptions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.push_subscriptions FORCE ROW LEVEL SECURITY;
+GRANT SELECT, DELETE ON app.push_subscriptions TO app_api;
+GRANT INSERT (profile_id, endpoint, p256dh, auth) ON app.push_subscriptions TO app_api;
+DROP POLICY IF EXISTS push_read ON app.push_subscriptions;
+CREATE POLICY push_read ON app.push_subscriptions FOR SELECT TO app_api
+  USING (profile_id = app.current_user_id() OR app.is_system());
+DROP POLICY IF EXISTS push_insert_own ON app.push_subscriptions;
+CREATE POLICY push_insert_own ON app.push_subscriptions FOR INSERT TO app_api
+  WITH CHECK (profile_id = app.current_user_id());
+DROP POLICY IF EXISTS push_delete ON app.push_subscriptions;
+CREATE POLICY push_delete ON app.push_subscriptions FOR DELETE TO app_api
+  USING (profile_id = app.current_user_id() OR app.is_system());
+
+-- At most 10 devices per person: enough for anyone, and a cap on how much
+-- one account can make the server send.
+CREATE OR REPLACE FUNCTION app.check_push_count() RETURNS trigger
+  LANGUAGE plpgsql
+  SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+  IF (SELECT count(*) FROM app.push_subscriptions WHERE profile_id = NEW.profile_id) >= 10 THEN
+    RAISE EXCEPTION 'at most 10 devices' USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END
+$$;
+REVOKE ALL ON FUNCTION app.check_push_count() FROM PUBLIC;
+DROP TRIGGER IF EXISTS push_count ON app.push_subscriptions;
+CREATE TRIGGER push_count BEFORE INSERT ON app.push_subscriptions
+  FOR EACH ROW EXECUTE FUNCTION app.check_push_count();
+
 -- Bump on every change to this file.
-INSERT INTO app.schema_meta (id, version) VALUES (true, 7)
+INSERT INTO app.schema_meta (id, version) VALUES (true, 8)
   ON CONFLICT (id) DO UPDATE SET version = EXCLUDED.version, applied_at = now();
 
 COMMIT;

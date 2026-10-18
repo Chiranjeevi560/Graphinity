@@ -1,3 +1,4 @@
+import { createECDH } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { ConfigError, loadConfig } from '../src/config.ts';
 
@@ -55,6 +56,36 @@ describe('loadConfig', () => {
       expect(msg).not.toContain('secret-password');
       expect(msg).not.toContain('short-secret');
       expect(msg).not.toContain('deadbeef');
+    }
+  });
+});
+
+describe('web push keys', () => {
+  const pair = () => {
+    const ecdh = createECDH('prime256v1');
+    ecdh.generateKeys();
+    return { VAPID_PUBLIC_KEY: ecdh.getPublicKey().toString('base64url'), VAPID_PRIVATE_KEY: ecdh.getPrivateKey().toString('base64url') };
+  };
+
+  it('are optional: without them, push is off', () => {
+    expect(loadConfig(prod).vapid).toBeNull();
+  });
+
+  it('are accepted as a matching pair, signing as the website by default', () => {
+    const keys = pair();
+    expect(loadConfig({ ...prod, ...keys }).vapid).toEqual({ publicKey: keys.VAPID_PUBLIC_KEY, privateKey: keys.VAPID_PRIVATE_KEY, subject: prod.WEB_ORIGIN });
+  });
+
+  it('refuse half a pair or two halves of different pairs, without echoing the secret', () => {
+    const a = pair(), b = pair();
+    expect(() => loadConfig({ ...prod, VAPID_PUBLIC_KEY: a.VAPID_PUBLIC_KEY })).toThrow(/VAPID/);
+    expect(() => loadConfig({ ...prod, VAPID_PRIVATE_KEY: a.VAPID_PRIVATE_KEY })).toThrow(/VAPID/);
+    try {
+      loadConfig({ ...prod, VAPID_PUBLIC_KEY: a.VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY: b.VAPID_PRIVATE_KEY });
+      expect.unreachable();
+    } catch (err) {
+      expect(String(err)).toMatch(/matching P-256 pair/);
+      expect(String(err)).not.toContain(b.VAPID_PRIVATE_KEY);
     }
   });
 });

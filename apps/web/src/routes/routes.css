@@ -125,3 +125,5 @@
   background: var(--accent);
   vertical-align: 0.15em;
 }
+
+.notifications-toggle { align-self: flex-start; margin-left: calc(-1 * var(--space-2)); }

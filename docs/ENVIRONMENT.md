@@ -15,6 +15,8 @@ Every setting, where it lives, and the free-tier limits it runs under.
 | `IP_HASH_KEY` | yes | 64 hex chars | `openssl rand -hex 32`. Secret. Also hashes deleted-account ids. Changing it resets rate-limit identities and forgets the 2-hour deleted-account lockout |
 | `SUPABASE_URL` | production | `https://abcd.supabase.co` | Tokens must be issued by `<this>/auth/v1`. Must be https in production. Local default: the stand-in at `http://localhost:54321` |
 | `SUPABASE_SECRET_KEY` | yes | `sb_secret_…` | **Most powerful secret.** Used only to delete a person's sign-in. Never in git, chat, logs or the website |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | no (push is off without them) | 87 / 43 base64url chars | Web push keys, both or neither; the server refuses a mismatched pair. Make them with `node scripts/vapid-keys.mjs <env file>`, which writes them into the file and prints only the public key. The private key is a secret. Replacing them makes every device subscribe again |
+| `VAPID_SUBJECT` | no | `https://graphinity.pages.dev` | Who push services can contact about our pushes. Defaults to `WEB_ORIGIN` (no email needed) |
 
 Locally, `npm run db:start` generates `DATABASE_URL`, `IP_HASH_KEY`, a local `SUPABASE_URL` and a
 random dev `SUPABASE_SECRET_KEY` into `.local/api.env`.

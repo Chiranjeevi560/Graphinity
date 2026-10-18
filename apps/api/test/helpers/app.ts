@@ -10,7 +10,7 @@ import { fakeAuthAdmin, TEST_ISSUER, testIssuer } from './tokens.ts';
 
 export const IP_HASH_KEY = Buffer.alloc(32, 9);
 
-export async function startApp(now: () => number) {
+export async function startApp(now: () => number, opts: { vapidPublicKey?: string } = {}) {
   const t = await createTestDatabase();
   const issuer = await testIssuer();
   const admin = fakeAuthAdmin();
@@ -22,6 +22,7 @@ export async function startApp(now: () => number) {
     auth: createTokenVerifier({ issuer: TEST_ISSUER, keys: issuer.keys }),
     authAdmin: admin,
     events,
+    vapidPublicKey: opts.vapidPublicKey ?? null,
     // Generous limits: these tests are about behaviour, not rate limiting.
     limits: { ...defaultLimits, visitor: { capacity: 10_000, refillPerSecond: 1000, maxKeys: 10 }, userWrites: { capacity: 1000, refillPerSecond: 100, maxKeys: 100 } },
     logStream: { write: () => {} },

@@ -26,6 +26,8 @@ export default tseslint.config(
   // Plain JavaScript (configs, scripts): no type information.
   { files: ['**/*.js', '**/*.mjs', '**/vitest.config.ts', '**/vite.config.ts', '**/playwright.config.ts'], ...tseslint.configs.disableTypeChecked },
   { files: ['scripts/**', '*.config.*', 'apps/*/*.config.*'], languageOptions: { globals: globals.node } },
+  // The notification worker runs in the browser as a service worker.
+  { files: ['apps/web/public/sw.js'], languageOptions: { globals: globals.serviceworker } },
 
   // The website: browser globals, React hooks rules, accessibility rules.
   {

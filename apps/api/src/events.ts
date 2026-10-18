@@ -13,17 +13,22 @@ export interface Events {
   /** Something for one person (their live stream, later a push). */
   publish(userId: string, event: PersonEvent): void;
   subscribe(userId: string, listener: (event: PersonEvent) => void): () => void;
+  /** Hears every person's events (web push sends from here). */
+  onPublish(listener: (userId: string, event: PersonEvent) => void): void;
 }
 
 export function createEvents(): Events {
   const askedListeners: Array<(questionId: string) => void> = [];
   const people = new Map<string, Set<(event: PersonEvent) => void>>();
+  const everyone: Array<(userId: string, event: PersonEvent) => void> = [];
   return {
     asked: questionId => { for (const l of askedListeners) l(questionId); },
     onAsked: listener => { askedListeners.push(listener); },
     publish(userId, event) {
       for (const l of people.get(userId) ?? []) l(event);
+      for (const l of everyone) l(userId, event);
     },
+    onPublish: listener => { everyone.push(listener); },
     subscribe(userId, listener) {
       const set = people.get(userId) ?? new Set();
       set.add(listener);

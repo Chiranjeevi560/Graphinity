@@ -59,7 +59,7 @@
     {
       "name": "all scripts (brotli)",
       "path": "apps/web/dist/assets/*.js",
-      "limit": "80.2 kB"
+      "limit": "81.15 kB"
     }
   ]
 }

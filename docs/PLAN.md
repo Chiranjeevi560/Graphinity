@@ -70,7 +70,8 @@ Render or Supabase.** Limits checked on the services' own pages on 2026-10-17 ar
    questions need a server-side step at deploy, step 7).
 4. ✅ Select, helpful, points, medals, trust, change-with-reason, pair cap (built and tested locally;
    medal thresholds bronze 10 / silver 50 / gold 200 are a default for the owner to confirm).
-5. Routing waves, live updates, web push.
+5. ✅ Routing waves, live updates, web push (built and tested locally; a real push delivered to a
+   phone is checked at deploy, step 7).
 6. Reporting, auto-hide, owner review page, limits, blocking.
 7. Launch prep: privacy policy, terms, hostile review, phone checks, accounts, deploy (server
    first, then website), verify live.

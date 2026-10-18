@@ -62,6 +62,9 @@ export function pagesHeadersFile(options: HeaderOptions): string {
     '  Cache-Control: no-cache',
     '/index.html',
     '  Cache-Control: no-cache',
+    // The notification worker: browsers must pick up a new version promptly.
+    '/sw.js',
+    '  Cache-Control: no-cache',
     '',
   ].join('\n');
 }

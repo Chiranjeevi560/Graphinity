@@ -211,3 +211,24 @@ reconnects with a fresh token, so a deleted or signed-out account stops hearing.
 person and 300 in total (429 past that). Read it with `fetch` and the `authorization` header
 (`EventSource` can't send one).
 
+## Notifications (web push)
+
+### `GET /push/key`
+
+`{ publicKey }`: the key browsers subscribe with. 404 `push_off` when the server has no push keys.
+
+### `PUT /me/push` (signed in, counts as a write)
+
+`{ endpoint, keys: { p256dh, auth } }` (exactly these fields) → `{ push: { on: true } }`. The endpoint must be
+a browser push service (Google, Mozilla, Apple, Microsoft) over https: 400 `not_a_push_service`
+otherwise. 409 `device_in_use` if this browser is registered to another account (subscribe afresh
+and try again); 409 `too_many_devices` past 10.
+
+### `DELETE /me/push` (signed in, counts as a write)
+
+`{ endpoint }` → `{ push: { on: false } }`. Only your own devices.
+
+Pushes go out for the same events as the live stream (`routed`, `answered`), encrypted for the
+device: `{ title, body: the question's title, questionId }`. A device the push service reports gone
+(404/410) is removed.
+

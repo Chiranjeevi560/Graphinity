@@ -4,6 +4,7 @@ import { loadConfig, ConfigError } from './config.ts';
 import { createDatabase } from './db.ts';
 import { completePendingDeletions } from './deletions.ts';
 import { createEvents } from './events.ts';
+import { createPushSender } from './push-sender.ts';
 import { routeDueQuestions } from './routing.ts';
 import { systemClock } from './rate-limit.ts';
 import { buildServer } from './server.ts';
@@ -47,6 +48,7 @@ const app = await buildServer({
   auth: createTokenVerifier({ issuer: `${config.supabaseUrl}/auth/v1`, keys: supabaseKeys(config.supabaseUrl) }),
   authAdmin,
   events,
+  vapidPublicKey: config.vapid?.publicKey ?? null,
 });
 logger.current = app.log;
 
@@ -61,6 +63,14 @@ runDeletions();
 const deletionTimer = setInterval(runDeletions, 5 * 60_000);
 deletionTimer.unref();
 app.addHook('onClose', (_instance, done) => { clearInterval(deletionTimer); done(); });
+
+// Web push to people's devices, when keys are set (VAPID_*).
+if (config.vapid) {
+  const push = createPushSender({ db, vapid: config.vapid, fetch: (...args) => fetch(...args), log: app.log, now: () => Date.now() });
+  events.onPublish((userId, event) => {
+    push(userId, event).catch((err: unknown) => { app.log.warn({ kind: err instanceof Error ? err.name : 'unknown' }, 'push run failed'); });
+  });
+}
 
 // Put questions to people: right after each new question, and every
 // minute for the next waves. One run at a time; asks during a run are

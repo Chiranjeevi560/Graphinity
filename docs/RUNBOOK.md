@@ -50,6 +50,11 @@ at startup.
 Changed the logo (`apps/web/public/icon.svg`)? Run `node scripts/make-images.mjs` to redraw the PNG
 icons and the link-preview image, look at them, and commit them.
 
+To try notifications locally, add push keys once with `node scripts/vapid-keys.mjs .local/api.env`,
+restart the API, then use "Turn on for this device" on your profile. Chrome and Firefox deliver
+pushes through Google's and Mozilla's push services even locally; Safari on iPhone needs the site on
+the Home Screen.
+
 ## Tests
 
 - **Unit tests** cover pure logic: rate limiting, config checks, springs, squircles, headers.

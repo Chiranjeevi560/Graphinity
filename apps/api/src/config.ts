@@ -1,6 +1,8 @@
 // Reads configuration from the environment once, at startup, and refuses to
 // start if anything is missing or unsafe. A server that boots with a weak or
 // absent secret is worse than one that doesn't boot.
+import { createECDH } from 'node:crypto';
+import type { VapidKeys } from './push.ts';
 
 export interface Config {
   production: boolean;
@@ -25,6 +27,8 @@ export interface Config {
   supabaseUrl: string;
   /** Supabase secret key, used only to delete a person's sign-in. */
   supabaseSecretKey: string;
+  /** Web push keys; push is off without them. */
+  vapid: VapidKeys | null;
 }
 
 export class ConfigError extends Error {
@@ -63,6 +67,22 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const supabaseSecretKey = env.SUPABASE_SECRET_KEY ?? '';
   if (supabaseSecretKey.length < 20) problems.push('SUPABASE_SECRET_KEY must be set (Supabase: Project Settings → API Keys → secret)');
 
+  // Web push: both keys or neither. A mismatched pair would sign every push
+  // wrongly, so it is caught here (the public key must come from the private).
+  let vapid: VapidKeys | null = null;
+  const vapidPublic = env.VAPID_PUBLIC_KEY ?? '';
+  const vapidPrivate = env.VAPID_PRIVATE_KEY ?? '';
+  if (vapidPublic || vapidPrivate) {
+    let matches = false;
+    try {
+      const ecdh = createECDH('prime256v1');
+      ecdh.setPrivateKey(Buffer.from(vapidPrivate, 'base64url'));
+      matches = /^[A-Za-z0-9_-]{43}$/.test(vapidPrivate) && ecdh.getPublicKey().toString('base64url') === vapidPublic;
+    } catch { /* reported below */ }
+    if (!matches) problems.push('VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY must be a matching P-256 pair (node scripts/vapid-keys.mjs)');
+    else vapid = { publicKey: vapidPublic, privateKey: vapidPrivate, subject: env.VAPID_SUBJECT ?? webOrigin };
+  }
+
   // Values are never echoed: they may be secrets.
   if (problems.length) throw new ConfigError(`Configuration problems:\n  - ${problems.join('\n  - ')}`);
 
@@ -76,6 +96,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     ipHashKey: Buffer.from(keyHex, 'hex'),
     supabaseUrl,
     supabaseSecretKey,
+    vapid,
   };
 }
 
