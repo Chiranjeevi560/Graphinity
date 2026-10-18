@@ -75,6 +75,11 @@ describe('subscribing a device', () => {
     const res = await h.call('PUT', '/me/push', b.token, shared.body);
     expect(res.statusCode).toBe(409);
     expect(res.json<Body>().error).toBe('device_in_use');
+    // Each account learns only whether the device is its own.
+    expect((await h.call('POST', '/me/push/status', a.token, { endpoint: shared.endpoint })).json()).toEqual({ push: { on: true } });
+    expect((await h.call('POST', '/me/push/status', b.token, { endpoint: shared.endpoint })).json()).toEqual({ push: { on: false } });
+    expect((await h.call('POST', '/me/push/status', undefined, { endpoint: shared.endpoint })).statusCode).toBe(401);
+    expect((await h.call('POST', '/me/push/status', a.token, { endpoint: shared.endpoint, extra: 1 })).statusCode).toBe(400);
     // And b can't remove a's device.
     await h.call('DELETE', '/me/push', b.token, { endpoint: shared.endpoint });
     const { rows } = await h.t.owner.query('SELECT 1 FROM app.push_subscriptions WHERE endpoint = $1', [shared.endpoint]);
@@ -87,6 +92,7 @@ describe('subscribing a device', () => {
     for (const d of devices) expect((await h.call('PUT', '/me/push', p.token, d.body)).statusCode).toBe(200);
     expect((await h.call('PUT', '/me/push', p.token, device().body)).json<Body>().error).toBe('too_many_devices');
     expect((await h.call('DELETE', '/me/push', p.token, { endpoint: must(devices[0]).endpoint })).json()).toEqual({ push: { on: false } });
+    expect((await h.call('POST', '/me/push/status', p.token, { endpoint: must(devices[0]).endpoint })).json()).toEqual({ push: { on: false } });
     expect((await h.call('PUT', '/me/push', p.token, device().body)).statusCode).toBe(200);
   });
 });

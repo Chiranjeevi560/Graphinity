@@ -4,6 +4,8 @@ import type { Database } from '../db.ts';
 import { isPushService } from '../push.ts';
 import { fail, pgCode, signedIn } from './common.ts';
 
+const endpointSchema = { type: 'object', additionalProperties: false, required: ['endpoint'], properties: { endpoint: { type: 'string', maxLength: 1000 } } } as const;
+
 const subscriptionSchema = {
   type: 'object', additionalProperties: false, required: ['endpoint', 'keys'],
   properties: {
@@ -53,9 +55,22 @@ export function registerPushRoutes(app: FastifyInstance, { db, vapidPublicKey }:
     return { push: { on: true } };
   });
 
+  // Whether this browser gets the signed-in person's notifications. The
+  // browser alone can't tell: its subscription may belong to whoever used it
+  // before. A POST so the address stays out of URLs and logs.
+  app.post('/me/push/status', {
+    config: { auth: 'required' },
+    schema: { body: endpointSchema },
+  }, async req => {
+    const user = signedIn(req);
+    const { endpoint } = req.body as { endpoint: string };
+    const { rowCount } = await db.withUser(user.id, q => q.query('SELECT 1 FROM app.push_subscriptions WHERE endpoint = $1 AND profile_id = $2', [endpoint, user.id]));
+    return { push: { on: rowCount === 1 } };
+  });
+
   app.delete('/me/push', {
     config: { auth: 'required', write: true },
-    schema: { body: { type: 'object', additionalProperties: false, required: ['endpoint'], properties: { endpoint: { type: 'string', maxLength: 1000 } } } },
+    schema: { body: endpointSchema },
   }, async req => {
     const user = signedIn(req);
     const { endpoint } = req.body as { endpoint: string };

@@ -25,9 +25,13 @@ async function existing(): Promise<PushSubscription | null> {
   return registration ? registration.pushManager.getSubscription() : null;
 }
 
-export async function isPushOn(): Promise<boolean> {
+/** On only if this browser gets the signed-in person's notifications, not just anyone's. */
+export async function isPushOn(api: Api): Promise<boolean> {
   if (pushSupport() !== 'ok' || Notification.permission !== 'granted') return false;
-  return (await existing()) !== null;
+  const subscription = await existing();
+  if (!subscription) return false;
+  const res = await api<{ push: { on: boolean } }>('/me/push/status', { method: 'POST', signedIn: true, body: { endpoint: subscription.endpoint } });
+  return res.push.on;
 }
 
 export async function turnPushOn(api: Api, publicKey: string): Promise<'on' | 'denied'> {
@@ -37,14 +41,21 @@ export async function turnPushOn(api: Api, publicKey: string): Promise<'on' | 'd
   const subscribe = () => registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: fromB64url(publicKey) });
   let subscription = await subscribe();
   try {
-    await api('/me/push', { method: 'PUT', signedIn: true, body: forApi(subscription) });
+    try {
+      await api('/me/push', { method: 'PUT', signedIn: true, body: forApi(subscription) });
+    } catch (err) {
+      // This browser was registered to another account: start a fresh
+      // subscription so the other person's notifications can't land here.
+      if (!(err instanceof ApiError) || err.code !== 'device_in_use') throw err;
+      await subscription.unsubscribe();
+      subscription = await subscribe();
+      await api('/me/push', { method: 'PUT', signedIn: true, body: forApi(subscription) });
+    }
   } catch (err) {
-    // This browser was registered to another account: start a fresh
-    // subscription so the other person's notifications can't land here.
-    if (!(err instanceof ApiError) || err.code !== 'device_in_use') throw err;
-    await subscription.unsubscribe();
-    subscription = await subscribe();
-    await api('/me/push', { method: 'PUT', signedIn: true, body: forApi(subscription) });
+    // Not saved: don't leave a browser subscription the server knows nothing
+    // about, which would read as "on" and never deliver.
+    await subscription.unsubscribe().catch(() => {});
+    throw err;
   }
   return 'on';
 }

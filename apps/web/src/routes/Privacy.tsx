@@ -7,7 +7,7 @@ export default function Privacy() {
     <main className="page legal">
       <p className="draft-note text-subhead" role="note">Draft: this page is being reviewed before Graphinity opens to everyone.</p>
       <h1 className="text-title1">Privacy</h1>
-      <p className="text-body secondary">Last updated 18 October 2026</p>
+      <p className="text-body secondary">Last updated 19 October 2026</p>
 
       <h2 className="text-title3">The short version</h2>
       <ul className="text-body">
@@ -24,8 +24,8 @@ export default function Privacy() {
         <li><strong>What you share.</strong> Your questions, answers, the answers you picked or marked helpful, whether a picked answer turned out right, and reports you send.</li>
         <li><strong>Points and trust,</strong> worked out from the above.</li>
         <li><strong>Which questions were put to you,</strong> and whether you opened them.</li>
-        <li><strong>Notifications,</strong> if you turn them on: an address from your browser’s notification service for each device.</li>
-        <li><strong>Network checks.</strong> To spot one person using several accounts, we keep a scrambled, one-way code made from the network you posted from (not the address itself), for 30 days. Only moderators see which accounts share one, and it never blocks anyone by itself.</li>
+        <li><strong>Notifications,</strong> if you turn them on: an address from your browser’s notification service for each device. Signing out or deleting your account turns them off for that device. Closing the tab doesn’t, since they are for when Graphinity is closed.</li>
+        <li><strong>Network checks.</strong> To spot one person using several accounts, we keep a scrambled, one-way code made from the network you use whenever you ask, answer, pick, mark or report something (not the address itself), for 30 days. Only moderators see which accounts share one, and it never blocks anyone by itself.</li>
       </ul>
 
       <h2 className="text-title3">What others can see</h2>

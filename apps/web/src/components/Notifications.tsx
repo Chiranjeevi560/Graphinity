@@ -15,7 +15,8 @@ export function Notifications() {
     let live = true;
     api<{ publicKey: string }>('/push/key')
       .then(async res => {
-        const current = await isPushOn();
+        // Can't check right now: show it off; turning it on again is harmless.
+        const current = await isPushOn(api).catch(() => false);
         if (live) { setPublicKey(res.publicKey); setOn(current); }
       })
       .catch(() => { /* push is off on the server: show nothing */ });

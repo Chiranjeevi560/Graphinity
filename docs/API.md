@@ -229,6 +229,12 @@ a browser push service (Google, Mozilla, Apple, Microsoft) over https: 400 `not_
 otherwise. 409 `device_in_use` if this browser is registered to another account (subscribe afresh
 and try again); 409 `too_many_devices` past 10.
 
+### `POST /me/push/status` (signed in)
+
+`{ endpoint }` → `{ push: { on } }`: whether this browser gets *your* notifications. A browser's
+subscription may belong to whoever used it before, so the website asks rather than trusting it. A POST
+so the address stays out of URLs and logs.
+
 ### `DELETE /me/push` (signed in, counts as a write)
 
 `{ endpoint }` → `{ push: { on: false } }`. Only your own devices.
