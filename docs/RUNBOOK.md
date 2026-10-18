@@ -63,13 +63,28 @@ the Home Screen.
   restricted login role exactly like production, and check what that role can and cannot do.
   They need the local database running. They fail, never skip, when it isn't.
 
+- **Browser tests** (`npm run test:e2e`) drive the production build in Chromium and WebKit
+  against the real API and the sign-in stand-in, with axe, every width from 320 to 1280 and tap
+  targets. `AUDIT_SHOTS=1` also saves screenshots. They need the local database, and they write to
+  it: test people, questions, answers, a moderator and a blocked account pile up there with each
+  run. That is harmless locally, and the tests make fresh names each run.
+  Never point them at the real Supabase project.
+- **Lighthouse** (`npm run check:perf`) builds the site, serves it on port 4174 with the API on
+  3000, and measures it like a visitor would. It refuses to start if something already uses either
+  port, since it would measure that instead.
+
 When adding a rule that matters, break it on purpose, confirm a test fails, and then restore it.
+
+To commit and push, use `sh scripts/ship.sh <message-file> <paths…>`. It runs every check first,
+commits only the listed paths, and pushes only if the floor guard agrees. It refuses when other
+files have changes, because the checks would then have tested something other than the commit:
+list them too, or stash them first.
 
 ## Schema changes
 
 - Edit `db/schema.sql`. It must stay safe to run twice and additive only: add, never rename or
   drop in the same release as the code that stops using something.
-- Bump the version in the `INSERT INTO app.schema_meta` line (now 2).
+- Bump the version in the `INSERT INTO app.schema_meta` line (now 10).
 - Every new table needs `ENABLE` and `FORCE ROW LEVEL SECURITY`, explicit grants to `app_api`,
   and policies. The integration test fails if RLS is missing.
 

@@ -15,6 +15,27 @@ cd "$root" || exit 2
 msg="$1"; shift
 logs="$root/.local/ship"; mkdir -p "$logs"
 
+# The checks run on the whole working tree but only the listed paths are
+# committed: anything else changed would be tested and then left out, so a
+# commit could pass here and fail on its own. Commit it too, or stash it.
+listed() { # file, paths...: is the file one of the paths, or inside one?
+  f="$1"; shift
+  for p in "$@"; do
+    case "$f" in
+      "$p"|"${p%/}"/*) return 0 ;;
+    esac
+  done
+  return 1
+}
+outside=$(git status --porcelain --untracked-files=all | cut -c4- | sed 's/.* -> //' | while IFS= read -r f; do
+  listed "$f" "$@" || printf '  %s\n' "$f"
+done)
+if [ -n "$outside" ]; then
+  echo "SHIP: these changes aren't in the listed paths, so the checks wouldn't match the commit. List them, or stash them (git stash push -- <paths>):"
+  echo "$outside"
+  exit 1
+fi
+
 step() { # name, command...
   name="$1"; shift
   if ! "$@" >"$logs/$name.log" 2>&1; then echo "SHIP: $name failed; nothing committed. See .local/ship/$name.log"; tail -15 "$logs/$name.log"; exit 1; fi

@@ -14,6 +14,16 @@ import * as chromeLauncher from 'chrome-launcher';
 const BUDGET = { performance: 95, accessibility: 100, bestPractices: 100, seo: 100, lcpMs: 2500, cls: 0.1, tbtMs: 200 };
 const PAGES = ['/'];
 
+// Measuring whatever already listens on these ports would give someone
+// else's numbers (an old build, a dev server): refuse instead.
+for (const url of ['http://localhost:4174/', 'http://localhost:3000/health']) {
+  const busy = await fetch(url).then(() => true, () => false);
+  if (busy) {
+    console.error(`Something is already running at ${new URL(url).host}. Stop it, then run this again.`);
+    process.exit(1);
+  }
+}
+
 // Built for the address it is measured at, so canonical links point home.
 execFileSync('npm', ['--workspace', 'apps/web', 'run', 'build'], { stdio: 'ignore', env: { ...process.env, VITE_SITE_ORIGIN: 'http://localhost:4174' } });
 const preview = spawn('npx', ['vite', 'preview', '--port', '4174', '--strictPort'], { cwd: 'apps/web', stdio: 'ignore' });
