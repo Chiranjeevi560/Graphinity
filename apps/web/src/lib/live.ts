@@ -36,26 +36,31 @@ export function startLive(deps: { origin: string; auth: Auth; fetch: typeof fetc
   async function run() {
     while (!isStopped()) {
       const token = await deps.auth.getAccessToken();
-      if (!token || isStopped()) return;
-      controller = new AbortController();
-      try {
-        const res = await deps.fetch(`${deps.origin}/events`, { headers: { authorization: `Bearer ${token}` }, signal: controller.signal });
-        if (res.ok && res.body) {
-          pause = 1000;
-          const reader = res.body.getReader();
-          const decoder = new TextDecoder();
-          let buffer = '';
-          for (;;) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer = parseEvents(buffer + decoder.decode(value, { stream: true }), deps.onEvent);
+      if (isStopped()) return;
+      // Signed out: nothing to listen for. Signed in but no token right now
+      // (offline, or Supabase briefly down): wait and try again below.
+      if (!token && !deps.auth.hasSession()) return;
+      if (token) {
+        controller = new AbortController();
+        try {
+          const res = await deps.fetch(`${deps.origin}/events`, { headers: { authorization: `Bearer ${token}` }, signal: controller.signal });
+          if (res.ok && res.body) {
+            pause = 1000;
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            for (;;) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              buffer = parseEvents(buffer + decoder.decode(value, { stream: true }), deps.onEvent);
+            }
+            // Ended by the server (token about to expire): reconnect at once.
+            continue;
           }
-          // Ended by the server (token about to expire): reconnect at once.
-          continue;
+          if (res.status === 401) await deps.auth.getAccessToken({ forceRefresh: true });
+        } catch {
+          if (isStopped()) return;
         }
-        if (res.status === 401) await deps.auth.getAccessToken({ forceRefresh: true });
-      } catch {
-        if (isStopped()) return;
       }
       // Dropped or refused: wait, a little longer each time, up to a minute.
       await new Promise(r => setTimeout(r, pause + Math.random() * 500));

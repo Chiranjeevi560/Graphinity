@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
-import { parseEvents, type LiveEvent } from '../src/lib/live.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { Auth } from '../src/lib/auth.ts';
+import { parseEvents, startLive, type LiveEvent } from '../src/lib/live.ts';
 
 describe('reading live events', () => {
   it('reads whole messages and keeps a half-received one for later', () => {
@@ -14,5 +15,41 @@ describe('reading live events', () => {
     const got: LiveEvent[] = [];
     parseEvents(': ping\n\nevent: other\ndata: {"questionId":"1"}\n\nevent: answered\ndata: not json\n\nevent: answered\ndata: {"questionId":"../me"}\n\n', e => got.push(e));
     expect(got).toEqual([]);
+  });
+});
+
+describe('staying connected', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  function fakeAuth(tokens: Array<string | null>, signedIn = true): Auth {
+    return {
+      getAccessToken: () => Promise.resolve(tokens.length > 1 ? tokens.shift() ?? null : tokens[0] ?? null),
+      hasSession: () => signedIn,
+    } as unknown as Auth;
+  }
+  const stream = (text: string) => new Response(new ReadableStream({
+    start(c) { c.enqueue(new TextEncoder().encode(text)); },
+  }));
+
+  it('keeps trying after a moment with no token (offline), instead of giving up for the session', async () => {
+    vi.useFakeTimers();
+    const got: LiveEvent[] = [];
+    const fetch = vi.fn(() => Promise.resolve(stream('event: answered\ndata: {"questionId":"5"}\n\n')));
+    const stop = startLive({ origin: 'https://api.test', auth: fakeAuth([null, 'access-1']), fetch, onEvent: e => got.push(e) });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetch).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(got).toEqual([{ type: 'answered', questionId: '5' }]);
+    stop();
+  });
+
+  it('stops once signed out', async () => {
+    vi.useFakeTimers();
+    const fetch = vi.fn();
+    startLive({ origin: 'https://api.test', auth: fakeAuth([null], false), fetch, onEvent: () => {} });
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

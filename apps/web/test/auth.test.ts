@@ -233,4 +233,43 @@ describe('staying signed in', () => {
     expect(await h.auth.getAccessToken()).toBeNull();
     expect(must(h.calls[1], 'the logout call').url).toBe('https://proj.supabase.co/auth/v1/logout');
   });
+
+  it('signing out while a refresh is on its way stays signed out', async () => {
+    let answer: (r: Response) => void = () => {};
+    const slow = new Promise<Response>(r => { answer = r; });
+    // The harness resolves whatever a response maker returns, so a promise holds the refresh open.
+    const h = await signedIn([() => slow as unknown as Response, () => new Response(null, { status: 204 })]);
+    h.tick(3600);
+    const refresh = h.auth.getAccessToken();
+    await h.auth.signOut();
+    answer(json(session(2))());
+    expect(await refresh).toBeNull();
+    expect(h.auth.hasSession()).toBe(false);
+    expect(h.storage.map.size).toBe(0);
+  });
+
+  it('signing out after a reload still ends the session at Supabase', async () => {
+    const h = harness([json(session(2)), () => new Response(null, { status: 204 })]);
+    // A reload: only the refresh token survives, in session storage.
+    h.storage.setItem('graphinity:refresh', 'refresh-1');
+    await h.auth.signOut();
+    const logout = must(h.calls[1], 'the logout call');
+    expect(logout.url).toBe('https://proj.supabase.co/auth/v1/logout');
+    expect(new Headers(logout.init.headers).get('authorization')).toBe('Bearer access-2');
+    expect(h.storage.map.size).toBe(0);
+  });
+
+  it('a refusal for an old session doesn’t sign out the new one', async () => {
+    let answer: (r: Response) => void = () => {};
+    const slow = new Promise<Response>(r => { answer = r; });
+    const h = await signedIn([() => slow as unknown as Response, () => new Response(null, { status: 204 })]);
+    h.tick(3600);
+    const refresh = h.auth.getAccessToken();
+    await h.auth.signOut();
+    h.responses.push(json(session(3)));
+    await h.auth.completeSignIn((await startAndReturn(h)).params);
+    answer(json({ error: 'invalid_grant' }, 400)());
+    expect(await refresh).toBeNull();
+    expect(await h.auth.getAccessToken()).toBe('access-3');
+  });
 });

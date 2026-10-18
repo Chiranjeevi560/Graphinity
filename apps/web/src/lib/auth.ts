@@ -94,7 +94,11 @@ export function createAuth(deps: AuthDeps) {
     return session.access_token;
   }
 
+  // Bumped by every sign-out: a refresh started before it must not keep its result.
+  let generation = 0;
+
   function forget() {
+    generation += 1;
     const had = access !== null || storage.getItem(REFRESH_KEY) !== null;
     access = null;
     storage.removeItem(REFRESH_KEY);
@@ -107,7 +111,7 @@ export function createAuth(deps: AuthDeps) {
     });
   }
 
-  return {
+  const auth = {
     /** Leaves for Google. `returnTo` is a path on this site to come back to. */
     async startSignIn(returnTo = '/') {
       const nonce = randomToken();
@@ -167,15 +171,21 @@ export function createAuth(deps: AuthDeps) {
       if (!refreshToken) { forget(); return null; }
       // One refresh at a time: refresh tokens are single use, so two parallel
       // refreshes would sign the person out.
+      const started = generation;
       refreshing ??= (async () => {
         try {
           const res = await postToken('refresh_token', { refresh_token: refreshToken });
+          // Signed out (and maybe back in) meanwhile: this answer is about an old session.
+          if (generation !== started) return null;
           // Only Supabase saying the refresh token is no good ends the
           // session. A server error or a rate limit is temporary: keep the
           // refresh token and try again on the next request.
           if (res.status === 400 || res.status === 401 || res.status === 403) { forget(); return null; }
           if (!res.ok) return null;
-          return keep(await res.json() as TokenResponse);
+          const session = await res.json() as TokenResponse;
+          // Signed out while this was on its way: keeping it would sign them back in.
+          if (generation !== started) return null;
+          return keep(session);
         } catch {
           // Offline: keep the refresh token for next time, but no token now.
           return null;
@@ -191,7 +201,9 @@ export function createAuth(deps: AuthDeps) {
     },
 
     async signOut() {
-      const token = access?.token;
+      // After a reload there's no access token in memory yet: get one, so the
+      // session also ends at Supabase rather than lingering there.
+      const token = access?.token ?? (storage.getItem(REFRESH_KEY) ? await auth.getAccessToken() : null);
       forget();
       if (token) {
         // Best effort: also ends the session on Supabase's side.
@@ -209,6 +221,7 @@ export function createAuth(deps: AuthDeps) {
       return () => { listeners.delete(listener); };
     },
   };
+  return auth;
 }
 
 export type Auth = ReturnType<typeof createAuth>;
