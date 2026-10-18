@@ -5,6 +5,7 @@ import { finishDeletion, lockOut, type DeletionDeps } from '../deletions.ts';
 import { handleProblem, handleProblemMessages, normalizeHandle } from '../handles.ts';
 import type { Clock } from '../rate-limit.ts';
 import { fail, pgCode, pgConstraint, signedIn } from './common.ts';
+import { standing } from './points.ts';
 
 export interface ProfileDeps {
   db: Database;
@@ -116,9 +117,12 @@ export function registerProfileRoutes(app: FastifyInstance, deps: ProfileDeps) {
 
   app.get('/me', { config: { auth: 'required' } }, async req => {
     const user = signedIn(req);
-    const profile = await db.withUser(user.id, q => loadProfile(q, 'id', user.id));
+    const found = await db.withUser(user.id, async q => {
+      const profile = await loadProfile(q, 'id', user.id);
+      return profile ? { profile, standing: await standing(q, profile.id) } : null;
+    });
     // No profile yet means the person signed in but hasn't finished setting up.
-    return { profile: profile ? ownProfile(profile) : null };
+    return found ? { profile: ownProfile(found.profile), standing: found.standing } : { profile: null };
   });
 
   app.post('/me/profile', {
@@ -225,9 +229,12 @@ export function registerProfileRoutes(app: FastifyInstance, deps: ProfileDeps) {
     schema: { params: { type: 'object', properties: { handle: handleSchema }, required: ['handle'] } },
   }, async (req, reply) => {
     const handle = normalizeHandle((req.params as { handle: string }).handle);
-    const profile = handleProblem(handle) ? null : await db.withUser(null, q => loadProfile(q, 'handle', handle));
-    if (!profile) return fail(reply, 404, 'not_found', 'There’s no one with that name.');
-    return { profile: publicProfile(profile) };
+    const found = handleProblem(handle) ? null : await db.withUser(null, async q => {
+      const profile = await loadProfile(q, 'handle', handle);
+      return profile ? { profile, standing: await standing(q, profile.id) } : null;
+    });
+    if (!found) return fail(reply, 404, 'not_found', 'There’s no one with that name.');
+    return { profile: publicProfile(found.profile), standing: found.standing };
   });
 
   // Deleting an account really deletes it: the profile and everything that

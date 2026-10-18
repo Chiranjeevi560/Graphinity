@@ -28,6 +28,7 @@ Base URL: `http://localhost:3000` locally; the Render URL in production.
 | 404 | `not_found` / `no_profile` | Nothing there / set up your profile first |
 | 409 | `handle_taken` / `profile_exists` / `handle_change_too_soon` | The last one includes `availableAt` (ISO time) |
 | 409 | `already_answered` / `own_question` | One answer per person per question; never on your own |
+| 400 / 403 / 409 | `not_an_answer` / `reason_required` / `not_your_question` / `no_changes_left` / `not_picked` | Picking, marking and verdicts (see below) |
 | 413 | `too_large` | Body over the limit (4 KB; 48 KB when asking or answering while signed in) |
 | 415 | `unsupported` | Wrong content type |
 | 429 | `rate_limited` | Too many requests. `Retry-After` gives the seconds to wait |
@@ -127,8 +128,10 @@ letters or digits returns an empty list.
 
 ### `GET /questions/:id`
 
-`{ question: summary + { body }, answers: [{ id, body, answerer: { handle }, createdAt }] }`,
-answers oldest first. 404 `not_found` if there's no such question.
+`{ question: summary + { body }, answers: [{ id, body, answerer: { handle }, createdAt, helpful }], selection }`,
+answers oldest first. `selection` is `null` until the asker picks, then
+`{ answerId, changesLeft, correct }` (`answerId` is `null` if the picked answer's author deleted their
+account; `correct` is `null` until the asker says how it turned out). 404 `not_found` if there's no such question.
 
 ### `POST /questions` (signed in, counts as a write)
 
@@ -137,4 +140,42 @@ answers oldest first. 404 `not_found` if there's no such question.
 ### `POST /questions/:id/answers` (signed in, counts as a write)
 
 `{ body }` → 201 `{ answer: { id } }`. 409 `own_question` or `already_answered`, 404 `not_found`.
+
+## Picking, helpful marks and standing
+
+Points move inside the database when a pick or mark is saved (see SECURITY.md). Ids are sent as text.
+
+### `PUT /questions/:id/selection` (asker only, counts as a write)
+
+`{ answerId, reason? }` → `{ selection: { answerId, changesLeft } }`. The first pick gives the answer's
+author 5 points in the question's field. Changing it needs `reason`: `turned_out_wrong`,
+`better_answer_later` or `picked_by_mistake`; at most 2 changes. A change takes the 5 points back
+from the old author and gives them to the new one. `turned_out_wrong` also records that the old pick
+turned out wrong. Picking the same answer again changes nothing.
+
+### `POST /answers/:id/helpful` (asker only, counts as a write)
+
+→ `{ helpful: true }`. 2 points to the author, once per answer; marking twice is fine and changes
+nothing. Marks can't be taken back.
+
+### `PUT /answers/:id/verdict` (asker only, counts as a write)
+
+`{ correct }` → `{ verdict: { correct } }`. Only for the current pick (409 `not_picked` otherwise).
+
+### Standing
+
+`GET /profiles/:handle` and `GET /me` also return:
+
+```json
+"standing": {
+  "points": [{ "field": { "slug": "imports-customs", "name": "Imports & Customs" }, "points": 15, "medal": "bronze" }],
+  "trust": { "correct": 4, "askers": 5 }
+}
+```
+
+Medals per field: bronze at 10 points, silver at 50, gold at 200. `trust` counts each asker once (their
+latest verdict) and is `null` until 3 different askers have said. Who gave whom points is never shown.
+
+The pair cap: one asker can give one person points 3 times in 30 days. After that, picks and marks
+still work, but no points move for them.
 

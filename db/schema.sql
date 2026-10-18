@@ -682,8 +682,350 @@ CREATE POLICY answers_insert_own ON app.answers FOR INSERT TO app_api
     )
   );
 
+-- ---------------------------------------------------------------------------
+-- Points. The asker picks the answer that helped (+5 to its author in the
+-- question's field) and may mark any answer helpful (+2), the picked one too. Points live in an
+-- append-only ledger: taking points back is a new, negative row. The API
+-- role writes ledger rows itself (from triggers below, running as that
+-- role), and the insert policy accepts only rows that match a real
+-- selection or helpful mark by the signed-in person, with the amount fixed
+-- by the reason. No UPDATE or DELETE is granted on any of these tables;
+-- only account deletion changes them (cascades).
+--
+-- Every function here runs as the caller (no SECURITY DEFINER), names
+-- every table with its schema, and puts pg_temp last on its search path,
+-- so a temporary table can't stand in for a real one.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS app.selections (
+  question_id    bigint PRIMARY KEY REFERENCES app.questions (id) ON DELETE CASCADE,
+  -- Empty only when the picked answer was deleted with its author's account;
+  -- the count of changes survives, and picking again is free.
+  answer_id      bigint REFERENCES app.answers (id) ON DELETE SET NULL,
+  -- How many times the asker changed their pick (at most 2).
+  changes        smallint NOT NULL DEFAULT 0 CHECK (changes BETWEEN 0 AND 2),
+  -- The reason for a change, sent with that change. Always stored empty,
+  -- so a change can't reuse an earlier change's reason by leaving it out.
+  change_reason  text CHECK (change_reason IN ('turned_out_wrong', 'better_answer_later', 'picked_by_mistake')),
+  -- The reason given for the latest change (written by the database only).
+  last_change_reason text CHECK (last_change_reason IN ('turned_out_wrong', 'better_answer_later', 'picked_by_mistake')),
+  selected_at    timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS selections_answer ON app.selections (answer_id);
+ALTER TABLE app.selections ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.selections FORCE ROW LEVEL SECURITY;
+GRANT SELECT ON app.selections TO app_api;
+GRANT INSERT (question_id, answer_id) ON app.selections TO app_api;
+GRANT UPDATE (answer_id, change_reason) ON app.selections TO app_api;
+DROP POLICY IF EXISTS selections_read ON app.selections;
+CREATE POLICY selections_read ON app.selections FOR SELECT TO app_api USING (true);
+DROP POLICY IF EXISTS selections_insert_asker ON app.selections;
+CREATE POLICY selections_insert_asker ON app.selections FOR INSERT TO app_api
+  WITH CHECK (EXISTS (SELECT 1 FROM app.questions q WHERE q.id = selections.question_id AND q.asker_id = app.current_user_id()));
+DROP POLICY IF EXISTS selections_update_asker ON app.selections;
+CREATE POLICY selections_update_asker ON app.selections FOR UPDATE TO app_api
+  USING (EXISTS (SELECT 1 FROM app.questions q WHERE q.id = selections.question_id AND q.asker_id = app.current_user_id()))
+  WITH CHECK (EXISTS (SELECT 1 FROM app.questions q WHERE q.id = selections.question_id AND q.asker_id = app.current_user_id()));
+
+-- The pick must be an answer to that question; a change needs a reason and
+-- is counted by the database, whatever the caller sends.
+CREATE OR REPLACE FUNCTION app.check_selection() RETURNS trigger
+  LANGUAGE plpgsql
+  SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+  IF NEW.answer_id IS NULL THEN
+    -- Only the database's own cascade may empty a pick: foreign-key actions
+    -- run as the table's owner, a role the API can't become (tested). The
+    -- API emptying a pick would get a free change. Trigger depth is no
+    -- proof: the API could fire a trigger of its own on a temporary table.
+    IF TG_OP = 'UPDATE' AND current_user = (
+      SELECT r.rolname FROM pg_catalog.pg_class c JOIN pg_catalog.pg_roles r ON r.oid = c.relowner
+      WHERE c.oid = 'app.selections'::regclass
+    ) THEN
+      NEW.change_reason := NULL;
+      RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'a pick needs an answer' USING ERRCODE = 'check_violation';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM app.answers a WHERE a.id = NEW.answer_id AND a.question_id = NEW.question_id) THEN
+    RAISE EXCEPTION 'that answer is not on this question' USING ERRCODE = 'check_violation';
+  END IF;
+  IF TG_OP = 'INSERT' THEN
+    NEW.changes := 0;
+    NEW.last_change_reason := NULL;
+    NEW.selected_at := clock_timestamp();
+  ELSIF OLD.answer_id IS NULL THEN
+    -- The old pick was deleted with its author: picking again doesn't count.
+    NEW.changes := OLD.changes;
+    NEW.last_change_reason := OLD.last_change_reason;
+    NEW.selected_at := clock_timestamp();
+  ELSIF NEW.answer_id = OLD.answer_id THEN
+    NEW.changes := OLD.changes;
+    NEW.last_change_reason := OLD.last_change_reason;
+    NEW.selected_at := OLD.selected_at;
+  ELSE
+    IF NEW.change_reason IS NULL THEN
+      RAISE EXCEPTION 'a change of pick needs a reason' USING ERRCODE = 'check_violation';
+    END IF;
+    IF OLD.changes >= 2 THEN
+      RAISE EXCEPTION 'the pick was already changed twice' USING ERRCODE = 'check_violation';
+    END IF;
+    -- "It turned out wrong" is also the asker's verdict on the old pick,
+    -- written now, while it is still the pick (only the pick can be rated).
+    IF NEW.change_reason = 'turned_out_wrong' THEN
+      INSERT INTO app.verdicts (answer_id, correct) VALUES (OLD.answer_id, false)
+        ON CONFLICT (answer_id) DO UPDATE SET correct = false;
+    END IF;
+    NEW.changes := OLD.changes + 1;
+    NEW.last_change_reason := NEW.change_reason;
+    NEW.selected_at := clock_timestamp();
+  END IF;
+  NEW.change_reason := NULL;
+  RETURN NEW;
+END
+$$;
+REVOKE ALL ON FUNCTION app.check_selection() FROM PUBLIC;
+DROP TRIGGER IF EXISTS selections_check ON app.selections;
+CREATE TRIGGER selections_check BEFORE INSERT OR UPDATE ON app.selections
+  FOR EACH ROW EXECUTE FUNCTION app.check_selection();
+
+-- Answers the asker found helpful. Permanent: there is no "unmark".
+CREATE TABLE IF NOT EXISTS app.helpful_marks (
+  answer_id  bigint PRIMARY KEY REFERENCES app.answers (id) ON DELETE CASCADE,
+  marked_at  timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE app.helpful_marks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.helpful_marks FORCE ROW LEVEL SECURITY;
+GRANT SELECT ON app.helpful_marks TO app_api;
+GRANT INSERT (answer_id) ON app.helpful_marks TO app_api;
+DROP POLICY IF EXISTS helpful_read ON app.helpful_marks;
+CREATE POLICY helpful_read ON app.helpful_marks FOR SELECT TO app_api USING (true);
+DROP POLICY IF EXISTS helpful_insert_asker ON app.helpful_marks;
+CREATE POLICY helpful_insert_asker ON app.helpful_marks FOR INSERT TO app_api
+  WITH CHECK (EXISTS (
+    SELECT 1 FROM app.answers a JOIN app.questions q ON q.id = a.question_id
+    WHERE a.id = helpful_marks.answer_id AND q.asker_id = app.current_user_id()
+  ));
+
+CREATE TABLE IF NOT EXISTS app.points_ledger (
+  id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  recipient_id  uuid NOT NULL REFERENCES app.profiles (id) ON DELETE CASCADE,
+  -- Set to null when the giver deletes their account: points earned stay,
+  -- with no link back to them.
+  giver_id      uuid REFERENCES app.profiles (id) ON DELETE SET NULL,
+  field         text NOT NULL REFERENCES app.fields (slug),
+  amount        smallint NOT NULL,
+  reason        text NOT NULL,
+  question_id   bigint REFERENCES app.questions (id) ON DELETE SET NULL,
+  answer_id     bigint REFERENCES app.answers (id) ON DELETE SET NULL,
+  -- A take-back names the award it cancels; each award at most once.
+  reverses      bigint UNIQUE REFERENCES app.points_ledger (id) ON DELETE CASCADE,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  -- 0 is an award the pair cap stopped: kept, so it can't be paid out later.
+  CONSTRAINT points_amount_matches_reason CHECK (
+    (reason = 'selected' AND amount IN (5, 0) AND reverses IS NULL)
+    OR (reason = 'helpful' AND amount IN (2, 0) AND reverses IS NULL)
+    OR (reason = 'selection_changed' AND amount IN (-5, 0) AND reverses IS NOT NULL)),
+  CONSTRAINT points_not_to_self CHECK (giver_id IS DISTINCT FROM recipient_id)
+);
+CREATE INDEX IF NOT EXISTS points_recipient ON app.points_ledger (recipient_id, field);
+CREATE INDEX IF NOT EXISTS points_pair ON app.points_ledger (giver_id, recipient_id, created_at);
+CREATE INDEX IF NOT EXISTS points_question ON app.points_ledger (question_id) WHERE reason = 'selected';
+-- One helpful award per answer.
+CREATE UNIQUE INDEX IF NOT EXISTS points_helpful_once ON app.points_ledger (answer_id) WHERE reason = 'helpful';
+ALTER TABLE app.points_ledger ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.points_ledger FORCE ROW LEVEL SECURITY;
+GRANT SELECT ON app.points_ledger TO app_api;
+GRANT INSERT (recipient_id, giver_id, field, amount, reason, question_id, answer_id, reverses) ON app.points_ledger TO app_api;
+DROP POLICY IF EXISTS points_read ON app.points_ledger;
+CREATE POLICY points_read ON app.points_ledger FOR SELECT TO app_api USING (true);
+-- A row is accepted only if it matches what really happened, given by the
+-- signed-in person: the current pick, a helpful mark, or taking back an
+-- award whose answer is no longer the pick.
+DROP POLICY IF EXISTS points_insert_real ON app.points_ledger;
+CREATE POLICY points_insert_real ON app.points_ledger FOR INSERT TO app_api
+  WITH CHECK (
+    giver_id = app.current_user_id()
+    AND (
+      (reason = 'selected' AND EXISTS (
+        SELECT 1 FROM app.selections s
+        JOIN app.answers a ON a.id = s.answer_id
+        JOIN app.questions q ON q.id = s.question_id
+        WHERE s.question_id = points_ledger.question_id AND s.answer_id = points_ledger.answer_id
+          AND a.answerer_id = points_ledger.recipient_id AND q.asker_id = points_ledger.giver_id
+          AND q.field = points_ledger.field))
+      OR (reason = 'helpful' AND EXISTS (
+        SELECT 1 FROM app.helpful_marks h
+        JOIN app.answers a ON a.id = h.answer_id
+        JOIN app.questions q ON q.id = a.question_id
+        WHERE h.answer_id = points_ledger.answer_id AND a.question_id = points_ledger.question_id
+          AND a.answerer_id = points_ledger.recipient_id AND q.asker_id = points_ledger.giver_id
+          AND q.field = points_ledger.field))
+      OR (reason = 'selection_changed' AND EXISTS (
+        SELECT 1 FROM app.points_ledger l
+        JOIN app.selections s ON s.question_id = l.question_id
+        WHERE l.id = points_ledger.reverses AND l.reason = 'selected'
+          AND l.recipient_id = points_ledger.recipient_id AND l.giver_id = points_ledger.giver_id
+          AND l.field = points_ledger.field AND l.question_id = points_ledger.question_id
+          AND l.answer_id = points_ledger.answer_id AND points_ledger.amount = -l.amount
+          AND s.answer_id IS DISTINCT FROM l.answer_id))
+    )
+  );
+
+-- Pair cap: the same asker can give the same person points 3 times in 30
+-- days; after that the pick or mark still counts, but no points move.
+-- Every ledger write for a pair takes the same lock, so two requests at
+-- once can't both squeeze under the cap. (Requests run at READ COMMITTED,
+-- so the count after the lock sees the other's committed row.)
+CREATE OR REPLACE FUNCTION app.guard_points() RETURNS trigger
+  LANGUAGE plpgsql
+  SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+  -- A null would make the lock key null, and the lock silently not taken.
+  IF NEW.giver_id IS NULL OR NEW.recipient_id IS NULL OR NEW.question_id IS NULL THEN
+    RAISE EXCEPTION 'points need a giver, a recipient and a question' USING ERRCODE = 'not_null_violation';
+  END IF;
+  -- The cap count below must see what others just committed: only true at
+  -- READ COMMITTED, which a caller could otherwise change for itself.
+  IF current_setting('transaction_isolation') <> 'read committed' THEN
+    RAISE EXCEPTION 'points can only move at READ COMMITTED' USING ERRCODE = 'invalid_transaction_state';
+  END IF;
+  -- One question's pick at a time, then one pair at a time (always this order).
+  PERFORM pg_advisory_xact_lock(hashtext('graphinity.pick'), hashtext(NEW.question_id::text));
+  PERFORM pg_advisory_xact_lock(hashtext('graphinity.points'), hashtext(NEW.giver_id::text || ':' || NEW.recipient_id::text));
+  -- The real time, not the transaction's start: a transaction held open
+  -- for a month must not backdate its awards out of the cap's window.
+  NEW.created_at := clock_timestamp();
+  IF NEW.reason = 'selected' AND EXISTS (
+    SELECT 1 FROM app.points_ledger l
+    WHERE l.question_id = NEW.question_id AND l.reason = 'selected'
+      AND NOT EXISTS (SELECT 1 FROM app.points_ledger r WHERE r.reverses = l.id)
+  ) THEN
+    RAISE EXCEPTION 'this question''s pick already has its points' USING ERRCODE = 'unique_violation';
+  END IF;
+  IF NEW.amount > 0 AND (
+    SELECT count(*) FROM app.points_ledger l
+    WHERE l.giver_id = NEW.giver_id AND l.recipient_id = NEW.recipient_id
+      AND l.amount > 0 AND l.created_at > clock_timestamp() - interval '30 days'
+      AND NOT EXISTS (SELECT 1 FROM app.points_ledger r WHERE r.reverses = l.id)
+  ) >= 3 THEN
+    NEW.amount := 0;
+  END IF;
+  RETURN NEW;
+END
+$$;
+REVOKE ALL ON FUNCTION app.guard_points() FROM PUBLIC;
+DROP TRIGGER IF EXISTS points_guard ON app.points_ledger;
+CREATE TRIGGER points_guard BEFORE INSERT ON app.points_ledger
+  FOR EACH ROW EXECUTE FUNCTION app.guard_points();
+
+-- Picking and marking move points by themselves, in the same transaction.
+CREATE OR REPLACE FUNCTION app.award_selection() RETURNS trigger
+  LANGUAGE plpgsql
+  SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  k bigint;
+BEGIN
+  -- Emptied by the cascade when the picked answer's author left: their
+  -- points left with them; nothing to move.
+  IF NEW.answer_id IS NULL THEN RETURN NULL; END IF;
+  IF TG_OP = 'UPDATE' THEN
+    IF NEW.answer_id IS NOT DISTINCT FROM OLD.answer_id THEN RETURN NULL; END IF;
+    -- Lock order: the question, then every pair involved, smallest key first,
+    -- so two changes in opposite directions can't deadlock.
+    PERFORM pg_advisory_xact_lock(hashtext('graphinity.pick'), hashtext(NEW.question_id::text));
+    FOR k IN
+      SELECT DISTINCT hashtext(q.asker_id::text || ':' || a.answerer_id::text)
+      FROM app.answers a JOIN app.questions q ON q.id = a.question_id
+      WHERE a.id IN (OLD.answer_id, NEW.answer_id)
+      ORDER BY 1
+    LOOP
+      PERFORM pg_advisory_xact_lock(hashtext('graphinity.points'), k::int);
+    END LOOP;
+    INSERT INTO app.points_ledger (recipient_id, giver_id, field, amount, reason, question_id, answer_id, reverses)
+      SELECT l.recipient_id, l.giver_id, l.field, -l.amount, 'selection_changed', l.question_id, l.answer_id, l.id
+      FROM app.points_ledger l
+      WHERE l.question_id = NEW.question_id AND l.reason = 'selected'
+        AND NOT EXISTS (SELECT 1 FROM app.points_ledger r WHERE r.reverses = l.id);
+  END IF;
+  INSERT INTO app.points_ledger (recipient_id, giver_id, field, amount, reason, question_id, answer_id)
+    SELECT a.answerer_id, q.asker_id, q.field, 5, 'selected', q.id, a.id
+    FROM app.answers a JOIN app.questions q ON q.id = a.question_id
+    WHERE a.id = NEW.answer_id;
+  RETURN NULL;
+END
+$$;
+REVOKE ALL ON FUNCTION app.award_selection() FROM PUBLIC;
+DROP TRIGGER IF EXISTS selections_award ON app.selections;
+CREATE TRIGGER selections_award AFTER INSERT OR UPDATE ON app.selections
+  FOR EACH ROW EXECUTE FUNCTION app.award_selection();
+
+CREATE OR REPLACE FUNCTION app.award_helpful() RETURNS trigger
+  LANGUAGE plpgsql
+  SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+  INSERT INTO app.points_ledger (recipient_id, giver_id, field, amount, reason, question_id, answer_id)
+    SELECT a.answerer_id, q.asker_id, q.field, 2, 'helpful', q.id, a.id
+    FROM app.answers a JOIN app.questions q ON q.id = a.question_id
+    WHERE a.id = NEW.answer_id;
+  RETURN NULL;
+END
+$$;
+REVOKE ALL ON FUNCTION app.award_helpful() FROM PUBLIC;
+DROP TRIGGER IF EXISTS helpful_award ON app.helpful_marks;
+CREATE TRIGGER helpful_award AFTER INSERT ON app.helpful_marks
+  FOR EACH ROW EXECUTE FUNCTION app.award_helpful();
+
+-- Later, the asker says whether the picked answer turned out right. Only
+-- the current pick can be rated; who rated whom is worked out from the
+-- answer and question, never sent. Trust counts each asker once.
+CREATE TABLE IF NOT EXISTS app.verdicts (
+  answer_id  bigint PRIMARY KEY REFERENCES app.answers (id) ON DELETE CASCADE,
+  correct    boolean NOT NULL,
+  at         timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE app.verdicts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.verdicts FORCE ROW LEVEL SECURITY;
+GRANT SELECT ON app.verdicts TO app_api;
+GRANT INSERT (answer_id, correct), UPDATE (correct) ON app.verdicts TO app_api;
+DROP POLICY IF EXISTS verdicts_read ON app.verdicts;
+CREATE POLICY verdicts_read ON app.verdicts FOR SELECT TO app_api USING (true);
+DROP POLICY IF EXISTS verdicts_insert_asker ON app.verdicts;
+CREATE POLICY verdicts_insert_asker ON app.verdicts FOR INSERT TO app_api
+  WITH CHECK (EXISTS (
+    SELECT 1 FROM app.selections s JOIN app.questions q ON q.id = s.question_id
+    WHERE s.answer_id = verdicts.answer_id AND q.asker_id = app.current_user_id()
+  ));
+DROP POLICY IF EXISTS verdicts_update_asker ON app.verdicts;
+CREATE POLICY verdicts_update_asker ON app.verdicts FOR UPDATE TO app_api
+  USING (EXISTS (
+    SELECT 1 FROM app.selections s JOIN app.questions q ON q.id = s.question_id
+    WHERE s.answer_id = verdicts.answer_id AND q.asker_id = app.current_user_id()
+  ))
+  WITH CHECK (EXISTS (
+    SELECT 1 FROM app.selections s JOIN app.questions q ON q.id = s.question_id
+    WHERE s.answer_id = verdicts.answer_id AND q.asker_id = app.current_user_id()
+  ));
+
+CREATE OR REPLACE FUNCTION app.stamp_verdict() RETURNS trigger
+  LANGUAGE plpgsql
+  SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+  NEW.at := clock_timestamp();
+  RETURN NEW;
+END
+$$;
+REVOKE ALL ON FUNCTION app.stamp_verdict() FROM PUBLIC;
+DROP TRIGGER IF EXISTS verdicts_stamp ON app.verdicts;
+CREATE TRIGGER verdicts_stamp BEFORE INSERT OR UPDATE ON app.verdicts
+  FOR EACH ROW EXECUTE FUNCTION app.stamp_verdict();
+
 -- Bump on every change to this file.
-INSERT INTO app.schema_meta (id, version) VALUES (true, 5)
+INSERT INTO app.schema_meta (id, version) VALUES (true, 6)
   ON CONFLICT (id) DO UPDATE SET version = EXCLUDED.version, applied_at = now();
 
 COMMIT;

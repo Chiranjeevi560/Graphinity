@@ -57,6 +57,7 @@ These must stay true. If one stops being true, revisit everything that depends o
 | Input "fixed" instead of refused | Fastify's coercion and property-stripping turned off | Integration test; fails with the defaults |
 | Someone posting as another person, or answering their own question | RLS: questions and answers only as `app.current_user_id()`; the answer policy also refuses the asker. No UPDATE or DELETE granted yet | `questions.integration.test.ts`; fails when the policy check is removed |
 | Hidden or spoofing characters in posts | Control characters refused in the API and by database checks; titles one line with single spaces | `text.test.ts` and database tests |
+| Getting points that didn't happen | See T8a. Every rule tested by an attack that must fail, and each test proven to fail when its rule is removed | `points.db.integration.test.ts`, `points.integration.test.ts` |
 | Search query injection | Matching builds its query only from letters and digits, passed as a parameter | `text.test.ts`; operator characters return no query |
 | Identity in the database | Only a chosen name, country, fields, 18+ time. No Google name or email copied | Integration test checks the stored row |
 | Supply chain | Install scripts disabled, exact versions, lockfile, versions over 2 weeks old, audit in CI, actions pinned to commits, read-only CI token | `.npmrc`, `ci.yml` |
@@ -74,7 +75,8 @@ Each line answers: *if a hostile researcher spent a day on this, what would they
 | T5 | Inject script into pages (XSS) | React escapes text; strict CSP; plain-text posts, links never made clickable | In place |
 | T6 | Steal a sign-in token | Access token in memory, refresh token in sessionStorage; CSP with no inline or third-party scripts | In place |
 | T7 | Forge the OAuth return (login CSRF), or replay a Google ID token | Our own state checked in the tab that started it, plus an OIDC nonce whose raw value never leaves the tab | In place |
-| T8 | Farm points with a second account | Pair cap, trust counted once per asker, shared-network flags | Step 4 |
+| T8 | Farm points with a second account | Pair cap (3 awards per asker per person per 30 days), trust counted once per asker; shared-network flags in step 6 | Pair cap and trust in place; flags step 6 |
+| T8a | Forge or replay points | Ledger rows only for a real pick or mark by the signed-in asker, amount fixed by reason, take-backs mirror their award, capped awards kept as 0 so they can't be paid later, one lock per question then per pair in a fixed order, READ COMMITTED required, real clock time; no UPDATE/DELETE granted | In place; `points.db.integration.test.ts` attacks each, three adversarial reviews |
 | T9 | Flood people with notifications | Daily per-person budget, waves | Step 5 |
 | T10 | Post abuse, spam or private info | Reports, auto-hide after 3, owner review, new-account limits | Step 6 |
 | T11 | Exhaust the free tier to get the service suspended | Rate limits, body limits, no file uploads in v1 | Partly in place |
@@ -113,7 +115,18 @@ Each line answers: *if a hostile researcher spent a day on this, what would they
   domain we own, verified in Google Search Console), it shows the address, e.g. "Sign in to
   graphinity.pages.dev", not the name "Graphinity". Whether a `pages.dev` address can be verified is
   unconfirmed; a free domain may be needed at launch.
-- Email sign-in is switched off in the Supabase dashboard, which is a setting, not code. The server
+- Points trust the user id the API sets after verifying the token (`app.current_user_id()`), like
+  every other table. A compromised API role could act as any person; the database stops it from
+  inventing points that no pick or mark backs.
+- Several people (sock accounts) can each give one person points up to the pair cap. Step 6 adds
+  flags for shared networks; nothing slows sock accounts before that.
+- The API role could hold the advisory-lock keys to stall picks for a question or pair (denial of
+  service by our own server role, accepted).
+- Re-picking an answer whose award the cap stopped, after the 30-day window, is a new award (still
+  under the cap). "Better answer later" leaves an earlier "turned out right" verdict standing.
+- A pick change racing the picked author's account deletion can fail once (deadlock or foreign key)
+  and needs a retry.
+- - Email sign-in is switched off in the Supabase dashboard, which is a setting, not code. The server
   does not yet refuse tokens whose provider isn't Google (`app_metadata.provider`); adding that is a
   recommended second lock, not yet done.
 - Not yet checked: CI on GitHub (no repository yet), and headers on the real Cloudflare and Render

@@ -30,7 +30,7 @@ export async function startApp(now: () => number) {
     return { id, token: await issuer.sign({}, { sub: id }) };
   }
 
-  function call(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, token?: string, payload?: object) {
+  function call(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', url: string, token?: string, payload?: object) {
     return app.inject({
       method, url,
       headers: token ? { authorization: `Bearer ${token}` } : {},

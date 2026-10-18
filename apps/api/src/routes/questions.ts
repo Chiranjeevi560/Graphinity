@@ -5,6 +5,7 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Database } from '../db.ts';
 import { cleanBody, cleanLine, prefixQuery, textProblem, type TextProblem } from '../text.ts';
 import { fail, pgCode, pgConstraint, signedIn } from './common.ts';
+import { MAX_CHANGES } from './points.ts';
 
 export const LIMITS = {
   title: { min: 15, max: 150 },
@@ -127,16 +128,28 @@ export function registerQuestionRoutes(app: FastifyInstance, { db }: { db: Datab
     const found = await db.withUser(null, async q => {
       const question = (await q.query<QuestionRow>(`${QUESTION_SELECT} WHERE q.id = $1`, [id])).rows[0];
       if (!question) return null;
-      const answers = (await q.query<{ id: string; body: string; answerer: string; created_at: Date }>(
-        `SELECT a.id::text AS id, a.body, p.handle AS answerer, a.created_at
+      const answers = (await q.query<{ id: string; body: string; answerer: string; created_at: Date; helpful: boolean }>(
+        `SELECT a.id::text AS id, a.body, p.handle AS answerer, a.created_at,
+                EXISTS (SELECT 1 FROM app.helpful_marks h WHERE h.answer_id = a.id) AS helpful
          FROM app.answers a JOIN app.profiles p ON p.id = a.answerer_id
          WHERE a.question_id = $1 ORDER BY a.created_at, a.id`, [id])).rows;
-      return { question, answers };
+      const selection = (await q.query<{ answer_id: string | null; changes: number; correct: boolean | null }>(
+        `SELECT s.answer_id::text AS answer_id, s.changes, v.correct
+         FROM app.selections s LEFT JOIN app.verdicts v ON v.answer_id = s.answer_id
+         WHERE s.question_id = $1`, [id])).rows[0] ?? null;
+      return { question, answers, selection };
     });
     if (!found) return fail(reply, 404, 'not_found', 'This question doesn’t exist. It may have been deleted.');
     return {
       question: { ...summary(found.question), body: found.question.body },
-      answers: found.answers.map(a => ({ id: a.id, body: a.body, answerer: { handle: a.answerer }, createdAt: a.created_at.toISOString() })),
+      answers: found.answers.map(a => ({ id: a.id, body: a.body, answerer: { handle: a.answerer }, createdAt: a.created_at.toISOString(), helpful: a.helpful })),
+      // The answer the asker picked, how many changes they have left, and
+      // whether they said it turned out right (null: not said yet).
+      selection: found.selection && {
+        answerId: found.selection.answer_id,
+        changesLeft: MAX_CHANGES - found.selection.changes,
+        correct: found.selection.correct,
+      },
     };
   });
 
