@@ -120,6 +120,11 @@ The question summary:
 Newest first, 20 at a time: `{ questions: [summary], next }`. Pass `next` as `before` for the
 following page; `next` is `null` on the last page.
 
+### `GET /sitemap/questions`
+
+The newest 5,000 questions anyone may see, `{ questions: [{ id, title, createdAt }] }`, for the
+website host's sitemap. Cached for an hour.
+
 ### `GET /questions/similar?q=:text`
 
 Up to 5 questions matching any word of `q`, including a word still being typed:

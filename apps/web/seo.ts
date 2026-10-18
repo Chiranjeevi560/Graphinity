@@ -17,8 +17,10 @@ export function robotsTxt(origin: string): string {
   ].join('\n');
 }
 
-export function sitemapXml(origin: string): string {
-  const urls = PUBLIC_PATHS.map(p => `  <url><loc>${escapeXml(new URL(p, origin).toString())}</loc></url>`).join('\n');
+/** The fixed pages, plus any extra (questions, from the host's sitemap function). */
+export function sitemapXml(origin: string, extra: Array<{ path: string; lastmod: string }> = []): string {
+  const entries = [...PUBLIC_PATHS.map(path => ({ path, lastmod: '' })), ...extra];
+  const urls = entries.map(e => `  <url><loc>${escapeXml(new URL(e.path, origin).toString())}</loc>${e.lastmod ? `<lastmod>${escapeXml(e.lastmod)}</lastmod>` : ''}</url>`).join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
 }
 

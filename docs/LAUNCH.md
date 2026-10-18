@@ -38,7 +38,4 @@ locally; the rest need the owner's accounts, devices or a lawyer.
 
 ## Known limits, accepted for now
 
-- Link previews and the sitemap don't yet list individual questions: search engines that run the
-  page see them; chat apps show the site's general preview. Needs a small server-side step at the
-  host (a Cloudflare Pages Function) once the site is deployed.
 - See SECURITY.md "Known gaps" for the security ones.

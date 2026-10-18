@@ -23,6 +23,10 @@ function seoPlugin(siteOrigin: string): Plugin {
     generateBundle() {
       this.emitFile({ type: 'asset', fileName: 'robots.txt', source: robotsTxt(siteOrigin) });
       this.emitFile({ type: 'asset', fileName: 'sitemap.xml', source: sitemapXml(siteOrigin) });
+      // Only these paths run the host's Functions (/functions); everything
+      // else is a free static file. If the free daily allowance runs out,
+      // "fail open" in Cloudflare serves the static page instead.
+      this.emitFile({ type: 'asset', fileName: '_routes.json', source: JSON.stringify({ version: 1, include: ['/q/*', '/sitemap.xml'], exclude: [] }) });
     },
   };
 }

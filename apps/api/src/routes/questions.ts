@@ -105,6 +105,14 @@ export function registerQuestionRoutes(app: FastifyInstance, { db, events }: { d
     return { questions: page.map(summary), next: rows.length > PAGE_SIZE ? page.at(-1)?.id ?? null : null };
   });
 
+  // For the sitemap (built by the website's host): the newest questions anyone may see.
+  app.get('/sitemap/questions', async (_req, reply) => {
+    const rows = await db.withUser(null, async q => (await q.query<{ id: string; title: string; created_at: Date }>(
+      'SELECT q.id::text AS id, q.title, q.created_at FROM app.questions q ORDER BY q.id DESC LIMIT 5000')).rows);
+    reply.header('cache-control', 'public, max-age=3600');
+    return { questions: rows.map(r => ({ id: r.id, title: r.title, createdAt: r.created_at.toISOString() })) };
+  });
+
   // While someone types a question: has it been asked already?
   app.get('/questions/similar', {
     schema: {

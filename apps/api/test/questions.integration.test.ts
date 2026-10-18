@@ -112,6 +112,18 @@ describe('reading', () => {
   });
 });
 
+describe('the sitemap list', () => {
+  it('lists the newest questions with titles and dates, and nobody’s id', async () => {
+    const m = await member();
+    const id = await ask(m.token, { ...question, title: 'Which bus goes from the airport to the old town?' });
+    const res = await h.call('GET', '/sitemap/questions');
+    expect(res.headers['cache-control']).toBe('public, max-age=3600');
+    const { questions } = res.json<{ questions: Array<{ id: string; title: string; createdAt: string }> }>();
+    expect(questions[0]).toMatchObject({ id, title: 'Which bus goes from the airport to the old town?' });
+    expect(res.body).not.toMatch(UUID);
+  });
+});
+
 describe('finding similar questions while typing', () => {
   it('finds a question from half-typed words', async () => {
     const m = await member();

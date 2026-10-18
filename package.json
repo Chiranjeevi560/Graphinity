@@ -15,7 +15,7 @@
     "db:apply": "sh scripts/db.sh apply",
     "dev:api": "npm --workspace apps/api run dev",
     "dev:web": "npm --workspace apps/web run dev",
-    "typecheck": "npm --workspaces run typecheck",
+    "typecheck": "npm --workspaces run typecheck && tsc -p functions --noEmit",
     "test": "npm --workspaces --if-present run test",
     "build": "npm --workspaces run build",
     "dev:auth": "DEV_AUTH_SECRET_KEY=dev_local_secret_0123456789 node scripts/dev-auth.mjs",
