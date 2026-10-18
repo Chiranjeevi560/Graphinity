@@ -25,8 +25,13 @@ function Redirect({ to }: { to: string }) {
 function route(path: string, state: SessionState): ReactNode {
   if (path === '/auth/callback') return <AuthCallback />;
   if (path === '/goodbye') return <Goodbye />;
-  const profileMatch = path.match(/^\/u\/([^/]+)$/);
-  if (profileMatch) return <PublicProfile handle={decodeURIComponent(profileMatch[1]!)} />;
+  const profileMatch = /^\/u\/([^/]+)$/.exec(path);
+  if (profileMatch?.[1]) {
+    // A malformed link (e.g. /u/%E0) can't be decoded: treat it as not found
+    // instead of crashing to the error screen.
+    const handle = safeDecode(profileMatch[1]);
+    return handle === null ? <NotFound /> : <PublicProfile handle={handle} />;
+  }
   if (Design && path === '/design') return <Design />;
 
   // Everything below depends on who is signed in.
@@ -46,6 +51,10 @@ function route(path: string, state: SessionState): ReactNode {
     default:
       return <NotFound />;
   }
+}
+
+function safeDecode(part: string): string | null {
+  try { return decodeURIComponent(part); } catch { return null; }
 }
 
 export function App() {
