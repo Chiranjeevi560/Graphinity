@@ -177,6 +177,14 @@ describe('staying signed in', () => {
     return h;
   }
 
+  it('counts the token’s lifetime on this device, ignoring a server time that disagrees with its clock', async () => {
+    // The server says the token expired long ago (its clock and ours differ by hours).
+    const h = harness([json({ ...session(1), expires_at: 1 })]);
+    await h.auth.completeSignIn((await startAndReturn(h)).params);
+    expect(await h.auth.getAccessToken()).toBe('access-1');
+    expect(h.calls).toHaveLength(1);
+  });
+
   it('refreshes shortly before the access token expires, rotating the refresh token', async () => {
     const h = await signedIn([json(session(2))]);
     h.tick(3600 - 59);

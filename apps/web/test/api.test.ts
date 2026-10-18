@@ -3,11 +3,11 @@ import { ApiError, createApi } from '../src/lib/api.ts';
 import type { Auth } from '../src/lib/auth.ts';
 import { must } from './must.ts';
 
-function fakeAuth(tokens: Array<string | null>) {
+function fakeAuth(tokens: Array<string | null>, session = false) {
   let cleared = false;
   const auth = {
     getAccessToken: () => Promise.resolve(tokens.shift() ?? null),
-    hasSession: () => false,
+    hasSession: () => session,
     clear: () => { cleared = true; },
   } as unknown as Auth;
   return { auth, get cleared() { return cleared; } };
@@ -75,5 +75,16 @@ describe('api', () => {
     const { f, seen } = fetchSequence([]);
     await expect(createApi({ origin: 'https://api.test', auth, fetch: f })('/me', { signedIn: true })).rejects.toMatchObject({ code: 'signed_out' });
     expect(seen).toHaveLength(0);
+  });
+
+  it('sends the sign-in on public reads when there is one, and reads as a visitor when not', async () => {
+    const signedIn = fakeAuth(['tok-9'], true);
+    const one = fetchSequence([json({ ok: true })]);
+    await createApi({ origin: 'https://api.test', auth: signedIn.auth, fetch: one.f })('/questions/1', { signedIn: 'if-possible' });
+    expect(one.seen[0]?.auth).toBe('Bearer tok-9');
+    const visitor = fakeAuth([], false);
+    const two = fetchSequence([json({ ok: true })]);
+    await createApi({ origin: 'https://api.test', auth: visitor.auth, fetch: two.f })('/questions/1', { signedIn: 'if-possible' });
+    expect(two.seen[0]?.auth).toBeUndefined();
   });
 });

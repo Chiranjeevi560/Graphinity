@@ -24,8 +24,8 @@ self.addEventListener('notificationclick', event => {
     const open = windows.find(w => new URL(w.url).origin === self.location.origin);
     if (open) {
       await open.focus();
-      await open.navigate(url);
-      return;
+      // A tab this worker doesn't control yet can't be navigated: open a new one.
+      if (await open.navigate(url).then(() => true, () => false)) return;
     }
     await self.clients.openWindow(url);
   })());

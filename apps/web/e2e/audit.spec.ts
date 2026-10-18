@@ -531,6 +531,9 @@ test('a moderator removes a reported question', async ({ page, browserName }) =>
   await audit(page, 'review');
   await item.getByRole('button', { name: 'Remove' }).click();
   await expect(item.getByText('Removed.')).toBeVisible();
+  // A moderator can still open it (the page sends the sign-in when there is one).
+  await page.goto(questionUrl);
+  await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
 
   // Gone for everyone else.
   await signOut(page);

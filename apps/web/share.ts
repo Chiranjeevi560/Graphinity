@@ -33,14 +33,15 @@ export function questionHead(html: string, q: Question, siteOrigin: string): str
   const answers = q.answerCount === 1 ? '1 answer' : `${String(q.answerCount)} answers`;
   const description = escapeHtml(shorten(q.body || `${answers} from people who know ${q.field.name}. Ask once, reach people who’ve done it.`));
   const setMeta = (doc: string, attr: 'name' | 'property', key: string, value: string) =>
-    doc.replace(new RegExp(`(<meta ${attr}="${key}" content=")[^"]*(")`), `$1${value}$2`);
-  let out = html.replace(/<title>[^<]*<\/title>/, `<title>${title}</title>`);
+    doc.replace(new RegExp(`(<meta ${attr}="${key}" content=")[^"]*(")`), (_m, open: string, close: string) => `${open}${value}${close}`);
+  // Replacements are functions so a title like "$'" is taken literally.
+  let out = html.replace(/<title>[^<]*<\/title>/, () => `<title>${title}</title>`);
   out = setMeta(out, 'name', 'description', description);
   out = setMeta(out, 'property', 'og:title', escapeHtml(q.title));
   out = setMeta(out, 'property', 'og:description', description);
   out = setMeta(out, 'property', 'og:url', escapeHtml(url));
   out = setMeta(out, 'property', 'og:type', 'article');
-  out = out.replace(/(<link rel="canonical" href=")[^"]*(")/, `$1${escapeHtml(url)}$2`);
+  out = out.replace(/(<link rel="canonical" href=")[^"]*(")/, (_m, open: string, close: string) => `${open}${escapeHtml(url)}${close}`);
   return out;
 }
 
@@ -54,18 +55,23 @@ function headersFor(env: ShareEnv): Headers {
 
 /** /q/:id/…: the app's page, with this question in its head. Anything unexpected: the plain page. */
 export async function questionPage(request: Request, env: ShareEnv, fetchFn: typeof fetch): Promise<Response> {
-  const page = await env.ASSETS.fetch(new Request(new URL('/', request.url)));
+  const asset = await env.ASSETS.fetch(new Request(new URL('/', request.url)));
+  if (!asset.ok) return asset;
+  const html = await asset.text();
+  // Even the plain page goes out with the site's security headers.
+  const plain = () => new Response(html, { status: 200, headers: headersFor(env) });
   const id = /^\/q\/([1-9][0-9]{0,15})(?:\/|$)/.exec(new URL(request.url).pathname)?.[1];
-  if (!id || !page.ok) return page;
+  if (!id) return plain();
   let question: Question;
   try {
-    const res = await fetchFn(`${env.VITE_API_ORIGIN}/questions/${id}`, { signal: AbortSignal.timeout(3000) });
-    if (!res.ok) return page;
+    // Long enough for a free server waking up; previews wait about this long.
+    const res = await fetchFn(`${env.VITE_API_ORIGIN}/questions/${id}`, { signal: AbortSignal.timeout(6000) });
+    if (!res.ok) return plain();
     question = (await res.json() as { question: Question }).question;
   } catch {
-    return page;
+    return plain();
   }
-  return new Response(questionHead(await page.text(), question, env.VITE_SITE_ORIGIN), { status: 200, headers: headersFor(env) });
+  return new Response(questionHead(html, question, env.VITE_SITE_ORIGIN), { status: 200, headers: headersFor(env) });
 }
 
 /** /sitemap.xml: the fixed pages plus the newest questions; the built file if the API can't answer. */

@@ -105,7 +105,8 @@ export function App() {
           )}
         </div>
       </header>
-      <ErrorBoundary>
+      {/* Keyed by path: moving to another screen starts fresh after a failure. */}
+      <ErrorBoundary key={path}>
         {/* No spinner: screens are small, and a flash of one is worse than a blank frame. */}
         <Suspense fallback={null}>
           <div className="route" key={path}>{route(path, state)}</div>

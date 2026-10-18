@@ -20,7 +20,11 @@ export interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
   /** Send the access token. Required routes fail early when signed out. */
-  signedIn?: boolean;
+  /**
+   * true: must be signed in. 'if-possible': send the sign-in when there is
+   * one (an author sees their own hidden post), else read as a visitor.
+   */
+  signedIn?: boolean | 'if-possible';
 }
 
 export function createApi(deps: { origin: string; auth: Auth; fetch: typeof fetch }) {
@@ -37,7 +41,9 @@ export function createApi(deps: { origin: string; auth: Auth; fetch: typeof fetc
 
   return async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
     let token: string | null = null;
-    if (options.signedIn) {
+    if (options.signedIn === 'if-possible') {
+      token = deps.auth.hasSession() ? await deps.auth.getAccessToken() : null;
+    } else if (options.signedIn) {
       token = await deps.auth.getAccessToken();
       // No token but the session is still there: the refresh couldn't reach
       // Supabase (offline). Say so, instead of telling the person they're out.
@@ -48,7 +54,7 @@ export function createApi(deps: { origin: string; auth: Auth; fetch: typeof fetc
     try {
       res = await send(path, options, token);
       // The token may have been revoked or expired early: refresh once, retry once.
-      if (res.status === 401 && options.signedIn) {
+      if (res.status === 401 && options.signedIn === true) {
         token = await deps.auth.getAccessToken({ forceRefresh: true });
         if (!token) throw new ApiError(401, 'signed_out', 'You’re signed out. Sign in again to continue.');
         res = await send(path, options, token);

@@ -86,7 +86,9 @@ export function createAuth(deps: AuthDeps) {
   const authHeaders = { apikey: deps.supabaseKey, 'content-type': 'application/json' };
 
   function keep(session: TokenResponse): string {
-    const expiresAt = session.expires_at ?? deps.now() + session.expires_in;
+    // The lifetime, counted on this device's clock: comparing the server's
+    // expiry time with a device clock that is off would refresh constantly.
+    const expiresAt = deps.now() + session.expires_in;
     access = { token: session.access_token, expiresAt };
     storage.setItem(REFRESH_KEY, session.refresh_token);
     return session.access_token;

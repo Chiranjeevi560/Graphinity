@@ -24,6 +24,12 @@ describe('a question’s page head', () => {
     expect(out).toContain('<meta property="og:type" content="article">');
   });
 
+  it('takes titles literally, even ones with $ signs in them', () => {
+    const out = questionHead(html, { ...question, title: "Is it $' or $& in the price?" }, SITE);
+    expect(out).toContain("<title>Is it $&#39; or $&amp; in the price? – Graphinity</title>");
+    expect(out.match(/<title>/g)).toHaveLength(1);
+  });
+
   it('escapes everything it inserts', () => {
     const out = questionHead(html, { ...question, title: '"><script>alert(1)</script>', body: '<img src=x onerror=alert(1)>' }, SITE);
     expect(out).not.toContain('<script>alert');
@@ -54,7 +60,12 @@ describe('the question page function', () => {
   });
 
   it('falls back to the plain page for a bad id, a missing question or an API that is down', async () => {
-    const plain = async (url: string, fetchFn: typeof fetch) => (await (await questionPage(new Request(url), env, fetchFn)).text()) === html;
+    const plain = async (url: string, fetchFn: typeof fetch) => {
+      const res = await questionPage(new Request(url), env, fetchFn);
+      // Even the plain page carries the site's security headers.
+      expect(res.headers.get('content-security-policy')).toContain("script-src 'self'");
+      return (await res.text()) === html;
+    };
     let calls = 0;
     expect(await plain(`${SITE}/q/abc`, api(() => { calls++; return Response.json({}); }))).toBe(true);
     expect(calls).toBe(0);
