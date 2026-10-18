@@ -22,9 +22,14 @@ export default function Welcome() {
   const check = useHandleCheck(handle);
   const heading = useRef<HTMLHeadingElement>(null);
 
+  // Pre-select a guess once, when the list arrives. Not again: choosing
+  // "Choose a country" must not snap back to the guess.
+  const guessed = useRef(false);
   useEffect(() => {
-    if (meta && !country) setCountry(guessCountry(meta.countries.map(c => c.code)) || '');
-  }, [meta, country]);
+    if (!meta || guessed.current) return;
+    guessed.current = true;
+    setCountry(guessCountry(meta.countries.map(c => c.code)));
+  }, [meta]);
 
   // Move focus to each step's heading, so keyboard and screen reader users
   // know the screen changed.
