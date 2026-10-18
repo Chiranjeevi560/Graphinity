@@ -1,9 +1,17 @@
 // What people type, made tidy without changing what they said, and the
 // rules it must meet. The database repeats every rule (db/schema.sql).
 
-/** Control characters other than the line break: invisible, and used to spoof text. */
+/**
+ * Invisible characters that can disguise text: controls other than the line
+ * break (C0, DEL, C1), and the direction overrides and isolates that make
+ * text display in a different order than it's stored ("Trojan Source").
+ * The marks real right-to-left writing needs (U+200E, U+200F, U+061C) stay.
+ */
 function isControl(codePoint: number): boolean {
-  return (codePoint < 0x20 && codePoint !== 0x0a) || codePoint === 0x7f;
+  return (codePoint < 0x20 && codePoint !== 0x0a)
+    || (codePoint >= 0x7f && codePoint <= 0x9f)
+    || (codePoint >= 0x202a && codePoint <= 0x202e)
+    || (codePoint >= 0x2066 && codePoint <= 0x2069);
 }
 
 /** Characters as people count them (code points), like the database's char_length. */

@@ -21,7 +21,7 @@ Base URL: `http://localhost:3000` locally; the Render URL in production.
 | Status | `error` | When |
 |---|---|---|
 | 400 | `invalid_request` | Missing or malformed input, or a database rule refused it |
-| 400 | `invalid_title` / `invalid_details` / `invalid_answer` | Text breaks the rules. Includes `reason`: `too_short`, `too_long`, `invalid_characters` |
+| 400 | `invalid_title` / `invalid_details` / `invalid_answer` | Text breaks the rules. Includes `reason`: `too_short`, `too_long`, `invalid_characters` (controls other than line breaks, and direction overrides and isolates U+202A-202E, U+2066-2069) |
 | 400 | `invalid_handle` | Name breaks the rules. Includes `reason`: `length`, `characters`, `edges`, `dots`, `digits`, `reserved` |
 | 401 | `signed_out` | No token, a bad or expired token, or the account was deleted |
 | 403 | `no_profile` | Asking or answering before setting up a profile |
@@ -258,7 +258,7 @@ moderators.
 
 - `GET /review` → `{ items: [{ kind, id, questionId, text, author, reports, reasons, notes, hidden, lastReportAt }], sharedNetworks: [{ giver, recipient, points }] }`
 - `POST /review/decision` `{ kind, id, decision: "keep" | "remove" }`
-- `POST /review/block` `{ handle, reason? }`, `DELETE /review/block` `{ handle }`
+- `POST /review/block` `{ handle, reason? }`, `DELETE /review/block` `{ handle }` (400 `invalid_reason` for a reason over 500 characters or with hidden characters)
 
 A blocked person can still read and delete their account, but can't ask, answer or report
 (403 `blocked`). `GET /me` also returns `moderator` and `blocked`.

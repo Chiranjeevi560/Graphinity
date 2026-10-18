@@ -20,6 +20,16 @@ describe('tidying what people type', () => {
     expect(textProblem('a bell\u0007 hidden inside', 5, 100)).toBe('invalid_characters');
     expect(textProblem('delete\u007F char', 5, 100)).toBe('invalid_characters');
   });
+
+  it('refuses characters that make text display as something else, but keeps right-to-left marks', () => {
+    // Direction overrides and isolates: what you see isn't the stored order.
+    for (const mark of ['\u202A', '\u202B', '\u202C', '\u202D', '\u202E', '\u2066', '\u2067', '\u2068', '\u2069', '\u0080', '\u0085', '\u009F']) {
+      expect(textProblem(`price ${mark}reversed here`, 5, 100), mark.codePointAt(0)?.toString(16)).toBe('invalid_characters');
+    }
+    expect(textProblem('שלום \u200Fעולם and \u200Emore', 5, 100)).toBeNull();
+    expect(textProblem('مرحبا \u061C بالعالم', 5, 100)).toBeNull();
+    expect(textProblem('café, naïve, ¡hola! ½', 5, 100)).toBeNull();
+  });
 });
 
 describe('matching while typing', () => {

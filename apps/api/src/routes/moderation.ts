@@ -153,6 +153,8 @@ export function registerModerationRoutes(app: FastifyInstance, { db }: { db: Dat
     const body = req.body as { handle: string; reason?: string };
     const handle = normalizeHandle(body.handle);
     if (handleProblem(handle)) return fail(reply, 404, 'not_found', 'There’s no one with that name.');
+    const reason = cleanBody(body.reason ?? '');
+    if (textProblem(reason, 0, 500)) return fail(reply, 400, 'invalid_reason', 'Keep the reason under 500 characters, in plain text.');
     return asModerator(user.id, reply, async q => {
       const person = (await q.query<{ id: string }>('SELECT id FROM app.profiles WHERE handle = $1', [handle])).rows[0];
       if (!person) return fail(reply, 404, 'not_found', 'There’s no one with that name.');
@@ -160,7 +162,7 @@ export function registerModerationRoutes(app: FastifyInstance, { db }: { db: Dat
       const added = await q.query('INSERT INTO app.blocks (profile_id) VALUES ($1) ON CONFLICT (profile_id) DO NOTHING', [person.id]);
       // Who blocked and why: for moderators only, never shown to the blocked person.
       if (added.rowCount) {
-        await q.query('INSERT INTO app.block_details (profile_id, blocked_by, reason) VALUES ($1, $2, $3)', [person.id, user.id, cleanBody(body.reason ?? '')]);
+        await q.query('INSERT INTO app.block_details (profile_id, blocked_by, reason) VALUES ($1, $2, $3)', [person.id, user.id, reason]);
       }
       return { block: { handle, blocked: true } };
     });

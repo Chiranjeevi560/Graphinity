@@ -1418,8 +1418,41 @@ DROP POLICY IF EXISTS network_expire ON app.network_marks;
 CREATE POLICY network_expire ON app.network_marks FOR DELETE TO app_api
   USING (app.is_system() AND day < current_date - 30);
 
+-- ---------------------------------------------------------------------------
+-- No hidden characters that change how text reads: C1 controls, and the
+-- direction overrides and isolates (U+202A-202E, U+2066-2069) that can make
+-- a title show as something other than what it is ("Trojan Source"). The
+-- API refuses them first (src/text.ts); these repeat it. Added as named
+-- constraints so running this file again, or on an older database, adds
+-- them once.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION app.has_hidden_marks(t text) RETURNS boolean
+  LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
+  SET search_path = pg_catalog
+  AS $$ SELECT t ~ '[\u0080-\u009F\u202A-\u202E\u2066-\u2069]' $$;
+REVOKE ALL ON FUNCTION app.has_hidden_marks(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app.has_hidden_marks(text) TO app_api;
+
+DO $$
+DECLARE
+  rule record;
+BEGIN
+  FOR rule IN SELECT * FROM (VALUES
+    ('questions', 'questions_title_plain', 'title'),
+    ('questions', 'questions_body_plain', 'body'),
+    ('answers', 'answers_body_plain', 'body'),
+    ('reports', 'reports_note_plain', 'note'),
+    ('block_details', 'block_details_reason_plain', 'reason')
+  ) AS r (tbl, name, col)
+  LOOP
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = rule.name AND conrelid = format('app.%I', rule.tbl)::regclass) THEN
+      EXECUTE format('ALTER TABLE app.%I ADD CONSTRAINT %I CHECK (NOT app.has_hidden_marks(%I))', rule.tbl, rule.name, rule.col);
+    END IF;
+  END LOOP;
+END $$;
+
 -- Bump on every change to this file.
-INSERT INTO app.schema_meta (id, version) VALUES (true, 9)
+INSERT INTO app.schema_meta (id, version) VALUES (true, 10)
   ON CONFLICT (id) DO UPDATE SET version = EXCLUDED.version, applied_at = now();
 
 COMMIT;

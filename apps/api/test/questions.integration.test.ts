@@ -217,6 +217,22 @@ describe('the database itself', () => {
     await expect(insert('A bell \u0007 hidden in this title')).rejects.toMatchObject({ code: '23514' });
     await expect(insert(question.title, 'A tab\there')).rejects.toMatchObject({ code: '23514' });
     await expect(insert('Too short?')).rejects.toMatchObject({ code: '23514' });
+    // Text that displays reversed, or with a C1 control, even if the API let it through.
+    await expect(insert('Pay \u202Eeman ruoy nI this question')).rejects.toMatchObject({ code: '23514' });
+    await expect(insert('An isolate \u2066inside\u2069 this question')).rejects.toMatchObject({ code: '23514' });
+    await expect(insert(question.title, 'A next-line \u0085 control')).rejects.toMatchObject({ code: '23514' });
+    await expect(insert('Right-to-left \u200F marks stay allowed here')).resolves.toBeDefined();
+  });
+
+  it('refuses hidden direction marks in answers and reports sent straight to it', async () => {
+    const asker = await member(), other = await member();
+    const id = await ask(asker.token);
+    await expect(h.t.database.withUser(other.id, q =>
+      q.query('INSERT INTO app.answers (question_id, answerer_id, body) VALUES ($1, $2, $3)', [id, other.id, `${answerText} \u202E`]),
+    )).rejects.toMatchObject({ code: '23514' });
+    await expect(h.t.database.withUser(other.id, q =>
+      q.query("INSERT INTO app.reports (reporter_id, question_id, reason, note) VALUES ($1, $2, 'spam', $3)", [other.id, id, 'look \u2067here']),
+    )).rejects.toMatchObject({ code: '23514' });
   });
 
   it('cannot change or delete questions or answers (not offered yet)', async () => {

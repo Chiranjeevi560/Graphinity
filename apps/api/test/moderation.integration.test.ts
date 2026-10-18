@@ -150,6 +150,7 @@ describe('blocking', () => {
     const q = await ask(author.token);
     expect((await h.call('POST', '/review/block', troll.token, { handle: author.handle })).statusCode).toBe(403);
     expect((await h.call('POST', '/review/block', mod.token, { handle: mod.handle })).json<Body>().error).toBe('not_yourself');
+    expect((await h.call('POST', '/review/block', mod.token, { handle: troll.handle, reason: 'Spam \u202E' })).json<Body>().error).toBe('invalid_reason');
     expect((await h.call('POST', '/review/block', mod.token, { handle: troll.handle, reason: 'Spam' })).statusCode).toBe(200);
     expect((await h.call('POST', '/questions', troll.token, { title: 'Buy cheap followers here, best price today!', field: 'travel' })).json<Body>().error).toBe('blocked');
     expect((await h.call('POST', `/questions/${q}/answers`, troll.token, { body: 'Buy cheap followers here, best price.' })).json<Body>().error).toBe('blocked');
