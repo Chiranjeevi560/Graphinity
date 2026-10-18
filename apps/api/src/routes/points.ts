@@ -100,7 +100,9 @@ export function registerPointRoutes(app: FastifyInstance, { db }: { db: Database
       });
     } catch (err) {
       // The database's own checks: a change past the limit raced in.
-      if (pgCode(err) === '23514') return fail(reply, 409, 'no_changes_left', 'You’ve already changed your pick twice for this question.');
+      if (pgCode(err) === '23514' && (err as Error).message === 'the pick was already changed twice') {
+        return fail(reply, 409, 'no_changes_left', 'You’ve already changed your pick twice for this question.');
+      }
       throw err;
     }
     switch (outcome.kind) {

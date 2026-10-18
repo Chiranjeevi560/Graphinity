@@ -84,6 +84,15 @@ describe('hiding after three reports', () => {
     expect((await h.call('GET', `/questions/${q}`)).statusCode).toBe(404);
   });
 
+  it('says plainly when the post was deleted while the review was open', async () => {
+    const author = await member(), mod = await moderator();
+    const q = await ask(author.token);
+    await h.call('DELETE', '/me', author.token, { confirm: true });
+    const res = await h.call('POST', '/review/decision', mod.token, { kind: 'question', id: q, decision: 'remove' });
+    expect(res.statusCode).toBe(404);
+    expect(res.json<Body>().error).toBe('not_found');
+  });
+
   it('stays hidden once a moderator removes it, reports or not', async () => {
     const author = await member(), mod = await moderator();
     const q = await ask(author.token);

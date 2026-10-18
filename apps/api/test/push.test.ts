@@ -1,6 +1,7 @@
 import { createECDH } from 'node:crypto';
 import { decodeJwt, decodeProtectedHeader } from 'jose';
 import { describe, expect, it } from 'vitest';
+import { createLimiter } from '../src/push-sender.ts';
 import { encryptPush, isPushService, privateKeyText, vapidHeader } from '../src/push.ts';
 
 const b = (s: string) => Buffer.from(s.replace(/\s+/g, ''), 'base64url');
@@ -58,3 +59,19 @@ describe('which addresses we push to', () => {
     }
   });
 });
+
+describe('sending pushes a few at a time', () => {
+  it('never runs more than the limit at once, and runs them all', async () => {
+    const limit = createLimiter(2);
+    let running = 0, most = 0, done = 0;
+    await Promise.all(Array.from({ length: 10 }, () => limit(async () => {
+      running += 1;
+      most = Math.max(most, running);
+      await new Promise(r => setTimeout(r, 5));
+      running -= 1;
+      done += 1;
+    })));
+    expect([most, done]).toEqual([2, 10]);
+  });
+});
+

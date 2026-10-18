@@ -50,3 +50,20 @@ export function createPushSender(deps: { db: Database; vapid: VapidKeys; fetch: 
     }
   };
 }
+
+/** Runs at most `max` of the given tasks at once; the rest wait their turn. */
+export function createLimiter(max: number) {
+  let running = 0;
+  const waiting: Array<() => void> = [];
+  return async function run<T>(task: () => Promise<T>): Promise<T> {
+    if (running >= max) await new Promise<void>(resolve => { waiting.push(resolve); });
+    running += 1;
+    try {
+      return await task();
+    } finally {
+      running -= 1;
+      waiting.shift()?.();
+    }
+  };
+}
+

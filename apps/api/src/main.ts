@@ -5,7 +5,7 @@ import { createDatabase } from './db.ts';
 import { completePendingDeletions } from './deletions.ts';
 import { createEvents } from './events.ts';
 import { expireNetworkMarks } from './networks.ts';
-import { createPushSender } from './push-sender.ts';
+import { createLimiter, createPushSender } from './push-sender.ts';
 import { routeDueQuestions } from './routing.ts';
 import { systemClock } from './rate-limit.ts';
 import { buildServer } from './server.ts';
@@ -70,8 +70,11 @@ app.addHook('onClose', (_instance, done) => { clearInterval(deletionTimer); done
 // Web push to people's devices, when keys are set (VAPID_*).
 if (config.vapid) {
   const push = createPushSender({ db, vapid: config.vapid, fetch: (...args) => fetch(...args), log: app.log, now: () => Date.now() });
+  // A wave can publish 100 events at once; at most 2 pushes run together,
+  // so requests always find a free database connection (the pool has 5).
+  const limit = createLimiter(2);
   events.onPublish((userId, event) => {
-    push(userId, event).catch((err: unknown) => { app.log.warn({ kind: err instanceof Error ? err.name : 'unknown' }, 'push run failed'); });
+    limit(() => push(userId, event)).catch((err: unknown) => { app.log.warn({ kind: err instanceof Error ? err.name : 'unknown' }, 'push run failed'); });
   });
 }
 
@@ -82,7 +85,7 @@ let routing: Promise<void> | null = null;
 let again = false;
 const runRouting = () => {
   if (routing) { again = true; return; }
-  routing = routeDueQuestions(db)
+  routing = routeDueQuestions(db, app.log)
     .then(results => {
       for (const { questionId, asked } of results) {
         for (const person of asked) events.publish(person, { type: 'routed', questionId });

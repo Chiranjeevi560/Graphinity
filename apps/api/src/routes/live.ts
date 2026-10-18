@@ -32,6 +32,9 @@ export function registerLiveRoutes(app: FastifyInstance, { events, clock }: { ev
     }
     const lifetime = user.expiresAt * 1000 - clock.now() - LIVE_LIMITS.closeBeforeExpiryMs;
     if (lifetime <= 0) return fail(reply, 401, 'signed_out', 'You’re signed out. Sign in again to continue.');
+    // The client may have gone while sign-in was being checked: its "close"
+    // already fired, so nothing set up below would ever be cleaned up.
+    if (req.raw.destroyed || reply.raw.destroyed || req.raw.socket.destroyed) return reply.code(499).send();
 
     open.set(user.id, mine + 1);
     total += 1;

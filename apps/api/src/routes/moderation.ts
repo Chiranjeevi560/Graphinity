@@ -131,10 +131,16 @@ export function registerModerationRoutes(app: FastifyInstance, { db }: { db: Dat
   }, async (req, reply) => {
     const user = signedIn(req);
     const { kind, id, decision } = req.body as { kind: 'question' | 'answer'; id: string; decision: 'keep' | 'remove' };
-    return asModerator(user.id, reply, async q => {
-      await q.query(`INSERT INTO app.decisions (${kind}_id, decision, decided_by) VALUES ($1, $2, $3)`, [id, decision, user.id]);
-      return { decision: { kind, id, decision } };
-    });
+    try {
+      return await asModerator(user.id, reply, async q => {
+        await q.query(`INSERT INTO app.decisions (${kind}_id, decision, decided_by) VALUES ($1, $2, $3)`, [id, decision, user.id]);
+        return { decision: { kind, id, decision } };
+      });
+    } catch (err) {
+      // Deleted while the review page was open (with its author's account).
+      if (pgCode(err) === '23503') return fail(reply, 404, 'not_found', 'This post doesn’t exist any more.');
+      throw err;
+    }
   });
 
   const blockBody = {

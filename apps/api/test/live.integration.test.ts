@@ -109,6 +109,25 @@ describe('live updates', () => {
   });
 });
 
+describe('clients that leave while being let in', () => {
+  it('don’t use up anyone’s places', async () => {
+    const p = await member();
+    // Abandon streams at once, again and again, while sign-in is being checked.
+    for (let i = 0; i < 12; i++) {
+      const controller = new AbortController();
+      const started = fetch(`${base}/events`, { headers: { authorization: `Bearer ${p.token}` }, signal: controller.signal }).catch(() => null);
+      await new Promise(r => setTimeout(r, i % 3));
+      controller.abort();
+      await started;
+    }
+    await new Promise(r => setTimeout(r, 200));
+    // All three of this person's places are still free.
+    const streams = [listen(p.token), listen(p.token), listen(p.token)];
+    expect((await Promise.all(streams.map(s => s.ready))).map(r => r.status)).toEqual([200, 200, 200]);
+    for (const s of streams) s.stop();
+  });
+});
+
 describe('shutting down', () => {
   it('ends open streams itself, so a redeploy isn’t held up', async () => {
     const other = await startApp(() => Date.now());

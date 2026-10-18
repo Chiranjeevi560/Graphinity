@@ -32,6 +32,9 @@ async function candidates(q: Queryable, questionId: string, limit: number, newco
        AND NOT EXISTS (SELECT 1 FROM app.routes r WHERE r.question_id = t.id AND r.profile_id = p.id)
        AND NOT EXISTS (SELECT 1 FROM app.answers a WHERE a.question_id = t.id AND a.answerer_id = p.id)
        AND (NOT $3::boolean OR p.created_at > now() - interval '14 days')
+       -- Already at today's limit: the database would skip them, wasting the place.
+       AND (SELECT count(*) FROM app.routes r
+            WHERE r.profile_id = p.id AND r.routed_at > clock_timestamp() - interval '1 day') < 5
      ORDER BY
        (t.country IS NOT NULL AND p.country = t.country) DESC,
        coalesce((SELECT sum(l.amount) FROM app.points_ledger l WHERE l.recipient_id = p.id AND l.field = t.field), 0) DESC,
@@ -60,8 +63,8 @@ export async function routeWave(q: Queryable, questionId: string, wave: number, 
  * first one), or still unanswered long enough after the last wave.
  * Returns what was routed, for the caller to notify.
  */
-export async function routeDueQuestions(db: Database): Promise<Array<{ questionId: string; asked: string[] }>> {
-  return db.asSystem(async q => {
+export async function routeDueQuestions(db: Database, log?: { warn(obj: object, msg: string): void }): Promise<Array<{ questionId: string; asked: string[] }>> {
+  const due = await db.asSystem(async q => {
     const { rows } = await q.query<{ id: string; wave: number | null; minutes_since: number | null; answered: boolean }>(
       `SELECT q.id::text AS id, max(r.wave) AS wave,
               extract(epoch FROM clock_timestamp() - max(r.routed_at)) / 60 AS minutes_since,
@@ -69,13 +72,24 @@ export async function routeDueQuestions(db: Database): Promise<Array<{ questionI
        FROM app.questions q LEFT JOIN app.routes r ON r.question_id = q.id
        WHERE q.created_at > now() - interval '${ROUTING_WINDOW}'
        GROUP BY q.id`);
-    const routed: Array<{ questionId: string; asked: string[] }> = [];
+    const waves: Array<{ questionId: string; wave: number; size: number }> = [];
     for (const row of rows) {
       const next = row.wave === null ? WAVES[0] : WAVES.find(w => w.wave === (row.wave ?? 0) + 1);
       if (!next) continue;
       if (row.wave !== null && (row.answered || (row.minutes_since ?? 0) < next.afterMinutes)) continue;
-      routed.push({ questionId: row.id, asked: await routeWave(q, row.id, next.wave, next.size) });
+      waves.push({ questionId: row.id, wave: next.wave, size: next.size });
     }
-    return routed;
+    return waves;
   });
+  // Each question in its own transaction: one slow or failing question
+  // doesn't undo everyone else's routing.
+  const routed: Array<{ questionId: string; asked: string[] }> = [];
+  for (const w of due) {
+    try {
+      routed.push({ questionId: w.questionId, asked: await db.asSystem(q => routeWave(q, w.questionId, w.wave, w.size)) });
+    } catch (err) {
+      log?.warn({ kind: err instanceof Error ? err.name : 'unknown' }, 'routing a question failed');
+    }
+  }
+  return routed;
 }

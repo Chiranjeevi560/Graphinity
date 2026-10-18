@@ -105,6 +105,23 @@ describe('the daily budget', () => {
   });
 });
 
+describe('people already at their daily limit', () => {
+  it('don’t take places in a wave: the next people are asked instead', async () => {
+    const asker = await member({ fields: ['jobs-careers'], joinedDaysAgo: 100 });
+    // Ten people who would rank first (they live in the question's country)...
+    const busy = [];
+    for (let i = 0; i < 10; i++) busy.push(await member({ fields: ['jobs-careers'], country: 'AE', joinedDaysAgo: 100 }));
+    // ...have each been asked 5 questions today.
+    const earlier: string[] = [];
+    for (let i = 0; i < 5; i++) earlier.push(await ask(asker.token, 'cars-vehicles'));
+    for (const b of busy) for (const q of earlier) await h.t.owner.query('INSERT INTO app.routes (question_id, profile_id, wave) VALUES ($1, $2, 1)', [q, b.id]);
+    const free = [await member({ fields: ['jobs-careers'], joinedDaysAgo: 100 }), await member({ fields: ['jobs-careers'], joinedDaysAgo: 100 })];
+    const q = await ask(asker.token, 'jobs-careers', 'AE');
+    await routeDueQuestions(h.t.database);
+    expect((await routedTo(q)).map(r => r.profile_id).sort()).toEqual(free.map(f => f.id).sort());
+  });
+});
+
 describe('privacy', () => {
   it('lets only the person asked see a route, and only the routing job create one', async () => {
     const asker = await member({ fields: ['parenting-schools'] });
