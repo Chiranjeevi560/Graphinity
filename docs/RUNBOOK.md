@@ -47,6 +47,9 @@ a test person. To try the production build with its strict security headers, run
 `WEB_ORIGIN=http://localhost:4173`. Restart `preview` after changing headers: it computes them once
 at startup.
 
+Changed the logo (`apps/web/public/icon.svg`)? Run `node scripts/make-images.mjs` to redraw the PNG
+icons and the link-preview image, look at them, and commit them.
+
 ## Tests
 
 - **Unit tests** cover pure logic: rate limiting, config checks, springs, squircles, headers.
@@ -78,8 +81,14 @@ go live before that API does.
    with the version you just applied.
 4. **Measure the proxy hops** before trusting `X-Forwarded-For` (see SECURITY.md). Set
    `TRUST_PROXY_HOPS` to that number.
-5. Deploy the website on Cloudflare Pages with `VITE_API_ORIGIN` set to the Render URL.
+5. Deploy the website on Cloudflare Pages with `VITE_API_ORIGIN` (the Render URL),
+   `VITE_SITE_ORIGIN` (the site's own https address), `VITE_SUPABASE_URL`,
+   `VITE_SUPABASE_PUBLISHABLE_KEY` and `VITE_GOOGLE_CLIENT_ID`. Add
+   `<site>/auth/callback` to the Google client's redirect URIs.
 6. Check the live site at 320, 375 and 430 wide, plus desktop, in light and dark mode. Check the
-   response headers.
+   response headers, `<site>/robots.txt` and `<site>/sitemap.xml`, and paste the address into a
+   chat app to see the link preview.
+7. Add the site to Google Search Console and submit the sitemap (free; steps will be in
+   SETUP-ACCOUNTS.md).
 
 Exact click-by-click account steps will be written when we get there.

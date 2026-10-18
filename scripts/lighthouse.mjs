@@ -11,10 +11,11 @@ import lighthouse from 'lighthouse';
 import * as chromeLauncher from 'chrome-launcher';
 
 // Keep in step with CONSTRAINTS.md.
-const BUDGET = { performance: 95, accessibility: 100, lcpMs: 2500, cls: 0.1, tbtMs: 200 };
+const BUDGET = { performance: 95, accessibility: 100, bestPractices: 100, seo: 100, lcpMs: 2500, cls: 0.1, tbtMs: 200 };
 const PAGES = ['/'];
 
-execFileSync('npm', ['--workspace', 'apps/web', 'run', 'build'], { stdio: 'ignore' });
+// Built for the address it is measured at, so canonical links point home.
+execFileSync('npm', ['--workspace', 'apps/web', 'run', 'build'], { stdio: 'ignore', env: { ...process.env, VITE_SITE_ORIGIN: 'http://localhost:4174' } });
 const preview = spawn('npx', ['vite', 'preview', '--port', '4174', '--strictPort'], { cwd: 'apps/web', stdio: 'ignore' });
 let failed = false;
 try {
@@ -35,6 +36,8 @@ try {
       const misses = [];
       if (score('performance') < BUDGET.performance) misses.push(`performance ${score('performance')} < ${BUDGET.performance}`);
       if (score('accessibility') < BUDGET.accessibility) misses.push(`accessibility ${score('accessibility')} < ${BUDGET.accessibility}`);
+      if (score('best-practices') < BUDGET.bestPractices) misses.push(`best practices ${score('best-practices')} < ${BUDGET.bestPractices}`);
+      if (score('seo') < BUDGET.seo) misses.push(`SEO ${score('seo')} < ${BUDGET.seo}`);
       if (lcp > BUDGET.lcpMs) misses.push(`LCP ${Math.round(lcp)}ms > ${BUDGET.lcpMs}ms`);
       if (cls > BUDGET.cls) misses.push(`CLS ${cls.toFixed(3)} > ${BUDGET.cls}`);
       if (tbt > BUDGET.tbtMs) misses.push(`TBT ${Math.round(tbt)}ms > ${BUDGET.tbtMs}ms`);

@@ -1,6 +1,7 @@
 import react from '@vitejs/plugin-react';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 import { assertNoInlineScripts, pagesHeadersFile, securityHeaders, type HeaderOptions } from './headers.ts';
+import { robotsTxt, sitemapXml } from './seo.ts';
 
 function securityHeadersPlugin(options: HeaderOptions): Plugin {
   return {
@@ -14,11 +15,25 @@ function securityHeadersPlugin(options: HeaderOptions): Plugin {
   };
 }
 
+/** Absolute addresses search engines and link previews need, from the site's own origin. */
+function seoPlugin(siteOrigin: string): Plugin {
+  return {
+    name: 'graphinity-seo',
+    transformIndexHtml: html => html.replaceAll('%SITE_ORIGIN%', siteOrigin),
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: 'robots.txt', source: robotsTxt(siteOrigin) });
+      this.emitFile({ type: 'asset', fileName: 'sitemap.xml', source: sitemapXml(siteOrigin) });
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), 'VITE_');
   // Defaults point at the local API and the local sign-in stand-in
   // (npm run dev:api, npm run dev:auth).
   const apiOrigin = env.VITE_API_ORIGIN || 'http://localhost:3000';
+  // The address the site is served from: canonical links, sitemap, share cards.
+  const siteOrigin = env.VITE_SITE_ORIGIN || 'http://localhost:4173';
   const supabaseUrl = env.VITE_SUPABASE_URL || 'http://localhost:54321';
   const supabaseKey = env.VITE_SUPABASE_PUBLISHABLE_KEY || 'dev_publishable_key';
   // Google's own sign-in page, except against the local stand-in, which
@@ -32,7 +47,7 @@ export default defineConfig(({ mode }) => {
   // Cloudflare Pages sets CF_PAGES during its builds; a deployed site must
   // never talk to plain http, nor fall back to the local stand-ins.
   if (process.env.CF_PAGES) {
-    for (const [name, value] of [['VITE_API_ORIGIN', env.VITE_API_ORIGIN], ['VITE_SUPABASE_URL', env.VITE_SUPABASE_URL]]) {
+    for (const [name, value] of [['VITE_API_ORIGIN', env.VITE_API_ORIGIN], ['VITE_SUPABASE_URL', env.VITE_SUPABASE_URL], ['VITE_SITE_ORIGIN', env.VITE_SITE_ORIGIN]]) {
       if (!value?.startsWith('https://')) throw new Error(`${name} must be an https origin for a Cloudflare Pages build`);
     }
     if (!env.VITE_SUPABASE_PUBLISHABLE_KEY?.startsWith('sb_publishable_')) {
@@ -42,9 +57,10 @@ export default defineConfig(({ mode }) => {
   const headerOptions: HeaderOptions = { connectSrc: [apiOrigin, supabaseUrl] };
 
   return {
-    plugins: [react(), securityHeadersPlugin(headerOptions)],
+    plugins: [react(), securityHeadersPlugin(headerOptions), seoPlugin(siteOrigin)],
     define: {
       'import.meta.env.VITE_API_ORIGIN': JSON.stringify(apiOrigin),
+      'import.meta.env.VITE_SITE_ORIGIN': JSON.stringify(siteOrigin),
       'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(supabaseUrl),
       'import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY': JSON.stringify(supabaseKey),
       'import.meta.env.VITE_GOOGLE_CLIENT_ID': JSON.stringify(googleClientId),

@@ -6,13 +6,40 @@
     <meta name="color-scheme" content="light dark">
     <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
     <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
-    <meta name="description" content="Ask once. Reach people who have actually done it.">
-    <title>Graphinity</title>
+    <title>Graphinity: ask people who’ve actually done it</title>
+    <meta name="description" content="Ask a question once and it reaches people with real experience of it. They answer, and you choose the answer that helped.">
+    <meta name="robots" content="index, follow, max-image-preview:large">
+    <link rel="canonical" href="%SITE_ORIGIN%/">
     <link rel="icon" href="/icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    <meta name="apple-mobile-web-app-title" content="Graphinity">
     <link rel="manifest" href="/manifest.webmanifest">
+
+    <!-- Link previews (iMessage, WhatsApp, Slack, X, LinkedIn). -->
+    <meta property="og:site_name" content="Graphinity">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="%SITE_ORIGIN%/">
+    <meta property="og:title" content="Graphinity: ask people who’ve actually done it">
+    <meta property="og:description" content="Ask a question once and it reaches people with real experience of it. They answer, and you choose the answer that helped.">
+    <meta property="og:image" content="%SITE_ORIGIN%/og.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="Graphinity: ask once, reach people who’ve done it.">
+    <meta property="og:locale" content="en">
+    <meta name="twitter:card" content="summary_large_image">
+
+    <!-- The site's name in Google results. Data, not code: browsers never run it. -->
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"Graphinity","url":"%SITE_ORIGIN%/"}</script>
   </head>
   <body>
     <div id="root"></div>
+    <noscript>
+      <main class="page stack-message">
+        <h1 class="text-title1">Ask once. Reach people who’ve done it.</h1>
+        <p>Your question goes to people with real experience of it. You choose the answer that helped.</p>
+        <p>Graphinity needs JavaScript. Turn it on in your browser’s settings, then reload this page.</p>
+      </main>
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -84,9 +84,15 @@ test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
   await page.goto('/');
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
   await audit(page, 'home (signed out)');
+  // Search engines see each screen's own title and indexing rule.
+  await expect(page).toHaveTitle('Graphinity: ask people who’ve actually done it');
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /^index/);
 
   await page.goto('/this/does/not/exist');
   await audit(page, 'not found');
+  await expect(page).toHaveTitle('Page not found – Graphinity');
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', 'noindex');
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', /\/this\/does\/not\/exist$/);
 
   // A malformed profile link reached inside the app is "not found", not the
   // error screen. (Loaded directly, the local preview server itself answers

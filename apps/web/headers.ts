@@ -69,7 +69,9 @@ export function pagesHeadersFile(options: HeaderOptions): string {
 /** Throws if the built HTML contains a script without a src. */
 export function assertNoInlineScripts(html: string): void {
   const inline = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)].filter(
-    ([, attrs, body]) => !/\bsrc\s*=/.test(attrs ?? '') && (body ?? '').trim() !== '',
+    ([, attrs, body]) => !/\bsrc\s*=/.test(attrs ?? '') && (body ?? '').trim() !== ''
+      // Structured data for search engines is never run, so CSP doesn't apply.
+      && !/^\s*type="application\/ld\+json"\s*$/.test(attrs ?? ''),
   );
   if (inline.length) {
     throw new Error(`index.html has ${inline.length} inline script(s); the Content-Security-Policy would block them.`);

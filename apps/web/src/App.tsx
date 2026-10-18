@@ -1,6 +1,7 @@
 import { Component, lazy, Suspense, useEffect, type ReactNode } from 'react';
 import { Button } from './components/Button.tsx';
 import { Avatar } from './components/Identity.tsx';
+import { applyMeta, pageMeta } from './lib/meta.ts';
 import { Link, navigate, usePath } from './lib/router.ts';
 import { useSession, type SessionState } from './session.tsx';
 
@@ -60,6 +61,7 @@ function safeDecode(part: string): string | null {
 export function App() {
   const path = usePath();
   const { state } = useSession();
+  useEffect(() => { applyMeta(pageMeta(path), path, import.meta.env.VITE_SITE_ORIGIN); }, [path]);
   return (
     <>
       <header className="bar">

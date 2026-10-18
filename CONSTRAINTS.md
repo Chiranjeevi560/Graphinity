@@ -38,8 +38,8 @@ Checked by `node scripts/floor-guard.mjs` on everything changed since `origin/ma
 | Tap targets | ≥ 44 px (inline text links exempt, per WCAG 2.5.8) | Apple's minimum | `npm run test:e2e` | task end, CI |
 | Browser errors | Zero console errors or CSP violations (expected 404s aside) | A CSP violation means something was blocked | `npm run test:e2e` | task end, CI |
 | Engines | Chromium and WebKit locally; plus Firefox in CI | Firefox won't start on macOS 27 (see Known limits) | `npm run test:e2e`, CI | task end, CI |
-| Page speed | Lighthouse mobile: performance ≥ 95, accessibility 100, LCP ≤ 2500 ms, CLS ≤ 0.1, TBT ≤ 200 ms | LCP/CLS are Google's "good" thresholds; 95 holds today's 99 with room for noise | `npm run check:perf` | task end, CI |
-| Bundle size (brotli) | Main script ≤ 61.2 kB, styles ≤ 3.65 kB, all scripts ≤ 71.7 kB | Ratchet: today + 0.5%. Growth must be a decision | `npm run check:size` | task end, CI |
+| Page speed | Lighthouse mobile: performance ≥ 95, accessibility 100, best practices 100, SEO 100, LCP ≤ 2500 ms, CLS ≤ 0.1, TBT ≤ 200 ms | LCP/CLS are Google's "good" thresholds; 95 holds today's 99 with room for noise | `npm run check:perf` | task end, CI |
+| Bundle size (brotli) | Main script ≤ 61.65 kB, styles ≤ 3.65 kB, all scripts ≤ 72.25 kB | Ratchet: today + 0.5%. Growth must be a decision | `npm run check:size` | task end, CI |
 | Secrets | No findings in git history or uncommitted changes (values always redacted) | External judge | `npm run check:secrets` | task end, CI |
 | Dependencies | Nothing known-vulnerable at high or above | External database (OSV) | `npm run check:deps` | task end, CI |
 | Code security | No Semgrep findings at ERROR (p/default, p/owasp-top-ten, p/typescript, p/react) | External rules | CI only (`semgrep`) | CI |
@@ -52,7 +52,6 @@ One command per stage: `npm run check:fast` (seconds), `npm run check:task` (abo
 
 | Metric | Today | Direction |
 |---|---|---|
-| Lighthouse SEO, home | 91 (no robots.txt) | must rise to 100 in step 7 |
 | Lighthouse best practices, missing-profile page | 96 (logged 404) | must not fall |
 
 ## Exceptions

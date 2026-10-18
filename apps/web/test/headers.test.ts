@@ -56,4 +56,10 @@ describe('assertNoInlineScripts', () => {
   it('rejects an inline script, which the policy would silently block in production', () => {
     expect(() => { assertNoInlineScripts('<script>window.x = 1</script>'); }).toThrow(/inline script/);
   });
+
+  it('accepts structured data, which browsers never run, and nothing dressed up as it', () => {
+    expect(() => { assertNoInlineScripts('<script type="application/ld+json">{"@type":"WebSite"}</script>'); }).not.toThrow();
+    expect(() => { assertNoInlineScripts('<script type="application/ld+json" onload="x()">{}</script>'); }).toThrow(/inline script/);
+    expect(() => { assertNoInlineScripts('<script type="text/javascript">x()</script>'); }).toThrow(/inline script/);
+  });
 });

@@ -23,6 +23,7 @@ random dev `SUPABASE_SECRET_KEY` into `.local/api.env`.
 
 | Variable | Required | Example | Notes |
 |---|---|---|---|
+| `VITE_SITE_ORIGIN` | for deploys | `https://graphinity.pages.dev` | The site's own address: canonical links, sitemap, robots.txt, link previews. Cloudflare builds refuse http |
 | `VITE_API_ORIGIN` | for deploys | `https://graphinity-api.onrender.com` | Goes into the CSP `connect-src`. Cloudflare builds refuse http |
 | `VITE_SUPABASE_URL` | for deploys | `https://abcd.supabase.co` | Where sign-in happens; also in `connect-src`. Cloudflare builds refuse http |
 | `VITE_GOOGLE_CLIENT_ID` | with the real Supabase | `1234-abc.apps.googleusercontent.com` | The Google OAuth client. Public by design: it appears in every sign-in address. Builds against a real Supabase refuse to start without it |
