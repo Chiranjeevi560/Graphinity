@@ -4,13 +4,14 @@ import { SignInError, signInMessages } from '../lib/auth.ts';
 import { navigate } from '../lib/router.ts';
 import { auth, useSession } from '../session.tsx';
 
-// The one-time code is read and wiped from the address bar the moment this
-// module first runs for a callback, before any network request, so it never
-// lingers in history, bookmarks or a shared screenshot.
+// Google's ID token arrives in the address fragment (after #), which browsers
+// never send to any server. It is read and wiped from the address bar the
+// moment this module first runs for a callback, before any network request,
+// so it never lingers in history, bookmarks or a shared screenshot.
 let finishing: Promise<{ returnTo: string }> | null = null;
 function finishOnce(): Promise<{ returnTo: string }> {
   if (!finishing) {
-    const params = new URLSearchParams(location.search);
+    const params = new URLSearchParams(location.hash.slice(1));
     history.replaceState(null, '', '/auth/callback');
     finishing = auth.completeSignIn(params).finally(() => {
       // Let a later, separate sign-in start fresh.

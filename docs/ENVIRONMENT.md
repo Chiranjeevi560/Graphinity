@@ -25,6 +25,7 @@ random dev `SUPABASE_SECRET_KEY` into `.local/api.env`.
 |---|---|---|---|
 | `VITE_API_ORIGIN` | for deploys | `https://graphinity-api.onrender.com` | Goes into the CSP `connect-src`. Cloudflare builds refuse http |
 | `VITE_SUPABASE_URL` | for deploys | `https://abcd.supabase.co` | Where sign-in happens; also in `connect-src`. Cloudflare builds refuse http |
+| `VITE_GOOGLE_CLIENT_ID` | with the real Supabase | `1234-abc.apps.googleusercontent.com` | The Google OAuth client. Public by design: it appears in every sign-in address. Builds against a real Supabase refuse to start without it |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | for deploys | `sb_publishable_…` | Public by design: identifies the project, grants nothing (our tables aren't exposed). Cloudflare builds refuse anything else |
 
 Locally these default to the local API and the sign-in stand-in.

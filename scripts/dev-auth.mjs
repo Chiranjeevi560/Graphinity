@@ -1,14 +1,15 @@
 // Local stand-in for Supabase Auth, for development only.
 //
 // It implements just the parts Graphinity uses, with the same paths and
-// request shapes as Supabase (checked against supabase-js's GoTrueClient):
-//   GET  /auth/v1/authorize?provider=google&redirect_to&code_challenge&code_challenge_method=s256
-//   POST /auth/v1/token?grant_type=pkce            { auth_code, code_verifier }
+// request shapes as Google and Supabase (Supabase's checked against its
+// source, internal/api/token_oidc.go):
+//   GET  /o/oauth2/v2/auth?client_id&redirect_uri&response_type=id_token&scope&nonce&state   (plays Google)
+//   POST /auth/v1/token?grant_type=id_token        { provider: 'google', id_token, nonce }
 //   POST /auth/v1/token?grant_type=refresh_token   { refresh_token }
 //   POST /auth/v1/logout                            (Bearer access token)
 //   GET  /auth/v1/.well-known/jwks.json
 //   DELETE /auth/v1/admin/users/:id                 (apikey: the dev secret key)
-// Instead of Google, /authorize shows a page for picking a test person.
+// Instead of Google's account chooser, it shows a page for picking a test person.
 //
 // It signs real ES256 tokens with a key made at startup, so the API's
 // verifier runs exactly as in production. It listens on 127.0.0.1 only, and
@@ -19,13 +20,17 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { exportJWK, generateKeyPair, SignJWT } from 'jose';
+import { exportJWK, generateKeyPair, jwtVerify, SignJWT } from 'jose';
 
 const PORT = 54321;
 const ORIGIN = `http://localhost:${PORT}`;
 const ISSUER = `${ORIGIN}/auth/v1`;
-// Like Supabase's redirect allow-list: only our local website may receive codes.
+// Like the redirect URIs registered at Google: only our local website's
+// callback may receive tokens.
 const ALLOWED_REDIRECT_ORIGINS = ['http://localhost:5173', 'http://localhost:4173'];
+// The website's default client ID while developing (apps/web/vite.config.ts).
+const GOOGLE_CLIENT_ID = 'dev-client.apps.googleusercontent.com';
+const GOOGLE_ISSUER = `${ORIGIN}/google`;
 
 const env = Object.fromEntries(
   readFileSync(new URL('../.local/api.env', import.meta.url), 'utf8')
@@ -47,11 +52,17 @@ const people = [
   { id: '33333333-3333-4333-8333-333333333333', label: 'Test person C' },
 ];
 const deleted = new Set();
-const codes = new Map(); // code -> { sub, challenge, expires }
 const refreshTokens = new Map(); // token -> sub
 
 const b64url = buf => Buffer.from(buf).toString('base64url');
-const sha256 = s => createHash('sha256').update(s).digest();
+const sha256Hex = s => createHash('sha256').update(s).digest('hex');
+
+function allowedCallback(raw) {
+  try {
+    const u = new URL(raw);
+    return ALLOWED_REDIRECT_ORIGINS.includes(u.origin) && u.pathname === '/auth/callback' && !u.search && !u.hash;
+  } catch { return false; }
+}
 
 async function session(sub) {
   const now = Math.floor(Date.now() / 1000);
@@ -99,7 +110,7 @@ async function readBody(req) {
 const escapeHtml = s => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 function pickerPage(params) {
-  const hidden = ['redirect_to', 'code_challenge'].map(k => `<input type="hidden" name="${k}" value="${escapeHtml(params.get(k) ?? '')}">`).join('');
+  const hidden = ['redirect_uri', 'nonce', 'state'].map(k => `<input type="hidden" name="${k}" value="${escapeHtml(params.get(k) ?? '')}">`).join('');
   const buttons = [...people, { id: 'new', label: 'A brand-new person' }]
     .map(p => `<button name="sub" value="${p.id}">${p.label}${deleted.has(p.id) ? ' (deleted, will start fresh)' : ''}</button>`).join('');
   return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -107,7 +118,7 @@ function pickerPage(params) {
 <style>body{font:17px system-ui;max-width:28rem;margin:3rem auto;padding:0 1rem}button{display:block;width:100%;min-height:44px;margin:.5rem 0;font:inherit;border-radius:12px;border:1px solid #ccc;background:#f2f2f7}p{color:#666}</style>
 <h1>Local test sign-in</h1>
 <p>This page stands in for Google while developing. Nothing here leaves your computer.</p>
-<form method="post" action="/auth/v1/dev-login">${hidden}${buttons}</form>`;
+<form method="post" action="/o/oauth2/dev-login">${hidden}${buttons}</form>`;
 }
 
 const server = createServer(async (req, res) => {
@@ -117,37 +128,48 @@ const server = createServer(async (req, res) => {
   try {
     if (req.method === 'GET' && url.pathname === '/auth/v1/.well-known/jwks.json') return send(res, 200, jwks);
 
-    if (req.method === 'GET' && url.pathname === '/auth/v1/authorize') {
-      const redirectTo = url.searchParams.get('redirect_to') ?? '';
-      if (url.searchParams.get('provider') !== 'google') return send(res, 400, { error: 'unsupported provider' });
-      if (!ALLOWED_REDIRECT_ORIGINS.includes(new URL(redirectTo).origin)) return send(res, 400, { error: 'redirect_to not allowed' });
-      if (url.searchParams.get('code_challenge_method') !== 's256' || !url.searchParams.get('code_challenge')) {
-        return send(res, 400, { error: 'PKCE with s256 is required' });
-      }
-      return send(res, 200, pickerPage(url.searchParams));
+    if (req.method === 'GET' && url.pathname === '/o/oauth2/v2/auth') {
+      const q = url.searchParams;
+      // Google refuses these with an error page of its own; so does this.
+      if (q.get('client_id') !== GOOGLE_CLIENT_ID) return send(res, 400, { error: 'invalid_client' });
+      if (!allowedCallback(q.get('redirect_uri') ?? '')) return send(res, 400, { error: 'redirect_uri_mismatch' });
+      if (q.get('response_type') !== 'id_token') return send(res, 400, { error: 'unsupported_response_type' });
+      if (!(q.get('scope') ?? '').split(' ').includes('openid')) return send(res, 400, { error: 'invalid_scope' });
+      if (!q.get('nonce') || !q.get('state')) return send(res, 400, { error: 'nonce and state are required' });
+      return send(res, 200, pickerPage(q));
     }
 
-    if (req.method === 'POST' && url.pathname === '/auth/v1/dev-login') {
+    if (req.method === 'POST' && url.pathname === '/o/oauth2/dev-login') {
       const body = await readBody(req);
-      const target = new URL(body.redirect_to);
-      if (!ALLOWED_REDIRECT_ORIGINS.includes(target.origin)) return send(res, 400, { error: 'redirect_to not allowed' });
-      let sub = body.sub === 'new' ? randomUUID() : body.sub;
+      if (!allowedCallback(body.redirect_uri)) return send(res, 400, { error: 'redirect_uri_mismatch' });
+      const sub = body.sub === 'new' ? randomUUID() : body.sub;
       if (deleted.has(sub)) deleted.delete(sub);
-      const code = randomUUID();
-      codes.set(code, { sub, challenge: body.code_challenge, expires: Date.now() + 5 * 60_000 });
-      target.searchParams.set('code', code);
-      return send(res, 302, '', { location: target.toString() });
+      const now = Math.floor(Date.now() / 1000);
+      const idToken = await new SignJWT({ nonce: body.nonce, email: `${sub.slice(0, 8)}@example.test`, email_verified: true })
+        .setProtectedHeader({ alg: 'ES256', kid: KID, typ: 'JWT' })
+        .setIssuer(GOOGLE_ISSUER).setAudience(GOOGLE_CLIENT_ID).setSubject(sub)
+        .setIssuedAt(now).setExpirationTime(now + 3600)
+        .sign(privateKey);
+      const fragment = new URLSearchParams({ id_token: idToken, state: body.state });
+      return send(res, 302, '', { location: `${body.redirect_uri}#${fragment}` });
     }
 
     if (req.method === 'POST' && url.pathname === '/auth/v1/token') {
       const body = await readBody(req);
       const grant = url.searchParams.get('grant_type');
-      if (grant === 'pkce') {
-        const entry = codes.get(body.auth_code);
-        codes.delete(body.auth_code); // single use, even when the verifier is wrong
-        if (!entry || entry.expires < Date.now()) return send(res, 400, { error: 'invalid_grant', error_description: 'code expired or used' });
-        if (b64url(sha256(body.code_verifier ?? '')) !== entry.challenge) return send(res, 400, { error: 'invalid_grant', error_description: 'code verifier mismatch' });
-        return send(res, 200, await session(entry.sub));
+      if (grant === 'id_token') {
+        if (body.provider !== 'google') return send(res, 400, { error: 'invalid_request', error_description: 'unsupported provider' });
+        let claims;
+        try {
+          ({ payload: claims } = await jwtVerify(body.id_token ?? '', publicKey, { issuer: GOOGLE_ISSUER, audience: GOOGLE_CLIENT_ID }));
+        } catch {
+          return send(res, 400, { error: 'invalid_request', error_description: 'Bad ID token' });
+        }
+        // As Supabase does: the token carries the nonce's hash, the request the nonce.
+        if (typeof body.nonce !== 'string' || typeof claims.nonce !== 'string' || sha256Hex(body.nonce) !== claims.nonce) {
+          return send(res, 400, { error: 'invalid_nonce', error_description: 'Nonces mismatch' });
+        }
+        return send(res, 200, await session(claims.sub));
       }
       if (grant === 'refresh_token') {
         const sub = refreshTokens.get(body.refresh_token);

@@ -69,7 +69,8 @@ code we would run.
 - `apps/api`: Node 24 + Fastify 5 on Render (Singapore). `buildServer(deps)` takes every outside
   dependency as an argument; no test-mode switches in production code.
 - `db/schema.sql`: Supabase Postgres (Singapore). One file, safe to run twice, additive only.
-- Sign-in: Supabase Auth with Google, PKCE, called directly (no supabase-js). Access token in
+- Sign-in: Google ID token (nonce + state, returns to our site), exchanged at Supabase Auth, called
+  directly (no supabase-js, no Google script). Scope `openid email` only. Access token in
   memory, refresh token in sessionStorage, never localStorage. The API verifies every token.
 - Supabase project `cfwzkjpqpmttqbbnnzch`: Data API off, email sign-in off, Google on.
 - GitHub: `Chiranjeevi560/Graphinity` (private), pushed over SSH.

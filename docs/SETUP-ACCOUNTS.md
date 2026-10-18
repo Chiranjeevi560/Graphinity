@@ -66,11 +66,11 @@ paste into a file yourself and never share.
    - **Audience:** **External**
    - **Contact email:** your email
    - Agree to the policy, then **Create**.
-4. Open **Data Access** → **Add or remove scopes**. Tick **openid**, **…/auth/userinfo.email** and
-   **…/auth/userinfo.profile** (only these three; never the Cloud or BigQuery rows) → **Update**,
-   then click **Save** on the page itself. These are two separate clicks, and forgetting the
-   second one is easy: reload the page and check the three scopes are still listed under "non-sensitive
-   scopes". These are basic scopes; Google doesn't require a review for them.
+4. Open **Data Access** → **Add or remove scopes**. Tick **openid** and **…/auth/userinfo.email**
+   (only these two; never the profile, Cloud or BigQuery rows) → **Update**, then click **Save** on
+   the page itself. These are two separate clicks, and forgetting the second one is easy: reload the
+   page and check both scopes are still listed under "non-sensitive scopes". These are basic scopes;
+   Google doesn't require a review for them.
 5. Open **Clients** → **Create client**:
    - **Application type:** **Web application**
    - **Name:** `Graphinity web`
@@ -125,8 +125,7 @@ system Python: that Python has no root certificates on this Mac.
   a made-up key gives 401.
 - Then sign in on your own screen at http://localhost:5173 after starting the API and
   `npm --workspace apps/web run dev -- --mode supabase`. While Google is in Testing, "Google hasn't
-  verified this app" is expected: choose Continue and check it only asks for your name, email and
-  profile picture.
+  verified this app" is expected: choose Continue and check it only asks for your email address.
 - Finally delete the test account from your profile page, and confirm Supabase lists 0 users.
 
 First real run (2026-10-18): sign-in, profile creation and account deletion all worked; Supabase
@@ -140,3 +139,44 @@ So the automatic checks (CI) run on every change:
    README, licence or .gitignore (the project has them). Click **Create repository**.
 2. Send me the repository's address (like `https://github.com/yourname/graphinity`). I'll connect
    the project; you'll run the one `git push` command yourself so your GitHub login stays yours.
+
+## Part F: Make Google's screen name Graphinity's site, not Supabase
+
+Google's sign-in screen names the address it returns to. It used to return to Supabase, so it said
+"Sign in to cfwzkjpqpmttqbbnnzch.supabase.co". The website now asks Google to come straight back to
+Graphinity, so the screen names our own site, and it asks only for your email address (no name, no
+photo). Supabase's own fix, a custom domain, is a paid add-on, so we don't use it.
+
+1. Open **console.cloud.google.com**, check the project picker at the top says **graphinity**.
+2. Search **Google Auth Platform** → open it → **Clients** → click **Graphinity web**.
+3. Under **Authorized JavaScript origins**, make sure both are there (click **Add URI** for any
+   missing one): `http://localhost:5173` and `http://localhost:4173`.
+4. Under **Authorized redirect URIs**, click **Add URI** and add exactly:
+   `http://localhost:5173/auth/callback`
+   Leave the Supabase address that's already there for now; we remove it once the new sign-in has
+   worked for you.
+5. Click **Save** at the bottom. Google says changes can take a few minutes to apply.
+6. Still in Google Auth Platform, open **Data Access**. If **…/auth/userinfo.profile** is listed,
+   click the bin icon next to it, then **Save**. Keep **openid** and **…/auth/userinfo.email**.
+7. While you're on **Clients → Graphinity web**, copy the **Client ID** (it ends in
+   `.apps.googleusercontent.com`; it's public by design, the secret is separate and stays in
+   Supabase). In Terminal, in the project folder:
+
+   ```bash
+   open -e apps/web/.env.supabase
+   ```
+
+   Add this line at the end, with your Client ID, then save and close:
+
+   ```
+   VITE_GOOGLE_CLIENT_ID=paste-it-here.apps.googleusercontent.com
+   ```
+
+8. In Supabase: **Authentication → Sign In / Providers → Google**. Check the **Client ID** field
+   holds the same Client ID. If there's a switch called **Skip nonce checks**, leave it **off**: the
+   nonce is what makes a stolen sign-in useless. Click **Save** only if you changed something.
+9. Tell me when that's done, and I'll start everything for you to sign in on your own screen. On
+   your computer the screen will name `localhost`; once the site is online it will name the site's
+   address. Showing the name "Graphinity" with a logo needs Google's brand verification, which we
+   do at launch with the final address.
+

@@ -47,7 +47,7 @@ Render or Supabase.** Limits checked on the services' own pages on 2026-10-17 ar
 - **Database**: Supabase Postgres (Singapore). One idempotent schema file. Tables live in schema
   `app`, which Supabase's public data API does not expose. The server connects as a login role that
   is a member of `app_api`: no table ownership, row-level security forced on every table.
-- **Sign-in**: Supabase Auth with Google (PKCE), called directly without Supabase's client library.
+- **Sign-in**: Google (ID token, OIDC nonce, returning to our own site so Google's screen names it), exchanged at Supabase Auth; no Google or Supabase script library.
   Access token in memory, refresh token in sessionStorage, never localStorage. The server verifies
   every token itself; all data goes through the server.
 - **Keep-awake**: a Cloudflare Worker cron hits `/health` every 10 minutes. `/health` touches the

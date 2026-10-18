@@ -20,6 +20,8 @@ function tabStorage(): Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> {
 export const auth: Auth = createAuth({
   supabaseUrl: import.meta.env.VITE_SUPABASE_URL,
   supabaseKey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+  googleClientId: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+  googleAuthorizeUrl: import.meta.env.VITE_GOOGLE_AUTHORIZE_URL,
   siteOrigin: location.origin,
   storage: tabStorage(),
   fetch: (...args) => fetch(...args),

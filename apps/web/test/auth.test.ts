@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createAuth, safePath, SignInError, type AuthDeps } from '../src/lib/auth.ts';
-import { challengeFor, randomToken } from '../src/lib/pkce.ts';
+import { randomToken, sha256Hex } from '../src/lib/random.ts';
 import { must } from './must.ts';
 
 // localStorage must never be used for anything sign-in related. Any access fails the test.
@@ -33,6 +33,8 @@ function harness(responses: Array<() => Response> = []) {
   const deps: AuthDeps = {
     supabaseUrl: 'https://proj.supabase.co',
     supabaseKey: 'sb_publishable_test',
+    googleClientId: 'client-1.apps.googleusercontent.com',
+    googleAuthorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
     siteOrigin: 'https://graphinity.pages.dev',
     storage,
     fetch: ((url: string, init: RequestInit) => {
@@ -50,8 +52,8 @@ const json = (body: object, status = 200) => () => new Response(JSON.stringify(b
 const session = (n: number, expiresIn = 3600) => ({ access_token: `access-${n}`, refresh_token: `refresh-${n}`, expires_in: expiresIn });
 
 /** The sign-in waiting in session storage between leaving and coming back. */
-function pendingSignIn(h: ReturnType<typeof harness>): { verifier: string; state: string } {
-  return JSON.parse(must(h.storage.map.get('graphinity:signin'), 'a pending sign-in')) as { verifier: string; state: string };
+function pendingSignIn(h: ReturnType<typeof harness>): { nonce: string; state: string } {
+  return JSON.parse(must(h.storage.map.get('graphinity:signin'), 'a pending sign-in')) as { nonce: string; state: string };
 }
 
 function bodyOf(call: { init: RequestInit }): unknown {
@@ -59,18 +61,18 @@ function bodyOf(call: { init: RequestInit }): unknown {
   return JSON.parse(call.init.body);
 }
 
-/** Starts sign-in and returns the parameters Supabase would send back. */
+/** Starts sign-in and returns what Google would put in the callback's fragment. */
 async function startAndReturn(h: ReturnType<typeof harness>, returnTo = '/') {
   await h.auth.startSignIn(returnTo);
   const authorize = new URL(h.redirectedTo);
-  const callback = new URL(must(authorize.searchParams.get('redirect_to'), 'redirect_to'));
-  callback.searchParams.set('code', 'one-time-code');
-  return { authorize, params: callback.searchParams };
+  const params = new URLSearchParams({ id_token: 'google-id-token', state: must(authorize.searchParams.get('state'), 'state') });
+  return { authorize, params };
 }
 
-describe('PKCE', () => {
-  it('matches the worked example in RFC 7636 appendix B', async () => {
-    expect(await challengeFor('dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk')).toBe('E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM');
+describe('nonce and random values', () => {
+  it('hashes the nonce as lowercase SHA-256 hex, the form Supabase compares', async () => {
+    // FIPS 180-2 test vector for "abc".
+    expect(await sha256Hex('abc')).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
   });
 
   it('makes long, URL-safe, different values every time', () => {
@@ -84,18 +86,22 @@ describe('starting sign-in', () => {
   let h: ReturnType<typeof harness>;
   beforeEach(() => { h = harness(); });
 
-  it('goes to Supabase with Google, an s256 challenge and our state in the return address', async () => {
+  it('goes to Google, which returns to this site, asking only for openid and email', async () => {
     const { authorize } = await startAndReturn(h);
-    expect(authorize.origin + authorize.pathname).toBe('https://proj.supabase.co/auth/v1/authorize');
-    expect(authorize.searchParams.get('provider')).toBe('google');
-    expect(authorize.searchParams.get('code_challenge_method')).toBe('s256');
+    const q = authorize.searchParams;
+    expect(authorize.origin + authorize.pathname).toBe('https://accounts.google.com/o/oauth2/v2/auth');
+    expect(q.get('client_id')).toBe('client-1.apps.googleusercontent.com');
+    // Our own address, so Google's screen names this site, not Supabase.
+    expect(q.get('redirect_uri')).toBe('https://graphinity.pages.dev/auth/callback');
+    expect(q.get('response_type')).toBe('id_token');
+    // No "profile": Google doesn't share the person's name or photo.
+    expect(q.get('scope')).toBe('openid email');
+    expect(q.get('prompt')).toBe('select_account');
     const pending = pendingSignIn(h);
-    expect(authorize.searchParams.get('code_challenge')).toBe(await challengeFor(pending.verifier));
-    const back = new URL(must(authorize.searchParams.get('redirect_to'), 'redirect_to'));
-    expect(back.origin + back.pathname).toBe('https://graphinity.pages.dev/auth/callback');
-    expect(back.searchParams.get('state')).toBe(pending.state);
-    // The verifier itself never leaves the browser.
-    expect(h.redirectedTo).not.toContain(pending.verifier);
+    expect(q.get('state')).toBe(pending.state);
+    expect(q.get('nonce')).toBe(await sha256Hex(pending.nonce));
+    // The nonce itself never leaves the browser; only its hash does.
+    expect(h.redirectedTo).not.toContain(pending.nonce);
   });
 
   it('will only ever return to a path on this site', () => {
@@ -108,14 +114,14 @@ describe('starting sign-in', () => {
 });
 
 describe('finishing sign-in', () => {
-  it('exchanges the code with the verifier, keeps the access token in memory only', async () => {
+  it('exchanges Google’s token with the raw nonce, keeps the access token in memory only', async () => {
     const h = harness([json(session(1))]);
     const { params } = await startAndReturn(h, '/me');
     const pending = pendingSignIn(h);
     expect(await h.auth.completeSignIn(params)).toEqual({ returnTo: '/me' });
     const call = must(h.calls[0], 'the token call');
-    expect(call.url).toBe('https://proj.supabase.co/auth/v1/token?grant_type=pkce');
-    expect(bodyOf(call)).toEqual({ auth_code: 'one-time-code', code_verifier: pending.verifier });
+    expect(call.url).toBe('https://proj.supabase.co/auth/v1/token?grant_type=id_token');
+    expect(bodyOf(call)).toEqual({ provider: 'google', id_token: 'google-id-token', nonce: pending.nonce });
     expect((call.init.headers as Record<string, string>).apikey).toBe('sb_publishable_test');
     expect(await h.auth.getAccessToken()).toBe('access-1');
     // Session storage holds only the refresh token; the pending sign-in is gone.
@@ -133,7 +139,7 @@ describe('finishing sign-in', () => {
 
   it('refuses a return with no sign-in started in this tab (someone else\'s link)', async () => {
     const h = harness();
-    await expect(h.auth.completeSignIn(new URLSearchParams('code=x&state=y'))).rejects.toMatchObject({ reason: 'mismatch' });
+    await expect(h.auth.completeSignIn(new URLSearchParams('id_token=x&state=y'))).rejects.toMatchObject({ reason: 'mismatch' });
   });
 
   it('can be used only once', async () => {

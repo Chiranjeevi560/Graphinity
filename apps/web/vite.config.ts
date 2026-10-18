@@ -21,6 +21,14 @@ export default defineConfig(({ mode }) => {
   const apiOrigin = env.VITE_API_ORIGIN || 'http://localhost:3000';
   const supabaseUrl = env.VITE_SUPABASE_URL || 'http://localhost:54321';
   const supabaseKey = env.VITE_SUPABASE_PUBLISHABLE_KEY || 'dev_publishable_key';
+  // Google's own sign-in page, except against the local stand-in, which
+  // plays Google too (and accepts only this made-up client ID).
+  const standIn = supabaseUrl.startsWith('http://localhost:');
+  const googleAuthorizeUrl = standIn ? `${supabaseUrl}/o/oauth2/v2/auth` : 'https://accounts.google.com/o/oauth2/v2/auth';
+  const googleClientId = env.VITE_GOOGLE_CLIENT_ID || (standIn ? 'dev-client.apps.googleusercontent.com' : '');
+  if (!standIn && !googleClientId.endsWith('.apps.googleusercontent.com')) {
+    throw new Error('VITE_GOOGLE_CLIENT_ID must be the Google OAuth client ID (...apps.googleusercontent.com)');
+  }
   // Cloudflare Pages sets CF_PAGES during its builds; a deployed site must
   // never talk to plain http, nor fall back to the local stand-ins.
   if (process.env.CF_PAGES) {
@@ -39,6 +47,8 @@ export default defineConfig(({ mode }) => {
       'import.meta.env.VITE_API_ORIGIN': JSON.stringify(apiOrigin),
       'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(supabaseUrl),
       'import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY': JSON.stringify(supabaseKey),
+      'import.meta.env.VITE_GOOGLE_CLIENT_ID': JSON.stringify(googleClientId),
+      'import.meta.env.VITE_GOOGLE_AUTHORIZE_URL': JSON.stringify(googleAuthorizeUrl),
     },
     build: {
       target: 'es2022',

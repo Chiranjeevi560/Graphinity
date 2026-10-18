@@ -1,20 +1,33 @@
-// Signing in with Google through Supabase Auth, without Supabase's client
-// library: the few calls we need are small, and every dependency is
-// something to audit and download.
+// Signing in with Google, then handing Google's proof to Supabase Auth,
+// without either company's script library: the few calls we need are small,
+// and every dependency is something to audit and download.
+//
+// Google returns to this site, not to Supabase, so Google's screen names
+// this site ("Sign in to graphinity.pages.dev"), not the Supabase project.
+// We ask only for "openid email": no name, no photo. Supabase needs the
+// email to keep the account; Graphinity itself never reads or shows it.
+//
+// Google sends back a signed ID token. It can't be used without the random
+// nonce this tab made before leaving: Google only ever sees the nonce's
+// hash, and Supabase checks the token against the raw nonce we send.
 //
 // Where things are kept:
 // - The access token (proves who you are to our API) lives only in memory.
 // - The refresh token (gets a new access token) lives in sessionStorage, so a
 //   reload keeps you signed in but closing the tab signs you out. Never in
 //   localStorage, which outlives the tab and is shared by every tab.
-// - The PKCE verifier and our own state value live in sessionStorage only
-//   between leaving for Google and coming back, and are deleted on return.
-import { challengeFor, randomToken } from './pkce.ts';
+// - The nonce and our own state value live in sessionStorage only between
+//   leaving for Google and coming back, and are deleted on return.
+import { randomToken, sha256Hex } from './random.ts';
 
 export interface AuthDeps {
   supabaseUrl: string;
   /** Supabase publishable key. Public by design; identifies the project. */
   supabaseKey: string;
+  /** The OAuth client ID from Google Cloud. Public by design. */
+  googleClientId: string;
+  /** Google's sign-in page (the local stand-in's while developing). */
+  googleAuthorizeUrl: string;
   siteOrigin: string;
   storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
   fetch: typeof fetch;
@@ -50,7 +63,7 @@ const PENDING_MAX_AGE = 10 * 60; // seconds
 const EARLY_REFRESH = 60;
 
 interface Pending {
-  verifier: string;
+  nonce: string;
   state: string;
   returnTo: string;
   startedAt: number;
@@ -86,7 +99,7 @@ export function createAuth(deps: AuthDeps) {
     if (had) notify();
   }
 
-  async function postToken(grant: 'pkce' | 'refresh_token', body: object): Promise<Response> {
+  async function postToken(grant: 'id_token' | 'refresh_token', body: object): Promise<Response> {
     return deps.fetch(`${deps.supabaseUrl}/auth/v1/token?grant_type=${grant}`, {
       method: 'POST', headers: authHeaders, body: JSON.stringify(body),
     });
@@ -95,33 +108,37 @@ export function createAuth(deps: AuthDeps) {
   return {
     /** Leaves for Google. `returnTo` is a path on this site to come back to. */
     async startSignIn(returnTo = '/') {
-      const verifier = randomToken();
+      const nonce = randomToken();
       const state = randomToken(16);
-      const pending: Pending = { verifier, state, returnTo: safePath(returnTo), startedAt: deps.now() };
+      const pending: Pending = { nonce, state, returnTo: safePath(returnTo), startedAt: deps.now() };
       storage.setItem(PENDING_KEY, JSON.stringify(pending));
-      const callback = new URL('/auth/callback', deps.siteOrigin);
-      callback.searchParams.set('state', state);
-      const url = new URL('/auth/v1/authorize', deps.supabaseUrl);
-      url.searchParams.set('provider', 'google');
-      url.searchParams.set('redirect_to', callback.toString());
-      url.searchParams.set('code_challenge', await challengeFor(verifier));
-      url.searchParams.set('code_challenge_method', 's256');
+      const url = new URL(deps.googleAuthorizeUrl);
+      url.searchParams.set('client_id', deps.googleClientId);
+      url.searchParams.set('redirect_uri', new URL('/auth/callback', deps.siteOrigin).toString());
+      // An ID token in the address fragment, which never reaches any server.
+      url.searchParams.set('response_type', 'id_token');
+      url.searchParams.set('scope', 'openid email');
+      url.searchParams.set('nonce', await sha256Hex(nonce));
+      url.searchParams.set('state', state);
+      // Always offer the account chooser, so a shared computer can't sign
+      // the next person in as whoever used it last.
+      url.searchParams.set('prompt', 'select_account');
       deps.redirect(url.toString());
     },
 
     /**
-     * Finishes sign-in from the callback address. The caller must already
-     * have removed the code from the address bar; this only reads the
-     * values it was given.
+     * Finishes sign-in from what Google put in the callback address's
+     * fragment. The caller must already have removed it from the address
+     * bar; this only reads the values it was given.
      */
     async completeSignIn(params: URLSearchParams): Promise<{ returnTo: string }> {
       const raw = storage.getItem(PENDING_KEY);
       // Single use: gone whether this succeeds or not.
       storage.removeItem(PENDING_KEY);
       if (params.get('error')) throw new SignInError('cancelled');
-      const code = params.get('code');
+      const idToken = params.get('id_token');
       const state = params.get('state');
-      if (!raw || !code || !state) throw new SignInError('mismatch');
+      if (!raw || !idToken || !state) throw new SignInError('mismatch');
       let pending: Pending;
       try { pending = JSON.parse(raw) as Pending; } catch { throw new SignInError('mismatch'); }
       // Our own state must match what this tab stored before leaving. That
@@ -131,7 +148,7 @@ export function createAuth(deps: AuthDeps) {
 
       let res: Response;
       try {
-        res = await postToken('pkce', { auth_code: code, code_verifier: pending.verifier });
+        res = await postToken('id_token', { provider: 'google', id_token: idToken, nonce: pending.nonce });
       } catch {
         throw new SignInError('offline');
       }

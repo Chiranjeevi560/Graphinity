@@ -47,8 +47,9 @@ These must stay true. If one stops being true, revisit everything that depends o
 | Data in logs | Route pattern, status, time only; no addresses, headers, query, bodies, error messages, hostnames | `server.test.ts` |
 | Weak configuration | Server refuses to start without https origin, proxy count, 32-byte key | `config.test.ts` |
 | Forged or stolen tokens | Server verifies every token against Supabase's public keys: ES256/RS256 only (no `none`, no HS256 with the public key), issuer, audience, role, not anonymous, user id shape, max 1 h lifetime | `auth.test.ts` |
-| Login CSRF (someone feeds you their sign-in) | Our own random `state` in the return address, checked against this tab before exchanging the code; PKCE verifier never leaves the browser | `apps/web/test/auth.test.ts`; fails when the check is removed |
-| Code left in the address bar | Read and wiped with `history.replaceState` before any request | Browser check: address is `/auth/callback` with no query by the time setup shows |
+| Login CSRF (someone feeds you their sign-in) | Our own random `state`, returned by Google and checked against this tab before anything is exchanged | `apps/web/test/auth.test.ts`; 11 tests fail when the state is fixed |
+| Stolen or replayed Google ID token | OIDC nonce: Google only sees the SHA-256 of a random value kept in this tab; Supabase accepts the token only with the raw value (checked in its source, `token_oidc.go`). A token copied from the address bar or a log is useless without it | Unit tests fail when the nonce is sent hashed; the local stand-in checks the nonce the same way, and the browser audit signs in through it |
+| ID token left in the address bar | It arrives after `#`, which browsers never send to a server, and is wiped with `history.replaceState` before any request | Browser check: address is `/auth/callback` with nothing after it by the time setup shows |
 | Token theft from storage | Access token in memory only; refresh token in sessionStorage; localStorage never used | Web test with a localStorage that throws on access; fails 7 tests when broken |
 | One person editing another | RLS: insert/update/delete only where `id = app.current_user_id()` | `profile.integration.test.ts`; fails with `USING (true)` |
 | Deleted account's live token | Keyed hash of the id remembered for 2 h, refreshed when Supabase confirms the deletion, and checked on every signed-in request | Integration test; fails when the check is removed |
@@ -69,7 +70,7 @@ Each line answers: *if a hostile researcher spent a day on this, what would they
 | T4 | Forge their address to dodge limits | Measured hop count; HMAC key | In place; hop count must be measured at deploy |
 | T5 | Inject script into pages (XSS) | React escapes text; strict CSP; plain-text posts | CSP in place; posts arrive in step 3 |
 | T6 | Steal a sign-in token | Access token in memory, refresh token in sessionStorage; CSP with no inline or third-party scripts | In place |
-| T7 | Forge the OAuth return (login CSRF) | PKCE (s256) + our own state checked in the tab that started it. There's no OIDC nonce on our side: Supabase, not our site, receives Google's ID token | In place |
+| T7 | Forge the OAuth return (login CSRF), or replay a Google ID token | Our own state checked in the tab that started it, plus an OIDC nonce whose raw value never leaves the tab | In place |
 | T8 | Farm points with a second account | Pair cap, trust counted once per asker, shared-network flags | Step 4 |
 | T9 | Flood people with notifications | Daily per-person budget, waves | Step 5 |
 | T10 | Post abuse, spam or private info | Reports, auto-hide after 3, owner review, new-account limits | Step 6 |
@@ -96,9 +97,19 @@ Each line answers: *if a hostile researcher spent a day on this, what would they
   rules out localStorage). Opening a link in a new tab means signing in again.
 - Checked on 2026-10-18 against the real Supabase project and Google: sign-in, profile creation
   and account deletion work end to end (Supabase listed one Google-only user, then none after
-  deletion; our database kept no rows; the server log held no emails or ids). Not checked: Supabase's
-  redirect allow-list rejecting a foreign `redirect_to` (it is applied when Google returns, which
-  needs a real sign-in to exercise), and the keyboard covering fields on a real phone.
+  deletion; our database kept no rows; the server log held no emails or ids). That was the earlier
+  flow through Supabase's own Google page. The current flow (Google returns to our site with an ID
+  token; see below) is tested against the local stand-in only, until the owner adds the redirect
+  address in Google Cloud. Not checked: the keyboard covering fields on a real phone.
+- Sign-in uses Google's ID-token flow in the address fragment, without Google's script library.
+  Google's docs call this flow harder to get right and suggest their library; we don't load it
+  because the brief rules out third-party scripts, and the parts that make it safe (state, nonce,
+  wiping the fragment, strict CSP) are each tested. Browser extensions with access to the page can
+  read the token for a moment, but can't use it without the nonce.
+- Google's screen names the site the sign-in returns to. Until Google verifies the brand (needs a
+  domain we own, verified in Google Search Console), it shows the address, e.g. "Sign in to
+  graphinity.pages.dev", not the name "Graphinity". Whether a `pages.dev` address can be verified is
+  unconfirmed; a free domain may be needed at launch.
 - Email sign-in is switched off in the Supabase dashboard, which is a setting, not code. The server
   does not yet refuse tokens whose provider isn't Google (`app_metadata.provider`); adding that is a
   recommended second lock, not yet done.

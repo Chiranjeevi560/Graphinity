@@ -105,12 +105,12 @@ test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
   // then fire the event a cache restore fires.
   await page.goto('/');
   // A 204 answer cancels the navigation, so the page (and the button) stays.
-  await page.route('**/auth/v1/authorize**', route => route.fulfill({ status: 204 }));
+  await page.route('**/o/oauth2/v2/auth**', route => route.fulfill({ status: 204 }));
   await page.getByRole('button', { name: 'Continue with Google' }).click();
   await expect(page.getByRole('button', { name: 'Opening Google…' })).toBeDisabled();
   await page.evaluate(() => { window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })); });
   await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeEnabled();
-  await page.unroute('**/auth/v1/authorize**');
+  await page.unroute('**/o/oauth2/v2/auth**');
 
   // If the browser can't start sign-in (here: hashing refused), the button
   // comes back instead of staying stuck on "Opening Google…".
@@ -129,10 +129,17 @@ test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
   expect(reloaded).toBe(false);
   await page.goto('/');
 
-  // Sign in through the local stand-in.
+  // Sign in through the local stand-in. Google's ID token travels after "#",
+  // so no server may ever see it in an address, and the address bar must be
+  // clean by the time setup shows.
+  const addresses: string[] = [];
+  page.on('request', req => { addresses.push(req.url()); });
   await page.getByRole('button', { name: 'Continue with Google' }).click();
   await page.getByRole('button', { name: 'A brand-new person' }).click();
   await expect(page).toHaveURL(/\/welcome$/);
+  expect(page.url()).not.toContain('id_token');
+  expect(addresses.filter(a => /[?&#]id_token=/.test(a))).toEqual([]);
+  expect(addresses.some(a => a.includes('/auth/v1/token?grant_type=id_token'))).toBe(true);
   await audit(page, 'welcome 1: name (empty)');
 
   const handle = `audit.${browserName}.${Date.now() % 1_000_000}`;
