@@ -28,7 +28,7 @@ Checked by `node scripts/floor-guard.mjs` on everything changed since `origin/ma
 | Dimension | Rule | Why this number | Checked by | Runs at |
 |---|---|---|---|---|
 | Types | Zero errors, TypeScript strict | Types are free correctness | `npm run typecheck` | every edit |
-| Lint | Zero new findings (type-aware rules, React hooks, jsx-a11y strict) | Existing findings recorded in `eslint-suppressions.json`, see E1 | `npm run lint` | every edit |
+| Lint | Zero findings (type-aware rules, React hooks, jsx-a11y strict) | No suppression file and no disable comments (the floor guard blocks new ones) | `npm run lint` | every edit |
 | Floor | Clean | See above | `node scripts/floor-guard.mjs` | every edit |
 | Unit and integration tests | All pass; integration tests run on real Postgres as the restricted role | Tests that skip on missing setup prove nothing | `npm test` | task end, CI |
 | Coverage, server | Lines ≥ 86.89%, branches ≥ 85.33% (today) | Ratchet: hold today's line | `npm run test:coverage` | task end, CI |
@@ -52,7 +52,6 @@ One command per stage: `npm run check:fast` (seconds), `npm run check:task` (abo
 
 | Metric | Today | Direction |
 |---|---|---|
-| Lint findings recorded in `eslint-suppressions.json` | 159 | must fall to 0 (E1) |
 | Lighthouse SEO, home | 91 (no robots.txt) | must rise to 100 in step 7 |
 | Lighthouse best practices, missing-profile page | 96 (logged 404) | must not fall |
 
@@ -60,7 +59,8 @@ One command per stage: `npm run check:fast` (seconds), `npm run check:task` (abo
 
 | ID | Rule | Path | Reason | Owner | Expires |
 |---|---|---|---|---|---|
-| E1 | Lint findings that existed before lint was introduced | `eslint-suppressions.json` | Lint was added in the Phase 0 audit; the findings are listed in the audit report and fixed in its fix stage. New findings fail now | Chiranjeevi560 | 2026-10-25 |
+
+None open.
 
 ## Known limits of the checks
 

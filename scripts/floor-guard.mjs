@@ -86,6 +86,11 @@ for (const { file: f, text } of removed) {
   flag('assertion-removed', f, text);
 }
 
+// ESLint silently honours a suppressions file: bringing one back hides findings.
+for (const f of (git(['diff', '--name-only', '--diff-filter=A', mergeBase, '--']) ?? '').split('\n')) {
+  if (/(^|\/)eslint-suppressions\.json$/.test(f)) flag('silenced-checker', f, '(lint suppressions file added)');
+}
+
 // A deleted test file is a test made easier.
 for (const f of (git(['diff', '--name-only', '--diff-filter=D', mergeBase, '--']) ?? '').split('\n').filter(Boolean)) {
   if (/\.(test|spec)\.ts$/.test(f)) flag('test-deleted', f, '(file deleted)');
