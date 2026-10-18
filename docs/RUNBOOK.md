@@ -73,27 +73,34 @@ When adding a rule that matters, break it on purpose, confirm a test fails, and 
 - Every new table needs `ENABLE` and `FORCE ROW LEVEL SECURITY`, explicit grants to `app_api`,
   and policies. The integration test fails if RLS is missing.
 
-## Deploy (step 7, not done yet)
+## Deploy
 
 Order matters: **database, then server, then website.** A website that needs a new API must not
-go live before that API does.
+go live before that API does. The owner's click-by-click steps are in SETUP-ACCOUNTS.md (Parts G–I);
+this is the order and what to check.
 
-1. Apply `db/schema.sql` in the Supabase SQL editor.
-2. Create the API login role once per environment, with a password you generate and store only
-   in Render's environment settings:
-   `CREATE ROLE graphinity_api LOGIN PASSWORD '…' IN ROLE app_api;`
-3. Deploy the server on Render. Check that `GET /health` returns `{"status":"ok","schemaVersion":N}`
-   with the version you just applied.
-4. **Measure the proxy hops** before trusting `X-Forwarded-For` (see SECURITY.md). Set
-   `TRUST_PROXY_HOPS` to that number.
-5. Deploy the website on Cloudflare Pages with `VITE_API_ORIGIN` (the Render URL),
-   `VITE_SITE_ORIGIN` (the site's own https address), `VITE_SUPABASE_URL`,
-   `VITE_SUPABASE_PUBLISHABLE_KEY` and `VITE_GOOGLE_CLIENT_ID`. Add
-   `<site>/auth/callback` to the Google client's redirect URIs.
-6. Check the live site at 320, 375 and 430 wide, plus desktop, in light and dark mode. Check the
-   response headers, `<site>/robots.txt` and `<site>/sitemap.xml`, and paste the address into a
-   chat app to see the link preview.
-7. Add the site to Google Search Console and submit the sitemap (free; steps will be in
-   SETUP-ACCOUNTS.md).
-
-Exact click-by-click account steps will be written when we get there.
+1. **Database.** Apply `db/schema.sql` in the Supabase SQL editor (safe to run again). Check the
+   result says the new version (`SELECT version FROM app.schema_meta`).
+2. **API login role**, once per environment, with a password generated on your computer and stored
+   only in Render: `CREATE ROLE graphinity_api LOGIN PASSWORD '…' IN ROLE app_api;`
+3. **Server on Render** from `render.yaml` (free plan, Singapore; deploys only after CI passes).
+   It asks once for each secret: `DATABASE_URL` (the restricted role, Supabase's session pooler),
+   `IP_HASH_KEY` (`openssl rand -hex 32`), `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `WEB_ORIGIN`,
+   and the push keys (`node scripts/vapid-keys.mjs <file>` on your computer, then copy both). Set
+   `TRUST_PROXY_HOPS=0` for the first start. The server refuses to start with anything missing or
+   unsafe, and refuses an owner or superuser database login.
+4. Check `GET /health` returns `{"status":"ok","schemaVersion":N}` with the version from step 1.
+5. **Measure the proxy hops** (SECURITY.md) and set `TRUST_PROXY_HOPS` to that number. Until then
+   every visitor shares one rate-limit allowance.
+6. **Website on Cloudflare Pages**, built with `npm ci && npm --workspace apps/web run build`,
+   output `apps/web/dist`, and `VITE_SITE_ORIGIN`, `VITE_API_ORIGIN`, `VITE_SUPABASE_URL`,
+   `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_GOOGLE_CLIENT_ID` (the build refuses http or missing
+   values). Add `<site>/auth/callback` to the Google client's redirect URIs and `<site>` to its
+   JavaScript origins.
+7. **Keep-awake**: a Cloudflare Worker from `workers/keep-awake.js` with a Cron Trigger every 10
+   minutes and `API_HEALTH_URL` set.
+8. **Check live**: sign in with Google (the screen should name the site), ask, answer from a second
+   account, pick, turn on notifications on a phone and receive one, report and review, delete a
+   test account. At 320, 375 and 430 wide plus desktop, light and dark. Response headers,
+   `<site>/robots.txt`, `<site>/sitemap.xml`, and the link preview in a chat app.
+9. **Google Search Console**: add the site and submit the sitemap.

@@ -15,6 +15,8 @@ const PublicProfile = lazy(() => import('./routes/PublicProfile.tsx'));
 const Ask = lazy(() => import('./routes/Ask.tsx'));
 const Question = lazy(() => import('./routes/Question.tsx'));
 const ReviewPage = lazy(() => import('./routes/Review.tsx'));
+const Privacy = lazy(() => import('./routes/Privacy.tsx'));
+const Terms = lazy(() => import('./routes/Terms.tsx'));
 const Goodbye = lazy(() => import('./routes/Goodbye.tsx'));
 const NotFound = lazy(() => import('./routes/NotFound.tsx'));
 // Live updates only matter once signed in: loaded then, not by every reader.
@@ -31,6 +33,8 @@ function Redirect({ to }: { to: string }) {
 function route(path: string, state: SessionState): ReactNode {
   if (path === '/auth/callback') return <AuthCallback />;
   if (path === '/goodbye') return <Goodbye />;
+  if (path === '/privacy') return <Privacy />;
+  if (path === '/terms') return <Terms />;
   const profileMatch = /^\/u\/([^/]+)$/.exec(path);
   if (profileMatch?.[1]) {
     // A malformed link (e.g. /u/%E0) can't be decoded: treat it as not found

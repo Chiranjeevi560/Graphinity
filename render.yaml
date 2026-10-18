@@ -1,0 +1,37 @@
+# Render Blueprint for the API (free plan, Singapore, next to the database).
+# Secrets are never in this file: Render asks for each `sync: false` value
+# once, when the Blueprint is first created (docs/SETUP-ACCOUNTS.md).
+services:
+  - type: web
+    name: graphinity-api
+    runtime: node
+    plan: free
+    region: singapore
+    # Production dependencies only; .npmrc turns off install scripts.
+    buildCommand: npm ci --omit=dev
+    # Node 24 runs the TypeScript source directly (type stripping).
+    startCommand: node apps/api/src/main.ts
+    healthCheckPath: /health
+    # Deploy only when CI has passed for the commit.
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: NODE_ENV
+        value: production
+      - key: WEB_ORIGIN
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: IP_HASH_KEY
+        sync: false
+      - key: TRUST_PROXY_HOPS
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false

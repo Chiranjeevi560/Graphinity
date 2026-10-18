@@ -5,7 +5,7 @@
 const PRIVATE_PATHS = ['/auth/', '/welcome', '/me', '/goodbye', '/ask', '/review'];
 
 /** Pages to list for search engines. Questions join this list in step 3. */
-const PUBLIC_PATHS = ['/'];
+const PUBLIC_PATHS = ['/', '/privacy', '/terms'];
 
 export function robotsTxt(origin: string): string {
   return [

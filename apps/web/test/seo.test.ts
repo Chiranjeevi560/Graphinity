@@ -15,6 +15,8 @@ describe('robots.txt and sitemap', () => {
   it('lists the home page with an absolute address, as valid XML', () => {
     const xml = sitemapXml(ORIGIN);
     expect(xml).toContain(`<loc>${ORIGIN}/</loc>`);
+    expect(xml).toContain(`<loc>${ORIGIN}/privacy</loc>`);
+    expect(xml).toContain(`<loc>${ORIGIN}/terms</loc>`);
     expect(xml.startsWith('<?xml version="1.0" encoding="UTF-8"?>')).toBe(true);
   });
 });

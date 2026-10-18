@@ -140,6 +140,13 @@ test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
   await expect(page).toHaveTitle('Graphinity: ask people who’ve actually done it');
   await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /^index/);
 
+  await page.goto('/privacy');
+  await expect(page.getByRole('heading', { name: 'Privacy', level: 1 })).toBeVisible();
+  await audit(page, 'privacy');
+  await page.goto('/terms');
+  await expect(page.getByRole('heading', { name: 'Terms', level: 1 })).toBeVisible();
+  await audit(page, 'terms');
+
   await page.goto('/this/does/not/exist');
   await audit(page, 'not found');
   await expect(page).toHaveTitle('Page not found – Graphinity');

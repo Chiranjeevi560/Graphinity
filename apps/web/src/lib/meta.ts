@@ -13,6 +13,8 @@ const HOME_TITLE = 'Graphinity: ask people who’ve actually done it';
 
 export function pageMeta(path: string): PageMeta {
   if (path === '/') return { title: HOME_TITLE, index: true };
+  if (path === '/privacy') return { title: `Privacy – ${SITE}`, index: true };
+  if (path === '/terms') return { title: `Terms – ${SITE}`, index: true };
   const profile = /^\/u\/([^/]+)$/.exec(path)?.[1];
   // Profiles stay out of search until the owner decides they should be found.
   if (profile) return { title: `@${safeDecode(profile)} – ${SITE}`, index: false };
