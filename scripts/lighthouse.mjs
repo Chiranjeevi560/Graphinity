@@ -17,12 +17,23 @@ const PAGES = ['/'];
 // Built for the address it is measured at, so canonical links point home.
 execFileSync('npm', ['--workspace', 'apps/web', 'run', 'build'], { stdio: 'ignore', env: { ...process.env, VITE_SITE_ORIGIN: 'http://localhost:4174' } });
 const preview = spawn('npx', ['vite', 'preview', '--port', '4174', '--strictPort'], { cwd: 'apps/web', stdio: 'ignore' });
-let failed = false;
-try {
-  for (let i = 0; i < 50; i++) {
-    try { if ((await fetch('http://localhost:4174/')).ok) break; } catch { /* not up yet */ }
+// The real API too (it needs the local database, or CI's): the home page
+// loads recent questions, and a page measured without its API logs errors
+// no visitor would see.
+const api = spawn('node', ['--env-file=.local/api.env', 'apps/api/src/main.ts'], {
+  stdio: 'ignore', env: { ...process.env, PORT: '3000', WEB_ORIGIN: 'http://localhost:4174' },
+});
+const waitFor = async url => {
+  for (let i = 0; i < 100; i++) {
+    try { if ((await fetch(url)).ok) return; } catch { /* not up yet */ }
     await sleep(200);
   }
+  throw new Error(`${url} did not start`);
+};
+let failed = false;
+try {
+  await waitFor('http://localhost:4174/');
+  await waitFor('http://localhost:3000/health');
   const chrome = await chromeLauncher.launch({ chromePath: chromium.executablePath(), chromeFlags: ['--headless=new'] });
   try {
     for (const page of PAGES) {
@@ -42,12 +53,23 @@ try {
       if (cls > BUDGET.cls) misses.push(`CLS ${cls.toFixed(3)} > ${BUDGET.cls}`);
       if (tbt > BUDGET.tbtMs) misses.push(`TBT ${Math.round(tbt)}ms > ${BUDGET.tbtMs}ms`);
       console.log(`${page}  performance ${score('performance')}  accessibility ${score('accessibility')}  best-practices ${score('best-practices')}  seo ${score('seo')}  LCP ${Math.round(lcp)}ms  CLS ${cls.toFixed(3)}  TBT ${Math.round(tbt)}ms`);
-      if (misses.length) { failed = true; console.error(`  over budget: ${misses.join('; ')}`); }
+      if (misses.length) {
+        failed = true;
+        console.error(`  over budget: ${misses.join('; ')}`);
+        // Name the checks that cost points, so the fix doesn't start with a guess.
+        for (const key of ['best-practices', 'seo', 'accessibility']) {
+          for (const ref of lhr.categories[key].auditRefs) {
+            const audit = lhr.audits[ref.id];
+            if (ref.weight > 0 && audit.score !== null && audit.score < 1) console.error(`  ${key}: ${ref.id} (${audit.title})`);
+          }
+        }
+      }
     }
   } finally {
     await chrome.kill();
   }
 } finally {
   preview.kill();
+  api.kill();
 }
 process.exit(failed ? 1 : 0);
