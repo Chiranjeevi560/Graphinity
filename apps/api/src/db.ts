@@ -60,13 +60,18 @@ export function createDatabase(connectionString: string, options: DatabaseOption
     // which crashes the whole process. Catch it here; the failing query
     // already reports the problem to the request.
     let broken: Error | undefined;
-    const onError = (err: Error) => { broken = err; };
+    const onError = (err: Error) => {
+      broken = err;
+    };
     client.on('error', onError);
     try {
       await client.query('BEGIN');
       // Third argument true = local to this transaction, so the identity
       // can never leak to the next request that reuses this connection.
-      await client.query("SELECT set_config('app.user_id', $1, true), set_config('app.system', $2, true)", [userId, system]);
+      await client.query("SELECT set_config('app.user_id', $1, true), set_config('app.system', $2, true)", [
+        userId,
+        system,
+      ]);
       const result = await fn(client);
       await client.query('COMMIT');
       return result;
@@ -99,12 +104,17 @@ export function createDatabase(connectionString: string, options: DatabaseOption
       const { rows } = await pool.query<{ rolsuper: boolean; rolbypassrls: boolean; owned: number }>(
         `SELECT r.rolsuper, r.rolbypassrls,
                 (SELECT count(*)::int FROM pg_tables t WHERE t.schemaname = 'app' AND t.tableowner = current_user) AS owned
-         FROM pg_roles r WHERE r.rolname = current_user`);
+         FROM pg_roles r WHERE r.rolname = current_user`,
+      );
       const role = rows[0];
       if (!role) throw new Error('could not read the database role');
       if (role.rolsuper) throw new Error('DATABASE_URL logs in as a superuser; use the restricted API role');
-      if (role.rolbypassrls) throw new Error('DATABASE_URL logs in as a role that can bypass row-level security; use the restricted API role');
-      if (role.owned > 0) throw new Error('DATABASE_URL logs in as the role that owns the tables; use the restricted API role');
+      if (role.rolbypassrls)
+        throw new Error(
+          'DATABASE_URL logs in as a role that can bypass row-level security; use the restricted API role',
+        );
+      if (role.owned > 0)
+        throw new Error('DATABASE_URL logs in as the role that owns the tables; use the restricted API role');
     },
 
     close: () => pool.end(),

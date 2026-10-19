@@ -12,7 +12,14 @@ export interface SiteSettings {
   googleAuthorizeUrl: string;
 }
 
-export const SETTING_KEYS = ['apiOrigin', 'siteOrigin', 'supabaseUrl', 'supabasePublishableKey', 'googleClientId', 'googleAuthorizeUrl'] as const satisfies ReadonlyArray<keyof SiteSettings>;
+export const SETTING_KEYS = [
+  'apiOrigin',
+  'siteOrigin',
+  'supabaseUrl',
+  'supabasePublishableKey',
+  'googleClientId',
+  'googleAuthorizeUrl',
+] as const satisfies ReadonlyArray<keyof SiteSettings>;
 
 const GOOGLE_AUTHORIZE = 'https://accounts.google.com/o/oauth2/v2/auth';
 
@@ -20,7 +27,11 @@ const GOOGLE_AUTHORIZE = 'https://accounts.google.com/o/oauth2/v2/auth';
 export function parseSettings(raw: string | null | undefined): SiteSettings | null {
   if (!raw) return null;
   let value: unknown;
-  try { value = JSON.parse(raw); } catch { return null; }
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return null;
+  }
   if (typeof value !== 'object' || value === null) return null;
   const v = value as Record<string, unknown>;
   const out: Partial<SiteSettings> = {};
@@ -39,10 +50,13 @@ export function settingsProblems(s: SiteSettings, deployed: boolean): string[] {
     if (!isOrigin(s[k])) problems.push(`${k} must be an origin like https://example.com (no path)`);
     else if (deployed && !s[k].startsWith('https://')) problems.push(`${k} must use https when deployed`);
   }
-  if (deployed && !s.supabasePublishableKey.startsWith('sb_publishable_')) problems.push('supabasePublishableKey must be the project\'s publishable key (sb_publishable_...)');
-  if (!s.googleClientId.endsWith('.apps.googleusercontent.com')) problems.push('googleClientId must be a Google OAuth client ID (...apps.googleusercontent.com)');
+  if (deployed && !s.supabasePublishableKey.startsWith('sb_publishable_'))
+    problems.push("supabasePublishableKey must be the project's publishable key (sb_publishable_...)");
+  if (!s.googleClientId.endsWith('.apps.googleusercontent.com'))
+    problems.push('googleClientId must be a Google OAuth client ID (...apps.googleusercontent.com)');
   // Deployed, sign-in goes to Google itself; only the local stand-in plays Google.
-  if (deployed && s.googleAuthorizeUrl !== GOOGLE_AUTHORIZE) problems.push(`googleAuthorizeUrl must be ${GOOGLE_AUTHORIZE} when deployed`);
+  if (deployed && s.googleAuthorizeUrl !== GOOGLE_AUTHORIZE)
+    problems.push(`googleAuthorizeUrl must be ${GOOGLE_AUTHORIZE} when deployed`);
   return problems;
 }
 

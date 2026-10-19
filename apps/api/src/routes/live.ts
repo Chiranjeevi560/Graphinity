@@ -21,7 +21,10 @@ export function registerLiveRoutes(app: FastifyInstance, { events, clock }: { ev
   // Shutting down ends every stream first: closing waits for open requests,
   // and a stream never finishes by itself ('onClose' would wait forever).
   const streams = new Set<() => void>();
-  app.addHook('preClose', done => { for (const end of streams) end(); done(); });
+  app.addHook('preClose', done => {
+    for (const end of streams) end();
+    done();
+  });
 
   app.get('/events', { config: { auth: 'required' } }, (req, reply) => {
     const user = signedIn(req);
@@ -40,7 +43,9 @@ export function registerLiveRoutes(app: FastifyInstance, { events, clock }: { ev
     total += 1;
     // The CORS plugin already set its headers on the reply; keep them on the raw stream.
     reply.hijack();
-    const set = Object.entries(reply.getHeaders()).filter((h): h is [string, string | number | string[]] => h[1] !== undefined);
+    const set = Object.entries(reply.getHeaders()).filter(
+      (h): h is [string, string | number | string[]] => h[1] !== undefined,
+    );
     reply.raw.writeHead(200, {
       ...Object.fromEntries(set),
       'content-type': 'text/event-stream; charset=utf-8',
@@ -54,11 +59,17 @@ export function registerLiveRoutes(app: FastifyInstance, { events, clock }: { ev
       reply.raw.write(`event: ${event.type}\ndata: ${JSON.stringify({ questionId: event.questionId })}\n\n`);
     };
     const stop = events.subscribe(user.id, send);
-    const ping = setInterval(() => { reply.raw.write(': ping\n\n'); }, LIVE_LIMITS.pingMs);
-    const expire = setTimeout(() => { reply.raw.end(); }, lifetime);
+    const ping = setInterval(() => {
+      reply.raw.write(': ping\n\n');
+    }, LIVE_LIMITS.pingMs);
+    const expire = setTimeout(() => {
+      reply.raw.end();
+    }, lifetime);
     let closed = false;
     const startedAt = clock.now();
-    const end = () => { reply.raw.end(); };
+    const end = () => {
+      reply.raw.end();
+    };
     streams.add(end);
     const cleanUp = () => {
       if (closed) return;
@@ -68,7 +79,8 @@ export function registerLiveRoutes(app: FastifyInstance, { events, clock }: { ev
       clearInterval(ping);
       clearTimeout(expire);
       const left = (open.get(user.id) ?? 1) - 1;
-      if (left > 0) open.set(user.id, left); else open.delete(user.id);
+      if (left > 0) open.set(user.id, left);
+      else open.delete(user.id);
       total -= 1;
       // Hijacked replies skip the usual request log; same fields, logged at the end.
       req.log.info({ method: 'GET', route: '/events', status: 200, ms: clock.now() - startedAt }, 'request');

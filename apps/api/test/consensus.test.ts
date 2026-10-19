@@ -18,7 +18,11 @@ describe('reading amounts the way people write them', () => {
   });
 
   it('picks the amount that was paid, not the price of the item', () => {
-    expect(reportedAmount('Imported a watch valued at ₹2,95,000 through Chennai. Paid ₹94,800 total including the courier fee.')).toEqual(inr(94_800));
+    expect(
+      reportedAmount(
+        'Imported a watch valued at ₹2,95,000 through Chennai. Paid ₹94,800 total including the courier fee.',
+      ),
+    ).toEqual(inr(94_800));
     expect(reportedAmount('The duty came to ₹95,000 on a ₹3,00,000 watch.')).toEqual(inr(95_000));
   });
 
@@ -31,7 +35,12 @@ describe('reading amounts the way people write them', () => {
 describe('agreement among answers (the spec’s own example)', () => {
   // 7 near ₹95,000, 2 near ₹80,000, 1 at ₹1,40,000, everyone equally trusted.
   const claims: Claim[] = [
-    ...[92_000, 93_500, 94_000, 95_000, 95_500, 96_000, 98_000].map((r, i) => ({ answerId: `maj${String(i)}`, amount: inr(r), reputation: 0.5, trust: 0.5 })),
+    ...[92_000, 93_500, 94_000, 95_000, 95_500, 96_000, 98_000].map((r, i) => ({
+      answerId: `maj${String(i)}`,
+      amount: inr(r),
+      reputation: 0.5,
+      trust: 0.5,
+    })),
     { answerId: 'mid0', amount: inr(80_000), reputation: 0.5, trust: 0.5 },
     { answerId: 'mid1', amount: inr(81_000), reputation: 0.9, trust: 0.9 },
     { answerId: 'out', amount: inr(140_000), reputation: 0.5, trust: 0.5 },

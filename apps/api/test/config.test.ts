@@ -23,20 +23,36 @@ describe('loadConfig', () => {
   });
 
   it('takes Cloudflare Workers AI settings both or neither, and checks their shape without echoing them', () => {
-    const account = 'a'.repeat(32), token = 'cf_token_0123456789abcdef';
+    const account = 'a'.repeat(32),
+      token = 'cf_token_0123456789abcdef';
     expect(loadConfig(prod).workersAi).toBeNull();
-    expect(loadConfig({ ...prod, CF_ACCOUNT_ID: account, CF_AI_TOKEN: token }).workersAi).toEqual({ accountId: account, token });
+    expect(loadConfig({ ...prod, CF_ACCOUNT_ID: account, CF_AI_TOKEN: token }).workersAi).toEqual({
+      accountId: account,
+      token,
+    });
     expect(() => loadConfig({ ...prod, CF_ACCOUNT_ID: account })).toThrow(/CF_AI_TOKEN/);
     expect(() => loadConfig({ ...prod, CF_AI_TOKEN: token })).toThrow(/CF_ACCOUNT_ID/);
-    try { loadConfig({ ...prod, CF_ACCOUNT_ID: 'not-an-id', CF_AI_TOKEN: token }); } catch (err) {
+    try {
+      loadConfig({ ...prod, CF_ACCOUNT_ID: 'not-an-id', CF_AI_TOKEN: token });
+    } catch (err) {
       expect(err).toBeInstanceOf(ConfigError);
       expect((err as Error).message).not.toContain(token);
     }
   });
 
   it('has safe development defaults: no proxies trusted, local origin', () => {
-    const c = loadConfig({ DATABASE_URL: prod.DATABASE_URL, IP_HASH_KEY: key, SUPABASE_SECRET_KEY: prod.SUPABASE_SECRET_KEY });
-    expect(c).toMatchObject({ production: false, host: '127.0.0.1', trustProxyHops: 0, webOrigin: 'http://localhost:5173', supabaseUrl: 'http://localhost:54321' });
+    const c = loadConfig({
+      DATABASE_URL: prod.DATABASE_URL,
+      IP_HASH_KEY: key,
+      SUPABASE_SECRET_KEY: prod.SUPABASE_SECRET_KEY,
+    });
+    expect(c).toMatchObject({
+      production: false,
+      host: '127.0.0.1',
+      trustProxyHops: 0,
+      webOrigin: 'http://localhost:5173',
+      supabaseUrl: 'http://localhost:54321',
+    });
   });
 
   it('knows which environment it is: a deployed server must say staging or production', () => {
@@ -75,18 +91,33 @@ describe('loadConfig', () => {
   });
 
   it('refuses an http Supabase URL in production and a missing secret key', () => {
-    expect(() => loadConfig({ ...prod, SUPABASE_URL: 'http://abcd.supabase.co' })).toThrow(/SUPABASE_URL must use https/);
+    expect(() => loadConfig({ ...prod, SUPABASE_URL: 'http://abcd.supabase.co' })).toThrow(
+      /SUPABASE_URL must use https/,
+    );
     expect(() => loadConfig({ ...prod, SUPABASE_SECRET_KEY: undefined })).toThrow(/SUPABASE_SECRET_KEY/);
   });
 
   it('lists every problem at once and never echoes the values', () => {
     try {
-      loadConfig({ NODE_ENV: 'production', DATABASE_URL: 'mysql://secret-password@x', IP_HASH_KEY: 'deadbeef', SUPABASE_SECRET_KEY: 'short-secret' });
+      loadConfig({
+        NODE_ENV: 'production',
+        DATABASE_URL: 'mysql://secret-password@x',
+        IP_HASH_KEY: 'deadbeef',
+        SUPABASE_SECRET_KEY: 'short-secret',
+      });
       expect.unreachable();
     } catch (err) {
       expect(err).toBeInstanceOf(ConfigError);
       const msg = (err as Error).message;
-      for (const name of ['DATABASE_URL', 'WEB_ORIGIN', 'TRUST_PROXY_HOPS', 'IP_HASH_KEY', 'SUPABASE_URL', 'SUPABASE_SECRET_KEY']) expect(msg).toContain(name);
+      for (const name of [
+        'DATABASE_URL',
+        'WEB_ORIGIN',
+        'TRUST_PROXY_HOPS',
+        'IP_HASH_KEY',
+        'SUPABASE_URL',
+        'SUPABASE_SECRET_KEY',
+      ])
+        expect(msg).toContain(name);
       expect(msg).not.toContain('secret-password');
       expect(msg).not.toContain('short-secret');
       expect(msg).not.toContain('deadbeef');
@@ -107,11 +138,16 @@ describe('web push keys', () => {
 
   it('are accepted as a matching pair, signing as the website by default', () => {
     const keys = pair();
-    expect(loadConfig({ ...prod, ...keys }).vapid).toEqual({ publicKey: keys.VAPID_PUBLIC_KEY, privateKey: keys.VAPID_PRIVATE_KEY, subject: prod.WEB_ORIGIN });
+    expect(loadConfig({ ...prod, ...keys }).vapid).toEqual({
+      publicKey: keys.VAPID_PUBLIC_KEY,
+      privateKey: keys.VAPID_PRIVATE_KEY,
+      subject: prod.WEB_ORIGIN,
+    });
   });
 
   it('refuse half a pair or two halves of different pairs, without echoing the secret', () => {
-    const a = pair(), b = pair();
+    const a = pair(),
+      b = pair();
     expect(() => loadConfig({ ...prod, VAPID_PUBLIC_KEY: a.VAPID_PUBLIC_KEY })).toThrow(/VAPID/);
     expect(() => loadConfig({ ...prod, VAPID_PRIVATE_KEY: a.VAPID_PRIVATE_KEY })).toThrow(/VAPID/);
     try {
@@ -127,9 +163,11 @@ describe('web push keys', () => {
     const ecdh = createECDH('prime256v1');
     ecdh.setPrivateKey(Buffer.concat([Buffer.alloc(1), Buffer.alloc(31, 7)]));
     expect(ecdh.getPrivateKey()).toHaveLength(31);
-    const keys = { VAPID_PUBLIC_KEY: ecdh.getPublicKey().toString('base64url'), VAPID_PRIVATE_KEY: privateKeyText(ecdh) };
+    const keys = {
+      VAPID_PUBLIC_KEY: ecdh.getPublicKey().toString('base64url'),
+      VAPID_PRIVATE_KEY: privateKeyText(ecdh),
+    };
     expect(keys.VAPID_PRIVATE_KEY).toHaveLength(43);
     expect(loadConfig({ ...prod, ...keys }).vapid?.privateKey).toBe(keys.VAPID_PRIVATE_KEY);
   });
 });
-

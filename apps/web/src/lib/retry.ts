@@ -7,6 +7,8 @@ export function useRetryWhenOnline(error: unknown, retry: () => void): void {
   useEffect(() => {
     if (!waiting) return;
     window.addEventListener('online', retry);
-    return () => { window.removeEventListener('online', retry); };
+    return () => {
+      window.removeEventListener('online', retry);
+    };
   }, [waiting, retry]);
 }

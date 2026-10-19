@@ -11,15 +11,40 @@ function recorder() {
   const lines: number[] = [];
   let gradients = 0;
   const ctx = {
-    globalAlpha: 1, fillStyle: '' as unknown, strokeStyle: '' as unknown, lineWidth: 1,
-    clearRect() { arcs.length = 0; lines.length = 0; gradients = 0; },
-    beginPath() {}, moveTo() {}, quadraticCurveTo() {}, fill() {}, setTransform() {},
-    lineTo() { lines.push(ctx.globalAlpha); },
+    globalAlpha: 1,
+    fillStyle: '' as unknown,
+    strokeStyle: '' as unknown,
+    lineWidth: 1,
+    clearRect() {
+      arcs.length = 0;
+      lines.length = 0;
+      gradients = 0;
+    },
+    beginPath() {},
+    moveTo() {},
+    quadraticCurveTo() {},
+    fill() {},
+    setTransform() {},
+    lineTo() {
+      lines.push(ctx.globalAlpha);
+    },
     stroke() {},
-    arc(_x: number, _y: number, r: number) { arcs.push({ r, fill: String(ctx.fillStyle), alpha: ctx.globalAlpha }); },
-    createRadialGradient() { gradients += 1; return { addColorStop() {} }; },
+    arc(_x: number, _y: number, r: number) {
+      arcs.push({ r, fill: String(ctx.fillStyle), alpha: ctx.globalAlpha });
+    },
+    createRadialGradient() {
+      gradients += 1;
+      return { addColorStop() {} };
+    },
   };
-  return { ctx: ctx as unknown as CanvasRenderingContext2D, arcs, lines, get gradients() { return gradients; } };
+  return {
+    ctx: ctx as unknown as CanvasRenderingContext2D,
+    arcs,
+    lines,
+    get gradients() {
+      return gradients;
+    },
+  };
 }
 
 const colors = { ink: 'INK', accent: 'ACCENT' };
@@ -57,7 +82,8 @@ describe('the asker’s routing picture', () => {
 
   it('swells each person as the question reaches them, on the pulse spring, not with motion off', () => {
     // People's dots only: larger than resting, at most the swell's peak, not the answer pulse (3).
-    const swollen = (arcs: Array<{ r: number }>) => arcs.filter(a => a.r > 2.6 && a.r <= 2.6 * 1.8 + 1e-9 && a.r !== 3).length;
+    const swollen = (arcs: Array<{ r: number }>) =>
+      arcs.filter(a => a.r > 2.6 && a.r <= 2.6 * 1.8 + 1e-9 && a.r !== 3).length;
     const { rec, draw } = scene({ asked: 5, answers: 0, fresh: true });
     draw(0);
     draw(ARRIVAL + 0.02);
@@ -121,15 +147,27 @@ describe('the asker’s routing picture', () => {
 describe('the home graph', () => {
   const data: GraphData = {
     members: 12,
-    fields: [{ slug: 'a', name: 'A', members: 8 }, { slug: 'b', name: 'B', members: 4 }],
+    fields: [
+      { slug: 'a', name: 'A', members: 8 },
+      { slug: 'b', name: 'B', members: 4 },
+    ],
     people: [...Array.from({ length: 8 }, () => [0]), ...Array.from({ length: 4 }, () => [1])],
-    activity: { lastDay: { questions: 1, answers: 1 }, recent: [{ field: 0, kind: 'answer' }, { field: 1, kind: 'question' }] },
+    activity: {
+      lastDay: { questions: 1, answers: 1 },
+      recent: [
+        { field: 0, kind: 'answer' },
+        { field: 1, kind: 'question' },
+      ],
+    },
   };
   function draw(you: number[] | undefined, ts: number[], still = false) {
     const s = livingScene(data, you);
     const rec = recorder();
     s.resize(360, 280);
-    for (const t of ts) { rec.ctx.clearRect(0, 0, 0, 0); s.draw({ ctx: rec.ctx, width: 360, height: 280, t, colors, still }); }
+    for (const t of ts) {
+      rec.ctx.clearRect(0, 0, 0, 0);
+      s.draw({ ctx: rec.ctx, width: 360, height: 280, t, colors, still });
+    }
     return rec;
   }
 
@@ -162,27 +200,72 @@ describe('the canvas loop every graph shares', () => {
     reduced = false;
     hidden = false;
     sight = () => {};
-    vi.stubGlobal('requestAnimationFrame', (f: (ms: number) => void) => { frames.push(f); return frames.length; });
-    vi.stubGlobal('cancelAnimationFrame', () => { frames = []; });
-    vi.stubGlobal('matchMedia', (q: string) => ({ matches: q.includes('reduced-motion') && reduced, addEventListener() {}, removeEventListener() {} }));
-    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
-    vi.stubGlobal('IntersectionObserver', class { constructor(cb: typeof sight) { sight = cb; } observe() {} disconnect() {} });
-    vi.stubGlobal('getComputedStyle', () => ({ getPropertyValue: (n: string) => (n === '--accent' ? ' #5856d6 ' : ' #000 ') }));
-    vi.stubGlobal('document', { get hidden() { return hidden; }, documentElement: {}, addEventListener() {}, removeEventListener() {} });
+    vi.stubGlobal('requestAnimationFrame', (f: (ms: number) => void) => {
+      frames.push(f);
+      return frames.length;
+    });
+    vi.stubGlobal('cancelAnimationFrame', () => {
+      frames = [];
+    });
+    vi.stubGlobal('matchMedia', (q: string) => ({
+      matches: q.includes('reduced-motion') && reduced,
+      addEventListener() {},
+      removeEventListener() {},
+    }));
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        disconnect() {}
+      },
+    );
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        constructor(cb: typeof sight) {
+          sight = cb;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    vi.stubGlobal('getComputedStyle', () => ({
+      getPropertyValue: (n: string) => (n === '--accent' ? ' #5856d6 ' : ' #000 '),
+    }));
+    vi.stubGlobal('document', {
+      get hidden() {
+        return hidden;
+      },
+      documentElement: {},
+      addEventListener() {},
+      removeEventListener() {},
+    });
     vi.stubGlobal('window', { devicePixelRatio: 3 });
   });
-  afterEach(() => { vi.unstubAllGlobals(); });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
 
   function canvas() {
     const rec = recorder();
-    const el = { width: 0, height: 0, getContext: () => rec.ctx, getBoundingClientRect: () => ({ width: 300, height: 150 }) };
+    const el = {
+      width: 0,
+      height: 0,
+      getContext: () => rec.ctx,
+      getBoundingClientRect: () => ({ width: 300, height: 150 }),
+    };
     return { el: el as unknown as HTMLCanvasElement, rec };
   }
 
   it('draws sharp (pixel ratio, at most 2), with the theme’s colours, and keeps drawing while visible', () => {
     const { el } = canvas();
     const seen: Frame[] = [];
-    const stop = runCanvas(el, { resize() {}, draw(f) { seen.push(f); } });
+    const stop = runCanvas(el, {
+      resize() {},
+      draw(f) {
+        seen.push(f);
+      },
+    });
     expect([el.width, el.height]).toEqual([600, 300]);
     expect(seen[0]?.colors).toEqual({ ink: '#000', accent: '#5856d6' });
     expect(frames.length).toBe(1);
@@ -194,7 +277,12 @@ describe('the canvas loop every graph shares', () => {
     reduced = true;
     const one = canvas();
     const seen: number[] = [];
-    runCanvas(one.el, { resize() {}, draw(f) { seen.push(f.t); } });
+    runCanvas(one.el, {
+      resize() {},
+      draw(f) {
+        seen.push(f.t);
+      },
+    });
     expect(frames).toHaveLength(0);
     expect(seen.every(t => t === 0)).toBe(true);
 

@@ -26,16 +26,27 @@ export function ReportButton({ kind, id }: { kind: 'question' | 'answer'; id: st
 
   // The Report button is gone once sent, and focus would fall to the top of
   // the page: put it on the confirmation instead, which is also announced.
-  useEffect(() => { if (sent) sentRef.current?.focus(); }, [sent]);
+  useEffect(() => {
+    if (sent) sentRef.current?.focus();
+  }, [sent]);
 
-  if (sent) return <span ref={sentRef} className="report-sent" role="status" tabIndex={-1}>Reported</span>;
+  if (sent)
+    return (
+      <span ref={sentRef} className="report-sent" role="status" tabIndex={-1}>
+        Reported
+      </span>
+    );
 
   async function send() {
     if (!reason) return;
     setSending(true);
     setError(null);
     try {
-      await api(`/${kind}s/${id}/report`, { method: 'POST', signedIn: true, body: { reason, ...(note.trim() ? { note } : {}) } });
+      await api(`/${kind}s/${id}/report`, {
+        method: 'POST',
+        signedIn: true,
+        body: { reason, ...(note.trim() ? { note } : {}) },
+      });
       setOpen(false);
       setSent(true);
     } catch (err) {
@@ -47,30 +58,70 @@ export function ReportButton({ kind, id }: { kind: 'question' | 'answer'; id: st
 
   return (
     <>
-      <button type="button" className="report-inline" onClick={() => { setOpen(true); }}>Report</button>
+      <button
+        type="button"
+        className="report-inline"
+        onClick={() => {
+          setOpen(true);
+        }}
+      >
+        Report
+      </button>
       <Dialog
         open={open}
-        onClose={() => { if (!sending) setOpen(false); }}
+        onClose={() => {
+          if (!sending) setOpen(false);
+        }}
         title={kind === 'question' ? 'Report this question' : 'Report this answer'}
         actions={
           <>
-            <button type="button" className="btn btn-plain" disabled={sending} onClick={() => { setOpen(false); }}>Cancel</button>
-            <Button disabled={sending || reason === null} onClick={() => { void send(); }}>{sending ? 'Sending…' : 'Send report'}</Button>
+            <button
+              type="button"
+              className="btn btn-plain"
+              disabled={sending}
+              onClick={() => {
+                setOpen(false);
+              }}
+            >
+              Cancel
+            </button>
+            <Button
+              disabled={sending || reason === null}
+              onClick={() => {
+                void send();
+              }}
+            >
+              {sending ? 'Sending…' : 'Send report'}
+            </Button>
           </>
         }
       >
         <p>Reports are private. The person won’t know it was you.</p>
         <fieldset className="reasons" aria-labelledby={legendId}>
-          <legend id={legendId} className="visually-hidden">What’s wrong?</legend>
+          <legend id={legendId} className="visually-hidden">
+            What’s wrong?
+          </legend>
           {REASONS.map(r => (
             <label key={r.value} className="reason">
-              <input type="radio" name={`report-${kind}-${id}`} value={r.value} checked={reason === r.value} onChange={() => { setReason(r.value); }} />
+              <input
+                type="radio"
+                name={`report-${kind}-${id}`}
+                value={r.value}
+                checked={reason === r.value}
+                onChange={() => {
+                  setReason(r.value);
+                }}
+              />
               <span>{r.label}</span>
             </label>
           ))}
         </fieldset>
         <TextArea label="Anything to add? (optional)" value={note} onChange={setNote} rows={3} maxLength={500} />
-        {error && <p className="form-note tone-bad" role="alert">{error}</p>}
+        {error && (
+          <p className="form-note tone-bad" role="alert">
+            {error}
+          </p>
+        )}
       </Dialog>
     </>
   );

@@ -28,7 +28,9 @@ const Design = import.meta.env.DEV ? lazy(() => import('./routes/Design.tsx')) :
 
 /** Sends people where they belong: no setup screen once set up, no profile pages when signed out. */
 function Redirect({ to }: { to: string }) {
-  useEffect(() => { navigate(to, { replace: true }); }, [to]);
+  useEffect(() => {
+    navigate(to, { replace: true });
+  }, [to]);
   return null;
 }
 
@@ -76,13 +78,19 @@ function route(path: string, state: SessionState): ReactNode {
 }
 
 function safeDecode(part: string): string | null {
-  try { return decodeURIComponent(part); } catch { return null; }
+  try {
+    return decodeURIComponent(part);
+  } catch {
+    return null;
+  }
 }
 
 export function App() {
   const path = usePath();
   const { state } = useSession();
-  useEffect(() => { applyMeta(pageMeta(path), path, site.siteOrigin); }, [path]);
+  useEffect(() => {
+    applyMeta(pageMeta(path), path, site.siteOrigin);
+  }, [path]);
   // Live updates for as long as someone is signed in with a profile.
   const live = state.status === 'ready';
   useEffect(() => {
@@ -93,7 +101,10 @@ export function App() {
       if (cancelled) return;
       stop = startLive({ origin: site.apiOrigin, auth, fetch: (...args) => fetch(...args), onEvent: announce });
     });
-    return () => { cancelled = true; stop?.(); };
+    return () => {
+      cancelled = true;
+      stop?.();
+    };
   }, [live]);
   return (
     <>
@@ -114,10 +125,16 @@ export function App() {
       <ErrorBoundary key={path}>
         {/* No spinner: screens are small, and a flash of one is worse than a blank frame. */}
         <Suspense fallback={null}>
-          <div className="route" key={path}>{route(path, state)}</div>
+          <div className="route" key={path}>
+            {route(path, state)}
+          </div>
         </Suspense>
       </ErrorBoundary>
-      {live && <Suspense fallback={null}><LiveBanner /></Suspense>}
+      {live && (
+        <Suspense fallback={null}>
+          <LiveBanner />
+        </Suspense>
+      )}
     </>
   );
 }
@@ -147,8 +164,18 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean
       <main className="page stack-message">
         <h1 className="text-title2">This page couldn’t load</h1>
         {/* Usually part of the site failed to download; only blame the connection when it's really down. */}
-        <p className="text-body secondary">{navigator.onLine ? 'Reload the page to try again.' : 'You’re offline. Connect to the internet, then reload the page.'}</p>
-        <Button onClick={() => { location.reload(); }}>Reload</Button>
+        <p className="text-body secondary">
+          {navigator.onLine
+            ? 'Reload the page to try again.'
+            : 'You’re offline. Connect to the internet, then reload the page.'}
+        </p>
+        <Button
+          onClick={() => {
+            location.reload();
+          }}
+        >
+          Reload
+        </Button>
       </main>
     );
   }

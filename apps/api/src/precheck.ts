@@ -17,8 +17,12 @@ export const FRESH_DAYS = 180;
 /** Reciprocal Rank Fusion of two best-first lists of ids. */
 export function fuse(byMeaning: readonly string[], byWords: readonly string[]): string[] {
   const score = new Map<string, number>();
-  byMeaning.forEach((id, i) => { score.set(id, (score.get(id) ?? 0) + W_MEANING / (RRF_K + i + 1)); });
-  byWords.forEach((id, i) => { score.set(id, (score.get(id) ?? 0) + W_WORDS / (RRF_K + i + 1)); });
+  byMeaning.forEach((id, i) => {
+    score.set(id, (score.get(id) ?? 0) + W_MEANING / (RRF_K + i + 1));
+  });
+  byWords.forEach((id, i) => {
+    score.set(id, (score.get(id) ?? 0) + W_WORDS / (RRF_K + i + 1));
+  });
   return [...score.entries()].sort((a, b) => b[1] - a[1] || Number(b[0]) - Number(a[0])).map(([id]) => id);
 }
 
@@ -50,7 +54,11 @@ export function verdict(candidates: readonly Candidate[], now: Date, meaningAvai
 }
 
 function isDuplicate(c: Candidate, now: Date): boolean {
-  return (c.similarity ?? 0) >= DUPLICATE_AT && c.lastAnsweredAt !== null && now.getTime() - c.lastAnsweredAt.getTime() <= FRESH_DAYS * 86_400_000;
+  return (
+    (c.similarity ?? 0) >= DUPLICATE_AT &&
+    c.lastAnsweredAt !== null &&
+    now.getTime() - c.lastAnsweredAt.getTime() <= FRESH_DAYS * 86_400_000
+  );
 }
 
 /**
@@ -61,5 +69,9 @@ function isDuplicate(c: Candidate, now: Date): boolean {
  */
 export function shortlist<T extends Candidate>(fused: readonly T[], now: Date, count: number): T[] {
   const tier = (c: T) => (isDuplicate(c, now) ? 0 : c.everyWord ? 1 : 2);
-  return fused.map((c, i) => ({ c, i, t: tier(c) })).sort((a, b) => a.t - b.t || a.i - b.i).slice(0, count).map(x => x.c);
+  return fused
+    .map((c, i) => ({ c, i, t: tier(c) }))
+    .sort((a, b) => a.t - b.t || a.i - b.i)
+    .slice(0, count)
+    .map(x => x.c);
 }

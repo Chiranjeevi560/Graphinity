@@ -4,7 +4,10 @@
 // sign-in token expires; the next one starts with a fresh token.
 import type { Auth } from './auth.ts';
 
-export interface LiveEvent { type: 'routed' | 'answered' | 'sent'; questionId: string }
+export interface LiveEvent {
+  type: 'routed' | 'answered' | 'sent';
+  questionId: string;
+}
 
 /** Turns server-sent event text into events; returns what's left unparsed. */
 export function parseEvents(buffer: string, emit: (e: LiveEvent) => void): string {
@@ -21,12 +24,19 @@ export function parseEvents(buffer: string, emit: (e: LiveEvent) => void): strin
     try {
       const { questionId } = JSON.parse(data) as { questionId?: unknown };
       if (typeof questionId === 'string' && /^[1-9][0-9]{0,15}$/.test(questionId)) emit({ type, questionId });
-    } catch { /* a malformed message is skipped, not fatal */ }
+    } catch {
+      /* a malformed message is skipped, not fatal */
+    }
   }
   return rest;
 }
 
-export function startLive(deps: { origin: string; auth: Auth; fetch: typeof fetch; onEvent: (e: LiveEvent) => void }): () => void {
+export function startLive(deps: {
+  origin: string;
+  auth: Auth;
+  fetch: typeof fetch;
+  onEvent: (e: LiveEvent) => void;
+}): () => void {
   // Set by the returned stop function, from outside the loop.
   let stopped = false;
   const isStopped = () => stopped;
@@ -43,7 +53,10 @@ export function startLive(deps: { origin: string; auth: Auth; fetch: typeof fetc
       if (token) {
         controller = new AbortController();
         try {
-          const res = await deps.fetch(`${deps.origin}/events`, { headers: { authorization: `Bearer ${token}` }, signal: controller.signal });
+          const res = await deps.fetch(`${deps.origin}/events`, {
+            headers: { authorization: `Bearer ${token}` },
+            signal: controller.signal,
+          });
           if (res.ok && res.body) {
             pause = 1000;
             const reader = res.body.getReader();
@@ -69,7 +82,10 @@ export function startLive(deps: { origin: string; auth: Auth; fetch: typeof fetc
   }
 
   void run();
-  return () => { stopped = true; controller?.abort(); };
+  return () => {
+    stopped = true;
+    controller?.abort();
+  };
 }
 
 const LIVE_EVENT = 'graphinity:live';
@@ -81,7 +97,11 @@ export function announce(event: LiveEvent): void {
 
 /** Calls handler for each live event while the screen is shown. */
 export function onLive(handler: (event: LiveEvent) => void): () => void {
-  const listener = (e: Event) => { handler((e as CustomEvent<LiveEvent>).detail); };
+  const listener = (e: Event) => {
+    handler((e as CustomEvent<LiveEvent>).detail);
+  };
   window.addEventListener(LIVE_EVENT, listener);
-  return () => { window.removeEventListener(LIVE_EVENT, listener); };
+  return () => {
+    window.removeEventListener(LIVE_EVENT, listener);
+  };
 }

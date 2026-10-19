@@ -149,7 +149,11 @@ export async function buildServer(deps: Deps) {
       // them the browser hides the answer and the website can only say
       // "you seem to be offline".
       if (req.headers.origin === config.webOrigin) {
-        reply.headers({ 'access-control-allow-origin': config.webOrigin, 'access-control-expose-headers': 'retry-after', vary: 'Origin' });
+        reply.headers({
+          'access-control-allow-origin': config.webOrigin,
+          'access-control-expose-headers': 'retry-after',
+          vary: 'Origin',
+        });
       }
       return reply.code(429).send({ error: 'rate_limited', message: messages.tooMany });
     }
@@ -170,7 +174,11 @@ export async function buildServer(deps: Deps) {
   // nobody can make the server parse a body without passing both.
   app.decorateRequest('user', null);
   const userWrites = new TokenBuckets(limits.userWrites, clock);
-  const markNetwork = createNetworkMarker({ db, key: config.ipHashKey, today: () => new Date(clock.now()).toISOString().slice(0, 10) });
+  const markNetwork = createNetworkMarker({
+    db,
+    key: config.ipHashKey,
+    today: () => new Date(clock.now()).toISOString().slice(0, 10),
+  });
   app.addHook('onRequest', async (req, reply) => {
     const { auth: mode, write, allowRevoked } = req.routeOptions.config;
     if (!mode) return;
@@ -210,7 +218,8 @@ export async function buildServer(deps: Deps) {
     const { rows } = await db.query<{ revoked: boolean }>(
       `SELECT EXISTS (SELECT 1 FROM app.revoked_subjects WHERE subject_hash = $1 AND until > now())
            OR EXISTS (SELECT 1 FROM app.pending_auth_deletions WHERE user_id = $2) AS revoked`,
-      [subjectHash(userId, config.ipHashKey), userId]);
+      [subjectHash(userId, config.ipHashKey), userId],
+    );
     return rows[0]?.revoked === true;
   }
 
@@ -218,7 +227,12 @@ export async function buildServer(deps: Deps) {
   // hold a name), the status and the time taken.
   app.addHook('onResponse', async (req, reply) => {
     req.log.info(
-      { method: req.method, route: req.routeOptions.url ?? 'unmatched', status: reply.statusCode, ms: Math.round(reply.elapsedTime) },
+      {
+        method: req.method,
+        route: req.routeOptions.url ?? 'unmatched',
+        status: reply.statusCode,
+        ms: Math.round(reply.elapsedTime),
+      },
       'request',
     );
   });
@@ -230,7 +244,8 @@ export async function buildServer(deps: Deps) {
     const status = err.statusCode ?? 500;
     if (status === 413) return reply.code(413).send({ error: 'too_large', message: messages.tooLarge });
     if (status === 415) return reply.code(415).send({ error: 'unsupported', message: messages.unsupported });
-    if (status >= 400 && status < 500) return reply.code(status).send({ error: 'bad_request', message: messages.invalid });
+    if (status >= 400 && status < 500)
+      return reply.code(status).send({ error: 'bad_request', message: messages.invalid });
     // Error messages can quote user input (e.g. a failed constraint's value),
     // so only the error's kind and code are logged, never its message.
     req.log.error({ kind: err.name, code: err.code }, 'unhandled error');
@@ -262,7 +277,11 @@ export async function buildServer(deps: Deps) {
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   let timer: NodeJS.Timeout;
   const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => { reject(new Error('timeout')); }, ms);
+    timer = setTimeout(() => {
+      reject(new Error('timeout'));
+    }, ms);
   });
-  return Promise.race([promise, timeout]).finally(() => { clearTimeout(timer); });
+  return Promise.race([promise, timeout]).finally(() => {
+    clearTimeout(timer);
+  });
 }

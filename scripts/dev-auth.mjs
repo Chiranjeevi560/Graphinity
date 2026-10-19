@@ -34,7 +34,9 @@ const GOOGLE_ISSUER = `${ORIGIN}/google`;
 
 const env = Object.fromEntries(
   readFileSync(new URL('../.local/api.env', import.meta.url), 'utf8')
-    .split('\n').filter(Boolean).map(l => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]),
+    .split('\n')
+    .filter(Boolean)
+    .map(l => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]),
 );
 // Tests pass their own throwaway secret, so the real one in .local/api.env
 // never leaves for anywhere but Supabase.
@@ -61,29 +63,48 @@ function allowedCallback(raw) {
   try {
     const u = new URL(raw);
     return ALLOWED_REDIRECT_ORIGINS.includes(u.origin) && u.pathname === '/auth/callback' && !u.search && !u.hash;
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
 
 async function session(sub) {
   const now = Math.floor(Date.now() / 1000);
   const accessToken = await new SignJWT({
-    role: 'authenticated', aal: 'aal1', is_anonymous: false, session_id: randomUUID(),
+    role: 'authenticated',
+    aal: 'aal1',
+    is_anonymous: false,
+    session_id: randomUUID(),
     // A real Supabase token carries the email. Graphinity must never use it;
     // including it here lets the tests prove that.
     email: `${sub.slice(0, 8)}@example.test`,
   })
     .setProtectedHeader({ alg: 'ES256', kid: KID, typ: 'JWT' })
-    .setIssuer(ISSUER).setAudience('authenticated').setSubject(sub)
-    .setIssuedAt(now).setExpirationTime(now + 3600)
+    .setIssuer(ISSUER)
+    .setAudience('authenticated')
+    .setSubject(sub)
+    .setIssuedAt(now)
+    .setExpirationTime(now + 3600)
     .sign(privateKey);
   const refresh = b64url(randomBytes(24));
   refreshTokens.set(refresh, sub);
-  return { access_token: accessToken, token_type: 'bearer', expires_in: 3600, expires_at: now + 3600, refresh_token: refresh, user: { id: sub } };
+  return {
+    access_token: accessToken,
+    token_type: 'bearer',
+    expires_in: 3600,
+    expires_at: now + 3600,
+    refresh_token: refresh,
+    user: { id: sub },
+  };
 }
 
 function send(res, status, body, headers = {}) {
   const isJson = typeof body !== 'string';
-  res.writeHead(status, { 'content-type': isJson ? 'application/json' : 'text/html; charset=utf-8', 'cache-control': 'no-store', ...headers });
+  res.writeHead(status, {
+    'content-type': isJson ? 'application/json' : 'text/html; charset=utf-8',
+    'cache-control': 'no-store',
+    ...headers,
+  });
   res.end(isJson ? JSON.stringify(body) : body);
 }
 
@@ -103,16 +124,24 @@ async function readBody(req) {
     raw += chunk;
     if (raw.length > 8192) throw new Error('too large');
   }
-  if ((req.headers['content-type'] ?? '').includes('application/x-www-form-urlencoded')) return Object.fromEntries(new URLSearchParams(raw));
+  if ((req.headers['content-type'] ?? '').includes('application/x-www-form-urlencoded'))
+    return Object.fromEntries(new URLSearchParams(raw));
   return raw ? JSON.parse(raw) : {};
 }
 
-const escapeHtml = s => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const escapeHtml = s =>
+  s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 function pickerPage(params) {
-  const hidden = ['redirect_uri', 'nonce', 'state'].map(k => `<input type="hidden" name="${k}" value="${escapeHtml(params.get(k) ?? '')}">`).join('');
+  const hidden = ['redirect_uri', 'nonce', 'state']
+    .map(k => `<input type="hidden" name="${k}" value="${escapeHtml(params.get(k) ?? '')}">`)
+    .join('');
   const buttons = [...people, { id: 'new', label: 'A brand-new person' }]
-    .map(p => `<button name="sub" value="${p.id}">${p.label}${deleted.has(p.id) ? ' (deleted, will start fresh)' : ''}</button>`).join('');
+    .map(
+      p =>
+        `<button name="sub" value="${p.id}">${p.label}${deleted.has(p.id) ? ' (deleted, will start fresh)' : ''}</button>`,
+    )
+    .join('');
   return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Local test sign-in</title>
 <style>body{font:17px system-ui;max-width:28rem;margin:3rem auto;padding:0 1rem}button{display:block;width:100%;min-height:44px;margin:.5rem 0;font:inherit;border-radius:12px;border:1px solid #ccc;background:#f2f2f7}p{color:#666}</style>
@@ -145,10 +174,17 @@ const server = createServer(async (req, res) => {
       const sub = body.sub === 'new' ? randomUUID() : body.sub;
       if (deleted.has(sub)) deleted.delete(sub);
       const now = Math.floor(Date.now() / 1000);
-      const idToken = await new SignJWT({ nonce: body.nonce, email: `${sub.slice(0, 8)}@example.test`, email_verified: true })
+      const idToken = await new SignJWT({
+        nonce: body.nonce,
+        email: `${sub.slice(0, 8)}@example.test`,
+        email_verified: true,
+      })
         .setProtectedHeader({ alg: 'ES256', kid: KID, typ: 'JWT' })
-        .setIssuer(GOOGLE_ISSUER).setAudience(GOOGLE_CLIENT_ID).setSubject(sub)
-        .setIssuedAt(now).setExpirationTime(now + 3600)
+        .setIssuer(GOOGLE_ISSUER)
+        .setAudience(GOOGLE_CLIENT_ID)
+        .setSubject(sub)
+        .setIssuedAt(now)
+        .setExpirationTime(now + 3600)
         .sign(privateKey);
       const fragment = new URLSearchParams({ id_token: idToken, state: body.state });
       return send(res, 302, '', { location: `${body.redirect_uri}#${fragment}` });
@@ -158,15 +194,23 @@ const server = createServer(async (req, res) => {
       const body = await readBody(req);
       const grant = url.searchParams.get('grant_type');
       if (grant === 'id_token') {
-        if (body.provider !== 'google') return send(res, 400, { error: 'invalid_request', error_description: 'unsupported provider' });
+        if (body.provider !== 'google')
+          return send(res, 400, { error: 'invalid_request', error_description: 'unsupported provider' });
         let claims;
         try {
-          ({ payload: claims } = await jwtVerify(body.id_token ?? '', publicKey, { issuer: GOOGLE_ISSUER, audience: GOOGLE_CLIENT_ID }));
+          ({ payload: claims } = await jwtVerify(body.id_token ?? '', publicKey, {
+            issuer: GOOGLE_ISSUER,
+            audience: GOOGLE_CLIENT_ID,
+          }));
         } catch {
           return send(res, 400, { error: 'invalid_request', error_description: 'Bad ID token' });
         }
         // As Supabase does: the token carries the nonce's hash, the request the nonce.
-        if (typeof body.nonce !== 'string' || typeof claims.nonce !== 'string' || sha256Hex(body.nonce) !== claims.nonce) {
+        if (
+          typeof body.nonce !== 'string' ||
+          typeof claims.nonce !== 'string' ||
+          sha256Hex(body.nonce) !== claims.nonce
+        ) {
           return send(res, 400, { error: 'invalid_nonce', error_description: 'Nonces mismatch' });
         }
         return send(res, 200, await session(claims.sub));
@@ -174,7 +218,8 @@ const server = createServer(async (req, res) => {
       if (grant === 'refresh_token') {
         const sub = refreshTokens.get(body.refresh_token);
         refreshTokens.delete(body.refresh_token); // rotated, like Supabase
-        if (!sub || deleted.has(sub)) return send(res, 400, { error: 'invalid_grant', error_description: 'refresh token not found' });
+        if (!sub || deleted.has(sub))
+          return send(res, 400, { error: 'invalid_grant', error_description: 'refresh token not found' });
         return send(res, 200, await session(sub));
       }
       return send(res, 400, { error: 'unsupported_grant_type' });

@@ -5,7 +5,17 @@
 // field lighting up, never as single people. Drawing only: the component
 // mounts it, so it can be tested with a recording canvas.
 import type { CanvasScene } from './canvas-loop.ts';
-import { along, ARRIVAL, arrivalSwell, bendFor, MAX_DRAWN, routingLayout, stagger, travel, type RoutingLayout } from './routing-layout.ts';
+import {
+  along,
+  ARRIVAL,
+  arrivalSwell,
+  bendFor,
+  MAX_DRAWN,
+  routingLayout,
+  stagger,
+  travel,
+  type RoutingLayout,
+} from './routing-layout.ts';
 
 export interface RoutingInputs {
   /** People it reached; null: "a few" (under 5); undefined: not sent yet. */
@@ -29,10 +39,16 @@ export function routingScene(read: () => RoutingInputs): CanvasScene {
   let fewLeftAt: number | null | undefined;
 
   const count = () => Math.min(read().asked ?? 0, MAX_DRAWN);
-  const layoutFor = (n: number) => { picture = routingLayout(n, size.width, size.height); drawnFor = n; };
+  const layoutFor = (n: number) => {
+    picture = routingLayout(n, size.width, size.height);
+    drawnFor = n;
+  };
 
   return {
-    resize(width, height) { size = { width, height }; layoutFor(count()); },
+    resize(width, height) {
+      size = { width, height };
+      layoutFor(count());
+    },
     draw({ ctx, t, colors, still }) {
       const { asked, answers, fresh } = read();
       const n = count();
@@ -45,7 +61,8 @@ export function routingScene(read: () => RoutingInputs): CanvasScene {
       firstFrame = false;
       // Each new answer comes back from someone who was asked.
       if (answers > answersSeen && !still) {
-        for (let i = answersSeen; i < answers; i++) returns.push({ from: Math.floor(Math.random() * Math.max(1, n)), start: t + (i - answersSeen) * 0.25 });
+        for (let i = answersSeen; i < answers; i++)
+          returns.push({ from: Math.floor(Math.random() * Math.max(1, n)), start: t + (i - answersSeen) * 0.25 });
       }
       answersSeen = answers;
 
@@ -124,7 +141,10 @@ export function routingScene(read: () => RoutingInputs): CanvasScene {
         const r = returns[i];
         if (!r) continue;
         const k = travel(t - r.start);
-        if (k >= 1) { returns.splice(i, 1); continue; }
+        if (k >= 1) {
+          returns.splice(i, 1);
+          continue;
+        }
         if (k <= 0) continue;
         const from = people[r.from] ?? centre;
         const q = along(from, asker, k, -bendFor(r.from));

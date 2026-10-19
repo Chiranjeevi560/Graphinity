@@ -3,7 +3,18 @@
 import { Button } from '../components/Button.tsx';
 import { SquircleLayers } from '../components/Squircle.tsx';
 
-const styles = ['large', 'title1', 'title2', 'title3', 'headline', 'body', 'callout', 'subhead', 'footnote', 'caption'] as const;
+const styles = [
+  'large',
+  'title1',
+  'title2',
+  'title3',
+  'headline',
+  'body',
+  'callout',
+  'subhead',
+  'footnote',
+  'caption',
+] as const;
 
 export default function Design() {
   return (
@@ -11,7 +22,9 @@ export default function Design() {
       <section>
         <h2 className="text-footnote secondary design-label">Text styles</h2>
         {styles.map(s => (
-          <p key={s} className={`text-${s}`}>{s} — Customs duty on a watch</p>
+          <p key={s} className={`text-${s}`}>
+            {s} — Customs duty on a watch
+          </p>
         ))}
       </section>
 

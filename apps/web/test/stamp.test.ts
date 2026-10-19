@@ -7,13 +7,24 @@ import type { SiteSettings } from '../src/lib/settings.ts';
 import { assertNeutral, STAMPED_FILES, stampDist, stampIndexHtml } from '../stamp.ts';
 
 const staging: SiteSettings = {
-  apiOrigin: 'https://graphinity-api-staging.onrender.com', siteOrigin: 'https://graphinity-staging.pages.dev',
-  supabaseUrl: 'https://stag.supabase.co', supabasePublishableKey: 'sb_publishable_staging',
-  googleClientId: 'staging.apps.googleusercontent.com', googleAuthorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+  apiOrigin: 'https://graphinity-api-staging.onrender.com',
+  siteOrigin: 'https://graphinity-staging.pages.dev',
+  supabaseUrl: 'https://stag.supabase.co',
+  supabasePublishableKey: 'sb_publishable_staging',
+  googleClientId: 'staging.apps.googleusercontent.com',
+  googleAuthorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
 };
-const production: SiteSettings = { ...staging, apiOrigin: 'https://graphinity-api.onrender.com', siteOrigin: 'https://graphinity.pages.dev', supabaseUrl: 'https://prod.supabase.co', supabasePublishableKey: 'sb_publishable_production', googleClientId: 'production.apps.googleusercontent.com' };
+const production: SiteSettings = {
+  ...staging,
+  apiOrigin: 'https://graphinity-api.onrender.com',
+  siteOrigin: 'https://graphinity.pages.dev',
+  supabaseUrl: 'https://prod.supabase.co',
+  supabasePublishableKey: 'sb_publishable_production',
+  googleClientId: 'production.apps.googleusercontent.com',
+};
 
-const page = '<!doctype html><html><head><meta name="graphinity-settings" content="%GRAPHINITY_SETTINGS%"><link rel="canonical" href="%SITE_ORIGIN%/"></head><body><script type="module" src="/assets/index-abc.js"></script></body></html>';
+const page =
+  '<!doctype html><html><head><meta name="graphinity-settings" content="%GRAPHINITY_SETTINGS%"><link rel="canonical" href="%SITE_ORIGIN%/"></head><body><script type="module" src="/assets/index-abc.js"></script></body></html>';
 
 /** A small build: a page and two hashed files, nothing that names an environment. */
 function build(): string {
@@ -27,7 +38,8 @@ function build(): string {
 }
 
 function hashes(dir: string): Map<string, string> {
-  const walk = (d: string): string[] => readdirSync(d).flatMap(n => statSync(join(d, n)).isDirectory() ? walk(join(d, n)) : [join(d, n)]);
+  const walk = (d: string): string[] =>
+    readdirSync(d).flatMap(n => (statSync(join(d, n)).isDirectory() ? walk(join(d, n)) : [join(d, n)]));
   return new Map(walk(dir).map(p => [relative(dir, p), createHash('sha256').update(readFileSync(p)).digest('hex')]));
 }
 
@@ -63,10 +75,16 @@ describe('one build, stamped for each environment', () => {
 
   it('refuses a build that names an environment itself, so it could never be promoted unchanged', () => {
     const dist = build();
-    expect(() => { assertNeutral(dist); }).not.toThrow();
+    expect(() => {
+      assertNeutral(dist);
+    }).not.toThrow();
     writeFileSync(join(dist, 'assets', 'index-abc.js'), 'fetch("http://localhost:3000/health")');
-    expect(() => { assertNeutral(dist); }).toThrow(/localhost.*assets\/index-abc\.js/);
+    expect(() => {
+      assertNeutral(dist);
+    }).toThrow(/localhost.*assets\/index-abc\.js/);
     writeFileSync(join(dist, 'assets', 'index-abc.js'), 'fetch("https://x.onrender.com")');
-    expect(() => { stampDist(dist, mkdtempSync(join(tmpdir(), 'graphinity-out-')), staging); }).toThrow(/onrender/);
+    expect(() => {
+      stampDist(dist, mkdtempSync(join(tmpdir(), 'graphinity-out-')), staging);
+    }).toThrow(/onrender/);
   });
 });

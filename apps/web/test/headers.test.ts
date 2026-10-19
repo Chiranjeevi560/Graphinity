@@ -37,7 +37,12 @@ describe('_headers file', () => {
   it('applies the security headers to every path', () => {
     const block = must(file.split('\n\n')[0], 'the first block');
     expect(block.split('\n')[0]).toBe('/*');
-    for (const h of ['Content-Security-Policy', 'Strict-Transport-Security', 'X-Content-Type-Options: nosniff', 'Referrer-Policy: same-origin']) {
+    for (const h of [
+      'Content-Security-Policy',
+      'Strict-Transport-Security',
+      'X-Content-Type-Options: nosniff',
+      'Referrer-Policy: same-origin',
+    ]) {
       expect(block).toContain(h);
     }
   });
@@ -50,16 +55,26 @@ describe('_headers file', () => {
 
 describe('assertNoInlineScripts', () => {
   it('accepts external module scripts', () => {
-    expect(() => { assertNoInlineScripts('<script type="module" crossorigin src="/assets/index-abc.js"></script>'); }).not.toThrow();
+    expect(() => {
+      assertNoInlineScripts('<script type="module" crossorigin src="/assets/index-abc.js"></script>');
+    }).not.toThrow();
   });
 
   it('rejects an inline script, which the policy would silently block in production', () => {
-    expect(() => { assertNoInlineScripts('<script>window.x = 1</script>'); }).toThrow(/inline script/);
+    expect(() => {
+      assertNoInlineScripts('<script>window.x = 1</script>');
+    }).toThrow(/inline script/);
   });
 
   it('accepts structured data, which browsers never run, and nothing dressed up as it', () => {
-    expect(() => { assertNoInlineScripts('<script type="application/ld+json">{"@type":"WebSite"}</script>'); }).not.toThrow();
-    expect(() => { assertNoInlineScripts('<script type="application/ld+json" onload="x()">{}</script>'); }).toThrow(/inline script/);
-    expect(() => { assertNoInlineScripts('<script type="text/javascript">x()</script>'); }).toThrow(/inline script/);
+    expect(() => {
+      assertNoInlineScripts('<script type="application/ld+json">{"@type":"WebSite"}</script>');
+    }).not.toThrow();
+    expect(() => {
+      assertNoInlineScripts('<script type="application/ld+json" onload="x()">{}</script>');
+    }).toThrow(/inline script/);
+    expect(() => {
+      assertNoInlineScripts('<script type="text/javascript">x()</script>');
+    }).toThrow(/inline script/);
   });
 });

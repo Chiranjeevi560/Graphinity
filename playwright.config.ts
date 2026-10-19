@@ -46,8 +46,11 @@ export default defineConfig({
       reuseExistingServer: false,
       // Variables set here win over the env file.
       env: {
-        WEB_ORIGIN: 'http://localhost:4173', SUPABASE_URL: 'http://localhost:54321', SUPABASE_SECRET_KEY: TEST_SECRET,
-        VAPID_PUBLIC_KEY: vapid.getPublicKey().toString('base64url'), VAPID_PRIVATE_KEY: privateKeyText(vapid),
+        WEB_ORIGIN: 'http://localhost:4173',
+        SUPABASE_URL: 'http://localhost:54321',
+        SUPABASE_SECRET_KEY: TEST_SECRET,
+        VAPID_PUBLIC_KEY: vapid.getPublicKey().toString('base64url'),
+        VAPID_PRIVATE_KEY: privateKeyText(vapid),
       },
     },
     {

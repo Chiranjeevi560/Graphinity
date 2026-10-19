@@ -14,7 +14,14 @@ const MIN_TARGET = 44;
 
 interface ScreenReport {
   screen: string;
-  axe: Array<{ scheme: string; id: string; impact: string | null | undefined; nodes: number; help: string; where: string[] }>;
+  axe: Array<{
+    scheme: string;
+    id: string;
+    impact: string | null | undefined;
+    nodes: number;
+    help: string;
+    where: string[];
+  }>;
   overflow: number[];
   smallTargets: Array<{ width: number; label: string; w: number; h: number }>;
 }
@@ -29,7 +36,12 @@ const consoleErrors: string[] = [];
  */
 function realErrors(errors: string[], browserName: string): string[] {
   if (!process.env.AUDIT_SHOTS || browserName !== 'webkit') return errors;
-  return errors.filter(e => !e.endsWith(":: Refused to apply a stylesheet because its hash, its nonce, or 'unsafe-inline' does not appear in the style-src directive of the Content Security Policy."));
+  return errors.filter(
+    e =>
+      !e.endsWith(
+        ":: Refused to apply a stylesheet because its hash, its nonce, or 'unsafe-inline' does not appear in the style-src directive of the Content Security Policy.",
+      ),
+  );
 }
 
 // Requests in flight per page, except the live-updates stream, which stays
@@ -42,9 +54,15 @@ function track(page: Page): Set<object> {
   inFlight.set(page, set);
   // Page loads are covered by waitForLoadState (and WebKit never reports the
   // callback page as finished, since the app rewrites its address at once).
-  page.on('request', r => { if (r.resourceType() !== 'document' && !r.url().endsWith('/events')) set.add(r); });
-  page.on('requestfinished', r => { set.delete(r); });
-  page.on('requestfailed', r => { set.delete(r); });
+  page.on('request', r => {
+    if (r.resourceType() !== 'document' && !r.url().endsWith('/events')) set.add(r);
+  });
+  page.on('requestfinished', r => {
+    set.delete(r);
+  });
+  page.on('requestfailed', r => {
+    set.delete(r);
+  });
   pending = set;
   return pending;
 }
@@ -58,7 +76,8 @@ async function settle(page: Page) {
   let quietSince = started;
   while (Date.now() - quietSince < 200) {
     if (pending.size > 0) quietSince = Date.now();
-    if (Date.now() - started > 10_000) throw new Error(`still loading after 10 s: ${[...pending].map(r => (r as { url(): string }).url()).join(', ')}`);
+    if (Date.now() - started > 10_000)
+      throw new Error(`still loading after 10 s: ${[...pending].map(r => (r as { url(): string }).url()).join(', ')}`);
     await page.waitForTimeout(50);
   }
   // Wait out route fades so contrast is measured on final colours.
@@ -69,16 +88,26 @@ async function audit(page: Page, screen: string) {
   const report: ScreenReport = { screen, axe: [], overflow: [], smallTargets: [] };
   // From the top, as the screen first appears: part-way down, anything near
   // the top is under the sticky header, which says nothing about the screen.
-  await page.evaluate(() => { window.scrollTo(0, 0); });
+  await page.evaluate(() => {
+    window.scrollTo(0, 0);
+  });
   for (const scheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme: scheme });
     await settle(page);
-    const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze();
+    const result = await new AxeBuilder({ page })
+      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
+      .analyze();
     for (const v of result.violations) {
       report.axe.push({
-        scheme, id: v.id, impact: v.impact, nodes: v.nodes.length, help: v.help,
+        scheme,
+        id: v.id,
+        impact: v.impact,
+        nodes: v.nodes.length,
+        help: v.help,
         // Which element, and axe's own one-line reason (it includes the measured ratio).
-        where: v.nodes.map(n => `${n.target.join(' ')} :: ${(n.failureSummary ?? '').split('\n').slice(1).join(' ').slice(0, 160)}`),
+        where: v.nodes.map(
+          n => `${n.target.join(' ')} :: ${(n.failureSummary ?? '').split('\n').slice(1).join(' ').slice(0, 160)}`,
+        ),
       });
     }
   }
@@ -87,10 +116,12 @@ async function audit(page: Page, screen: string) {
   for (const width of WIDTHS) {
     await page.setViewportSize({ width, height: 800 });
     await settle(page);
-    const { overflow, small } = await page.evaluate((min) => {
+    const { overflow, small } = await page.evaluate(min => {
       const overflow = document.documentElement.scrollWidth > window.innerWidth;
       const small: Array<{ label: string; w: number; h: number }> = [];
-      for (const el of document.querySelectorAll<HTMLElement>('a, button, input, select, textarea, [role="button"], label.checkbox')) {
+      for (const el of document.querySelectorAll<HTMLElement>(
+        'a, button, input, select, textarea, [role="button"], label.checkbox',
+      )) {
         const r = el.getBoundingClientRect();
         if (r.width === 0 || r.height === 0) continue;
         // Links inside running text are exempt (WCAG 2.5.8 "inline").
@@ -102,7 +133,11 @@ async function audit(page: Page, screen: string) {
           if (row && row.getBoundingClientRect().height >= min) continue;
         }
         if (Math.min(r.width, r.height) < min) {
-          small.push({ label: (el.getAttribute('aria-label') ?? el.textContent).trim().slice(0, 40), w: Math.round(r.width), h: Math.round(r.height) });
+          small.push({
+            label: (el.getAttribute('aria-label') ?? el.textContent).trim().slice(0, 40),
+            w: Math.round(r.width),
+            h: Math.round(r.height),
+          });
         }
       }
       return { overflow, small };
@@ -117,7 +152,10 @@ async function audit(page: Page, screen: string) {
       await page.emulateMedia({ colorScheme: scheme });
       await settle(page);
       const name = screen.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
-      await page.screenshot({ path: `test-results/shots/${test.info().project.name}/${name}-${scheme}.png`, fullPage: true });
+      await page.screenshot({
+        path: `test-results/shots/${test.info().project.name}/${name}-${scheme}.png`,
+        fullPage: true,
+      });
     }
     await page.emulateMedia({ colorScheme: 'light' });
   }
@@ -125,15 +163,25 @@ async function audit(page: Page, screen: string) {
   reports.push(report);
   // Saved after every screen, so a later failure can't hide earlier findings.
   mkdirSync('test-results', { recursive: true });
-  writeFileSync(`test-results/audit-${test.info().project.name}.json`, JSON.stringify({ reports, consoleErrors }, null, 2));
+  writeFileSync(
+    `test-results/audit-${test.info().project.name}.json`,
+    JSON.stringify({ reports, consoleErrors }, null, 2),
+  );
 
-  expect.soft(report.axe.filter(v => v.impact === 'critical' || v.impact === 'serious'), `${screen}: serious accessibility problems`).toEqual([]);
+  expect
+    .soft(
+      report.axe.filter(v => v.impact === 'critical' || v.impact === 'serious'),
+      `${screen}: serious accessibility problems`,
+    )
+    .toEqual([]);
   expect.soft(report.overflow, `${screen}: sideways scrolling at these widths`).toEqual([]);
   expect.soft(report.smallTargets, `${screen}: tap targets under ${MIN_TARGET}px`).toEqual([]);
 }
 
 test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
-  page.on('console', msg => { if (msg.type() === 'error') consoleErrors.push(`${page.url()} :: ${msg.text().slice(0, 200)}`); });
+  page.on('console', msg => {
+    if (msg.type() === 'error') consoleErrors.push(`${page.url()} :: ${msg.text().slice(0, 200)}`);
+  });
   page.on('pageerror', err => consoleErrors.push(`${page.url()} :: pageerror ${err.message.slice(0, 200)}`));
 
   await page.goto('/');
@@ -162,7 +210,10 @@ test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
   // error screen. (Loaded directly, the local preview server itself answers
   // 404 before the app runs; what Cloudflare does is checked after deploy.)
   await page.goto('/');
-  await page.evaluate(() => { history.pushState(null, '', '/u/%E0'); window.dispatchEvent(new PopStateEvent('popstate')); });
+  await page.evaluate(() => {
+    history.pushState(null, '', '/u/%E0');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  });
   await expect(page.getByRole('heading', { name: 'This page doesn’t exist' })).toBeVisible();
 
   await page.goto('/u/nobody.here');
@@ -178,20 +229,28 @@ test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
   await page.route('**/o/oauth2/v2/auth**', route => route.fulfill({ status: 204 }));
   await page.getByRole('button', { name: 'Continue with Google' }).click();
   await expect(page.getByRole('button', { name: 'Opening Google…' })).toBeDisabled();
-  await page.evaluate(() => { window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })); });
+  await page.evaluate(() => {
+    window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+  });
   await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeEnabled();
   await page.unroute('**/o/oauth2/v2/auth**');
 
   // If the browser can't start sign-in (here: hashing refused), the button
   // comes back instead of staying stuck on "Opening Google…".
-  await page.evaluate(() => { crypto.subtle.digest = () => Promise.reject(new Error('blocked')); });
+  await page.evaluate(() => {
+    crypto.subtle.digest = () => Promise.reject(new Error('blocked'));
+  });
   await page.getByRole('button', { name: 'Continue with Google' }).click();
   await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeEnabled();
 
   // A file from an old deploy failing to load, with storage blocked: the page
   // must not reload itself (it couldn't remember doing so, and would loop).
   const reloaded = await page.evaluate(() => {
-    Object.defineProperty(window, 'sessionStorage', { get() { throw new DOMException('blocked', 'SecurityError'); } });
+    Object.defineProperty(window, 'sessionStorage', {
+      get() {
+        throw new DOMException('blocked', 'SecurityError');
+      },
+    });
     const e = new Event('vite:preloadError', { cancelable: true });
     window.dispatchEvent(e);
     return e.defaultPrevented;
@@ -203,7 +262,9 @@ test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
   // so no server may ever see it in an address, and the address bar must be
   // clean by the time setup shows.
   const addresses: string[] = [];
-  page.on('request', req => { addresses.push(req.url()); });
+  page.on('request', req => {
+    addresses.push(req.url());
+  });
   await page.getByRole('button', { name: 'Continue with Google' }).click();
   await page.getByRole('button', { name: 'A brand-new person' }).click();
   await expect(page).toHaveURL(/\/welcome$/);
@@ -260,7 +321,9 @@ test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
   // Typing a similar question shows it, from half-typed words.
   await page.goto('/ask');
   await page.getByLabel('Your question').fill(`vintage watch case ${run.slice(0, -2)}`);
-  await expect(page.getByRole('region', { name: 'Similar questions already asked' }).getByRole('link', { name: new RegExp(run) })).toBeVisible();
+  await expect(
+    page.getByRole('region', { name: 'Similar questions already asked' }).getByRole('link', { name: new RegExp(run) }),
+  ).toBeVisible();
   await audit(page, 'ask (similar questions)');
   await page.goto('/');
   await expect(page.getByRole('link', { name: new RegExp(run) }).first()).toBeVisible();
@@ -307,7 +370,9 @@ test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
   await page.getByText('I’m 18 or older').click();
   await page.getByRole('button', { name: 'Create profile' }).click();
   await expect(page).toHaveURL(new RegExp(`${questionUrl}$`));
-  await page.getByLabel('Your answer').fill('Declare it on arrival and keep the Swiss export papers.\nDuty was 5% for me.');
+  await page
+    .getByLabel('Your answer')
+    .fill('Declare it on arrival and keep the Swiss export papers.\nDuty was 5% for me.');
   await audit(page, 'question (answering)');
   await page.getByRole('button', { name: 'Post answer' }).click();
   await expect(page.getByRole('heading', { name: '1 answer' })).toBeVisible();
@@ -326,14 +391,27 @@ test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
   await page.getByRole('button', { name: 'Delete account…' }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Delete account' }).click();
   await expect(page.getByRole('heading', { name: 'Your account is deleted' })).toBeVisible();
-  expect(await page.evaluate(() => Object.keys(sessionStorage).filter(k => k.startsWith('graphinity.draft.')))).toEqual([]);
+  expect(await page.evaluate(() => Object.keys(sessionStorage).filter(k => k.startsWith('graphinity.draft.')))).toEqual(
+    [],
+  );
   await audit(page, 'goodbye');
 
   // CSP violations surface as console errors in every engine.
   // Only the one expected error: the missing profile's 404 from the API.
-  const expected = (e: string) => e.startsWith('http://localhost:4173/u/nobody.here :: Failed to load resource: the server responded with a status of 404');
-  expect.soft(realErrors(consoleErrors, browserName).filter(e => !expected(e)), 'console errors').toEqual([]);
-  await testInfo.attach(`audit-${browserName}.json`, { body: JSON.stringify({ reports, consoleErrors }, null, 2), contentType: 'application/json' });
+  const expected = (e: string) =>
+    e.startsWith(
+      'http://localhost:4173/u/nobody.here :: Failed to load resource: the server responded with a status of 404',
+    );
+  expect
+    .soft(
+      realErrors(consoleErrors, browserName).filter(e => !expected(e)),
+      'console errors',
+    )
+    .toEqual([]);
+  await testInfo.attach(`audit-${browserName}.json`, {
+    body: JSON.stringify({ reports, consoleErrors }, null, 2),
+    contentType: 'application/json',
+  });
 });
 
 /** Signs in through the local stand-in as one of its people. */
@@ -343,7 +421,9 @@ async function signIn(page: Page, who: 'Test person A' | 'A brand-new person') {
   await page.getByRole('button', { name: who }).click();
   // The app finishes sign-in by moving to home or to setup; wait for either,
   // or a test's next page.goto collides with that move (seen in WebKit).
-  await expect(page.getByRole('heading', { name: 'Choose your name' }).or(page.getByRole('link', { name: 'Ask a question' }))).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Choose your name' }).or(page.getByRole('link', { name: 'Ask a question' })),
+  ).toBeVisible();
 }
 
 /** Finishes setup if this person hasn't yet (a fixed test person only needs it once). */
@@ -372,7 +452,9 @@ async function signOut(page: Page) {
 }
 
 test('picking an answer moves points, and the profile shows them', async ({ page, browserName }) => {
-  page.on('console', msg => { if (msg.type() === 'error') consoleErrors.push(`${page.url()} :: ${msg.text().slice(0, 200)}`); });
+  page.on('console', msg => {
+    if (msg.type() === 'error') consoleErrors.push(`${page.url()} :: ${msg.text().slice(0, 200)}`);
+  });
   const run = `${browserName}${String(Date.now() % 1_000_000)}`;
 
   // The asker: a fixed test person, so they can come back later.
@@ -387,14 +469,17 @@ test('picking an answer moves points, and the profile shows them', async ({ page
   await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
   const questionUrl = new URL(page.url()).pathname;
   // The asker watches it go out, and reads where it went in words.
-  await expect(page.locator('.routing-graph figcaption')).toContainText(/(Sent to .+|Finding people|Nobody) who know Imports & Customs|could be asked yet/);
+  await expect(page.locator('.routing-graph figcaption')).toContainText(
+    /(Sent to .+|Finding people|Nobody) who know Imports & Customs|could be asked yet/,
+  );
   const routing = page.locator('.routing-graph-canvas');
-  const look = () => routing.evaluate((c: HTMLCanvasElement) => {
-    const d = (c.getContext('2d') as CanvasRenderingContext2D).getImageData(0, 0, c.width, c.height).data;
-    let h = 0;
-    for (let i = 3; i < d.length; i += 16) h = (h * 31 + (d[i] ?? 0)) | 0;
-    return h;
-  });
+  const look = () =>
+    routing.evaluate((c: HTMLCanvasElement) => {
+      const d = (c.getContext('2d') as CanvasRenderingContext2D).getImageData(0, 0, c.width, c.height).data;
+      let h = 0;
+      for (let i = 3; i < d.length; i += 16) h = (h * 31 + (d[i] ?? 0)) | 0;
+      return h;
+    });
   const before = await look();
   await page.waitForTimeout(300);
   expect(await look()).not.toBe(before);
@@ -409,15 +494,21 @@ test('picking an answer moves points, and the profile shows them', async ({ page
     await page.getByLabel('Your answer').fill(`Form B/L 12 worked for me, says ${handle}.`);
     // For the second, the page can't update after posting: it must say the answer is posted,
     // not invite a second try.
-    const refresh = (url: URL) => /^\/questions\/[0-9]+$/.test(url.pathname) && url.origin !== new URL(page.url()).origin;
+    const refresh = (url: URL) =>
+      /^\/questions\/[0-9]+$/.test(url.pathname) && url.origin !== new URL(page.url()).origin;
     const errorsBefore = consoleErrors.length;
-    if (handle === answerers[1]) await page.route(refresh, route => route.request().method() === 'GET' ? route.abort() : route.continue());
+    if (handle === answerers[1])
+      await page.route(refresh, route => (route.request().method() === 'GET' ? route.abort() : route.continue()));
     await page.getByRole('button', { name: 'Post answer' }).click();
     if (handle === answerers[1]) {
-      await expect(page.getByRole('status').filter({ hasText: 'Your answer is posted. Reload the page to see it.' })).toBeVisible();
+      await expect(
+        page.getByRole('status').filter({ hasText: 'Your answer is posted. Reload the page to see it.' }),
+      ).toBeVisible();
       await page.unroute(refresh);
       // The browser logs the failure this step caused on purpose; anything else still counts.
-      consoleErrors.push(...consoleErrors.splice(errorsBefore).filter(e => !e.endsWith(':: Failed to load resource: net::ERR_FAILED')));
+      consoleErrors.push(
+        ...consoleErrors.splice(errorsBefore).filter(e => !e.endsWith(':: Failed to load resource: net::ERR_FAILED')),
+      );
       await page.reload();
     }
     await expect(page.getByRole('link', { name: `@${handle}`, exact: true })).toBeVisible();
@@ -434,7 +525,9 @@ test('picking an answer moves points, and the profile shows them', async ({ page
   await expect(first.getByText('Helped the asker')).toBeVisible();
   await first.getByRole('group', { name: 'Did it turn out right?' }).getByRole('button', { name: 'Yes' }).click();
   await expect(first.getByText('Helped the asker · turned out right')).toBeVisible();
-  await expect(first.getByRole('group', { name: 'Did it turn out right?' }).getByRole('button', { name: 'Yes' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(
+    first.getByRole('group', { name: 'Did it turn out right?' }).getByRole('button', { name: 'Yes' }),
+  ).toHaveAttribute('aria-pressed', 'true');
   // One tap (or one key) rates it.
   const stars = first.getByRole('radiogroup', { name: 'How good was it?' });
   await stars.getByRole('radio', { name: '4 stars' }).focus();
@@ -459,13 +552,23 @@ test('picking an answer moves points, and the profile shows them', async ({ page
   // The second answerer's profile now shows 7 points (5 for the pick, 2 for helpful).
   await page.goto(`/u/${answerers[1] ?? ''}`);
   await expect(page.getByRole('heading', { name: 'Helped people with' })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Helped people with' }).getByRole('listitem').filter({ hasText: 'Imports & Customs' })).toContainText('7 points');
+  await expect(
+    page
+      .getByRole('region', { name: 'Helped people with' })
+      .getByRole('listitem')
+      .filter({ hasText: 'Imports & Customs' }),
+  ).toContainText('7 points');
   await audit(page, 'public profile (with points)');
   // The first lost the pick's points when it moved.
   await page.goto(`/u/${answerers[0] ?? ''}`);
   await expect(page.getByRole('heading', { name: 'Helped people with' })).toHaveCount(0);
 
-  expect.soft(realErrors(consoleErrors, browserName).filter(e => !e.includes('/u/nobody.here')), 'console errors').toEqual([]);
+  expect
+    .soft(
+      realErrors(consoleErrors, browserName).filter(e => !e.includes('/u/nobody.here')),
+      'console errors',
+    )
+    .toEqual([]);
 });
 
 test('a new answer reaches the asker live, without reloading', async ({ browser, browserName }) => {
@@ -593,7 +696,9 @@ test('a moderator removes a reported question', async ({ page, browserName }) =>
 });
 
 test('when Graphinity can’t be reached, every page says so truthfully and recovers', async ({ page }) => {
-  page.on('console', msg => { if (msg.type() === 'error') consoleErrors.push(`${page.url()} :: ${msg.text().slice(0, 200)}`); });
+  page.on('console', msg => {
+    if (msg.type() === 'error') consoleErrors.push(`${page.url()} :: ${msg.text().slice(0, 200)}`);
+  });
   // The API refuses every connection: the device is online, our server isn't answering.
   const api = (url: URL) => url.port === '3000';
   await page.route(api, route => route.abort('connectionrefused'));
@@ -636,18 +741,27 @@ test('when Graphinity can’t be reached, every page says so truthfully and reco
   await expect(page.locator('.question-row').first()).toBeVisible();
 
   // The failures above were caused on purpose; anything else still counts.
-  consoleErrors.push(...consoleErrors.splice(errorsBefore).filter(e => !/Failed to load resource|ERR_CONNECTION_REFUSED|ERR_INTERNET_DISCONNECTED/.test(e)));
+  consoleErrors.push(
+    ...consoleErrors
+      .splice(errorsBefore)
+      .filter(e => !/Failed to load resource|ERR_CONNECTION_REFUSED|ERR_INTERNET_DISCONNECTED/.test(e)),
+  );
 });
 
 test('the home graph is alive, and holds still for people who turn motion off', async ({ page }) => {
   const canvas = page.locator('canvas.living-graph-canvas');
   // A fingerprint of what's drawn, to tell a moving picture from a still one.
-  const drawn = () => canvas.evaluate((c: HTMLCanvasElement) => {
-    const d = (c.getContext('2d') as CanvasRenderingContext2D).getImageData(0, 0, c.width, c.height).data;
-    let h = 0, ink = 0;
-    for (let i = 3; i < d.length; i += 4) { if (d[i] !== 0) ink++; h = (h * 31 + (d[i] ?? 0)) | 0; }
-    return { h, ink };
-  });
+  const drawn = () =>
+    canvas.evaluate((c: HTMLCanvasElement) => {
+      const d = (c.getContext('2d') as CanvasRenderingContext2D).getImageData(0, 0, c.width, c.height).data;
+      let h = 0,
+        ink = 0;
+      for (let i = 3; i < d.length; i += 4) {
+        if (d[i] !== 0) ink++;
+        h = (h * 31 + (d[i] ?? 0)) | 0;
+      }
+      return { h, ink };
+    });
 
   await page.goto('/');
   await expect(canvas).toBeVisible();
@@ -665,7 +779,10 @@ test('the home graph is alive, and holds still for people who turn motion off', 
   expect((await drawn()).h).toBe(still.h);
 });
 
-test('what you type survives a reload and a failed post, and is forgotten when you sign out', async ({ page, browserName }) => {
+test('what you type survives a reload and a failed post, and is forgotten when you sign out', async ({
+  page,
+  browserName,
+}) => {
   const run = `${browserName}${String(Date.now() % 1_000_000)}`;
   const title = `Can I bring two laptops through Delhi customs, draft ${run}?`;
   const answer = `I brought two through Delhi in March, draft ${run}. Nobody asked about the second one.`;
@@ -681,7 +798,9 @@ test('what you type survives a reload and a failed post, and is forgotten when y
 
   // The connection drops as it's posted: an error, and the words stay.
   const questions = 'http://localhost:3000/questions';
-  await page.route(questions, route => route.request().method() === 'POST' ? route.abort('internetdisconnected') : route.continue());
+  await page.route(questions, route =>
+    route.request().method() === 'POST' ? route.abort('internetdisconnected') : route.continue(),
+  );
   const earlier = page.getByRole('button', { name: 'Mine is different' });
   await expect(page.getByRole('button', { name: 'Post question' }).or(earlier)).toBeVisible();
   if (await earlier.isVisible()) await earlier.click();
@@ -712,7 +831,9 @@ test('what you type survives a reload and a failed post, and is forgotten when y
   await page.goto('/ask');
   await page.getByLabel('Your question').fill('A question I never sent');
   await signOut(page);
-  expect(await page.evaluate(() => Object.keys(sessionStorage).filter(k => k.startsWith('graphinity.draft.')))).toEqual([]);
+  expect(await page.evaluate(() => Object.keys(sessionStorage).filter(k => k.startsWith('graphinity.draft.')))).toEqual(
+    [],
+  );
 });
 
 test('the graph can be explored from the keyboard, field by field', async ({ page }) => {
@@ -720,15 +841,33 @@ test('the graph can be explored from the keyboard, field by field', async ({ pag
   const field = (slug: string, name: string, members: number) => ({ slug, name, members });
   const graph = {
     members: 60,
-    fields: [field('imports-customs', 'Imports & Customs', 40), field('travel', 'Travel', 20), field('fitness', 'Fitness', 9), field('food-cooking', 'Food & Cooking', 3)],
-    people: [...Array.from({ length: 12 }, () => [0, 1]), ...Array.from({ length: 28 }, () => [0]), ...Array.from({ length: 8 }, () => [1]), ...Array.from({ length: 9 }, () => [2]), [3], [3], [3]],
-    links: [{ a: 0, b: 1, shared: 12 }, { a: 0, b: 2, shared: null }],
+    fields: [
+      field('imports-customs', 'Imports & Customs', 40),
+      field('travel', 'Travel', 20),
+      field('fitness', 'Fitness', 9),
+      field('food-cooking', 'Food & Cooking', 3),
+    ],
+    people: [
+      ...Array.from({ length: 12 }, () => [0, 1]),
+      ...Array.from({ length: 28 }, () => [0]),
+      ...Array.from({ length: 8 }, () => [1]),
+      ...Array.from({ length: 9 }, () => [2]),
+      [3],
+      [3],
+      [3],
+    ],
+    links: [
+      { a: 0, b: 1, shared: 12 },
+      { a: 0, b: 2, shared: null },
+    ],
     activity: { lastDay: { questions: 0, answers: 0 }, recent: [] },
   };
-  await page.route('http://localhost:3000/graph', route => route.fulfill({
-    json: graph,
-    headers: { 'access-control-allow-origin': 'http://localhost:4173', 'access-control-allow-credentials': 'true' },
-  }));
+  await page.route('http://localhost:3000/graph', route =>
+    route.fulfill({
+      json: graph,
+      headers: { 'access-control-allow-origin': 'http://localhost:4173', 'access-control-allow-credentials': 'true' },
+    }),
+  );
   await page.goto('/');
   const nav = page.getByRole('navigation', { name: 'Fields in the graph' });
   const nodes = nav.getByRole('button');
@@ -737,7 +876,8 @@ test('the graph can be explored from the keyboard, field by field', async ({ pag
   expect(count).toBe(4);
   // One Tab stop for the whole graph, on the biggest field.
   await expect(nav.locator('button[tabindex="0"]')).toHaveCount(1);
-  for (let i = 0; i < 20 && !(await nav.evaluate(n => n.contains(document.activeElement))); i++) await page.keyboard.press('Tab');
+  for (let i = 0; i < 20 && !(await nav.evaluate(n => n.contains(document.activeElement))); i++)
+    await page.keyboard.press('Tab');
   await expect(nodes.first()).toBeFocused();
   await expect(nodes.first()).toHaveAccessibleName('Imports & Customs, 40 people');
   await expect(nodes.nth(3)).toHaveAccessibleName('Food & Cooking, a few people');
@@ -753,7 +893,9 @@ test('the graph can be explored from the keyboard, field by field', async ({ pag
   // Opening a field says who knows it and where else they reach.
   await page.keyboard.press('Enter');
   await expect(nodes.first()).toHaveAttribute('aria-expanded', 'true');
-  await expect(page.locator('.graph-detail')).toHaveText('40 people know Imports & Customs. 12 also know Travel, and a few also know Fitness.');
+  await expect(page.locator('.graph-detail')).toHaveText(
+    '40 people know Imports & Customs. 12 also know Travel, and a few also know Fitness.',
+  );
   await page.keyboard.press('Enter');
   await expect(page.locator('.graph-detail')).toHaveText('');
   // Tab leaves the graph in one step, and comes back to where it was.
@@ -770,7 +912,10 @@ test('the graph can be explored from the keyboard, field by field', async ({ pag
   await audit(page, 'home graph (keyboard)');
 });
 
-test('answers that report amounts show how far they agree, and keep the odd one visible', async ({ page, browserName }) => {
+test('answers that report amounts show how far they agree, and keep the odd one visible', async ({
+  page,
+  browserName,
+}) => {
   const run = `${browserName}${String(Date.now() % 1_000_000)}`;
   await signIn(page, 'Test person A');
   await setUpIfNeeded(page, `asker.${run}`);
@@ -784,7 +929,11 @@ test('answers that report amounts show how far they agree, and keep the odd one 
   const questionUrl = new URL(page.url()).pathname;
   await signOut(page);
 
-  const reports = ['Paid ₹95,000 in duty at Chennai air cargo.', 'The duty came to ₹96,000 for me at Chennai.', 'Paid ₹1,40,000 because my invoice didn’t match.'];
+  const reports = [
+    'Paid ₹95,000 in duty at Chennai air cargo.',
+    'The duty came to ₹96,000 for me at Chennai.',
+    'Paid ₹1,40,000 because my invoice didn’t match.',
+  ];
   for (const [i, body] of reports.entries()) {
     await signIn(page, 'A brand-new person');
     await setUpIfNeeded(page, `amount${String(i)}.${run}`);
@@ -805,7 +954,10 @@ test('answers that report amounts show how far they agree, and keep the odd one 
   await audit(page, 'question (answers agree in part)');
 });
 
-test('asking something already answered offers those answers first, and never forces them', async ({ page, browserName }) => {
+test('asking something already answered offers those answers first, and never forces them', async ({
+  page,
+  browserName,
+}) => {
   const run = `${browserName}${String(Date.now() % 1_000_000)}`;
   const title = `Which documents did customs want for a used camera from Japan, case ${run}?`;
   // Someone asked it and got an answer.
@@ -840,7 +992,10 @@ test('asking something already answered offers those answers first, and never fo
   await page.getByLabel('Your question').fill(title);
   const card = page.getByRole('region', { name: 'This was asked and answered recently' });
   await expect(card).toBeVisible();
-  await expect(card.getByRole('link', { name: 'Read the answers' })).toHaveAttribute('href', new RegExp(`^${questionUrl.split('/').slice(0, 3).join('/')}`));
+  await expect(card.getByRole('link', { name: 'Read the answers' })).toHaveAttribute(
+    'href',
+    new RegExp(`^${questionUrl.split('/').slice(0, 3).join('/')}`),
+  );
   await expect(page.getByRole('button', { name: 'Post question' })).toBeDisabled();
   await expect(page.getByText('Read the answers above, or say yours is different.')).toBeVisible();
   await audit(page, 'ask (already answered)');

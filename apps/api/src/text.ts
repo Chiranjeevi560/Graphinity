@@ -8,10 +8,12 @@
  * The marks real right-to-left writing needs (U+200E, U+200F, U+061C) stay.
  */
 function isControl(codePoint: number): boolean {
-  return (codePoint < 0x20 && codePoint !== 0x0a)
-    || (codePoint >= 0x7f && codePoint <= 0x9f)
-    || (codePoint >= 0x202a && codePoint <= 0x202e)
-    || (codePoint >= 0x2066 && codePoint <= 0x2069);
+  return (
+    (codePoint < 0x20 && codePoint !== 0x0a) ||
+    (codePoint >= 0x7f && codePoint <= 0x9f) ||
+    (codePoint >= 0x202a && codePoint <= 0x202e) ||
+    (codePoint >= 0x2066 && codePoint <= 0x2069)
+  );
 }
 
 /** Characters as people count them (code points), like the database's char_length. */
@@ -49,6 +51,8 @@ export function textProblem(text: string, min: number, max: number): TextProblem
  * Null when there is nothing to match.
  */
 export function prefixQuery(raw: string, match: 'any' | 'all' = 'any'): string | null {
-  const words = [...new Set(raw.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [])].filter(w => codePoints(w).length >= 2).slice(0, 12);
+  const words = [...new Set(raw.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [])]
+    .filter(w => codePoints(w).length >= 2)
+    .slice(0, 12);
   return words.length ? words.map(w => `${w}:*`).join(match === 'all' ? ' & ' : ' | ') : null;
 }

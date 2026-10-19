@@ -15,7 +15,8 @@ export interface Load<T> {
   setData: (data: T) => void;
 }
 
-const asApiError = (err: unknown) => err instanceof ApiError ? err : new ApiError(0, 'unknown', 'Something went wrong. Try again in a minute.');
+const asApiError = (err: unknown) =>
+  err instanceof ApiError ? err : new ApiError(0, 'unknown', 'Something went wrong. Try again in a minute.');
 
 export function useLoad<T>(path: string, signedIn?: RequestOptions['signedIn']): Load<T> {
   const [result, setResult] = useState<{ path: string; data: T | null; error: ApiError | null } | null>(null);
@@ -24,10 +25,16 @@ export function useLoad<T>(path: string, signedIn?: RequestOptions['signedIn']):
   useEffect(() => {
     let live = true;
     api<T>(path, signedIn === undefined ? {} : { signedIn }).then(
-      data => { if (live) setResult({ path, data, error: null }); },
-      (err: unknown) => { if (live) setResult({ path, data: null, error: asApiError(err) }); },
+      data => {
+        if (live) setResult({ path, data, error: null });
+      },
+      (err: unknown) => {
+        if (live) setResult({ path, data: null, error: asApiError(err) });
+      },
     );
-    return () => { live = false; };
+    return () => {
+      live = false;
+    };
   }, [path, signedIn, attempt]);
 
   // An answer for another path (the screen moved on) counts as still loading.
@@ -41,6 +48,11 @@ export function useLoad<T>(path: string, signedIn?: RequestOptions['signedIn']):
 
   useRetryWhenOnline(error, retry);
 
-  const setData = useCallback((data: T) => { setResult({ path, data, error: null }); }, [path]);
+  const setData = useCallback(
+    (data: T) => {
+      setResult({ path, data, error: null });
+    },
+    [path],
+  );
   return { data: current?.data ?? null, error, retry, setData };
 }

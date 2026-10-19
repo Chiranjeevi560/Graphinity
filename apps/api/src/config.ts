@@ -53,7 +53,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   // A deployed server names its environment; nothing defaults to production.
   const environment = env.APP_ENV ?? (production ? '' : 'development');
   if (production ? environment !== 'staging' && environment !== 'production' : environment !== 'development') {
-    problems.push(production ? 'APP_ENV must be staging or production' : 'APP_ENV must be development (or unset) outside NODE_ENV=production');
+    problems.push(
+      production
+        ? 'APP_ENV must be staging or production'
+        : 'APP_ENV must be development (or unset) outside NODE_ENV=production',
+    );
   }
   const release = env.RELEASE ?? null;
   if (release !== null && !/^[0-9a-f]{40}$/.test(release)) problems.push('RELEASE must be a full commit hash');
@@ -77,14 +81,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
 
   const keyHex = env.IP_HASH_KEY ?? '';
-  if (!/^[0-9a-f]{64,}$/i.test(keyHex)) problems.push('IP_HASH_KEY must be at least 32 random bytes in hex (openssl rand -hex 32)');
+  if (!/^[0-9a-f]{64,}$/i.test(keyHex))
+    problems.push('IP_HASH_KEY must be at least 32 random bytes in hex (openssl rand -hex 32)');
 
   const supabaseUrl = env.SUPABASE_URL ?? (production ? '' : 'http://localhost:54321');
   if (!isOrigin(supabaseUrl)) problems.push('SUPABASE_URL must be an origin like https://abcd.supabase.co');
-  else if (production && !supabaseUrl.startsWith('https://')) problems.push('SUPABASE_URL must use https in production');
+  else if (production && !supabaseUrl.startsWith('https://'))
+    problems.push('SUPABASE_URL must use https in production');
 
   const supabaseSecretKey = env.SUPABASE_SECRET_KEY ?? '';
-  if (supabaseSecretKey.length < 20) problems.push('SUPABASE_SECRET_KEY must be set (Supabase: Project Settings → API Keys → secret)');
+  if (supabaseSecretKey.length < 20)
+    problems.push('SUPABASE_SECRET_KEY must be set (Supabase: Project Settings → API Keys → secret)');
 
   // Web push: both keys or neither. A mismatched pair would sign every push
   // wrongly, so it is caught here (the public key must come from the private).
@@ -97,8 +104,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       const ecdh = createECDH('prime256v1');
       ecdh.setPrivateKey(Buffer.from(vapidPrivate, 'base64url'));
       matches = /^[A-Za-z0-9_-]{43}$/.test(vapidPrivate) && ecdh.getPublicKey().toString('base64url') === vapidPublic;
-    } catch { /* reported below */ }
-    if (!matches) problems.push('VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY must be a matching P-256 pair (node scripts/vapid-keys.mjs)');
+    } catch {
+      /* reported below */
+    }
+    if (!matches)
+      problems.push(
+        'VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY must be a matching P-256 pair (node scripts/vapid-keys.mjs)',
+      );
     else vapid = { publicKey: vapidPublic, privateKey: vapidPrivate, subject: env.VAPID_SUBJECT ?? webOrigin };
   }
 
@@ -107,8 +119,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const cfToken = env.CF_AI_TOKEN ?? '';
   let workersAi: Config['workersAi'] = null;
   if (cfAccount || cfToken) {
-    if (!/^[0-9a-f]{32}$/.test(cfAccount)) problems.push('CF_ACCOUNT_ID must be the 32-character Cloudflare account id');
-    else if (cfToken.length < 20) problems.push('CF_AI_TOKEN must be a Cloudflare API token with Workers AI permission');
+    if (!/^[0-9a-f]{32}$/.test(cfAccount))
+      problems.push('CF_ACCOUNT_ID must be the 32-character Cloudflare account id');
+    else if (cfToken.length < 20)
+      problems.push('CF_AI_TOKEN must be a Cloudflare API token with Workers AI permission');
     else workersAi = { accountId: cfAccount, token: cfToken };
   }
 

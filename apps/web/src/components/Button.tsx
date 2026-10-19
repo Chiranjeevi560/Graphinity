@@ -16,7 +16,17 @@ export function Button({ variant = 'primary', className, children, type = 'butto
 }
 
 /** A link that looks like a button, for navigation (a real <a>, so it opens in a new tab too). */
-export function LinkButton({ to, variant = 'primary', className, children }: { to: string; variant?: 'primary' | 'secondary'; className?: string; children: ReactNode }) {
+export function LinkButton({
+  to,
+  variant = 'primary',
+  className,
+  children,
+}: {
+  to: string;
+  variant?: 'primary' | 'secondary';
+  className?: string;
+  children: ReactNode;
+}) {
   return (
     <Link to={to} className={`btn btn-${variant} sq-host link-button${className ? ` ${className}` : ''}`}>
       <SquircleLayers radius={0.75} focusRing />

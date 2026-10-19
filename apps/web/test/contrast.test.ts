@@ -9,7 +9,9 @@ const css = readFileSync(new URL('../src/styles/tokens.css', import.meta.url), '
 type RGBA = [number, number, number, number];
 
 function tokens(block: string): Record<string, string> {
-  return Object.fromEntries([...block.matchAll(/--([\w-]+):\s*([^;]+);/g)].map(([, name = '', value = '']) => [name, value.trim()]));
+  return Object.fromEntries(
+    [...block.matchAll(/--([\w-]+):\s*([^;]+);/g)].map(([, name = '', value = '']) => [name, value.trim()]),
+  );
 }
 
 const light = tokens(css.slice(css.indexOf(':root {'), css.indexOf('@media (min-resolution')));
@@ -22,7 +24,8 @@ const dark = { ...light, ...tokens(css.slice(darkStart, css.indexOf('@media (pre
  */
 function oklch(l: number, c: number, hDeg: number): [number, number, number] {
   const h = (hDeg * Math.PI) / 180;
-  const a = c * Math.cos(h), b = c * Math.sin(h);
+  const a = c * Math.cos(h),
+    b = c * Math.sin(h);
   const l_ = (l + 0.3963377774 * a + 0.2158037573 * b) ** 3;
   const m_ = (l - 0.1055613458 * a - 0.0638541728 * b) ** 3;
   const s_ = (l - 0.0894841775 * a - 1.291485548 * b) ** 3;
@@ -31,7 +34,8 @@ function oklch(l: number, c: number, hDeg: number): [number, number, number] {
     -1.2684380046 * l_ + 2.6097574011 * m_ - 0.3413193965 * s_,
     -0.0041960863 * l_ - 0.7034186147 * m_ + 1.707614701 * s_,
   ];
-  const encode = (x: number) => 255 * Math.min(1, Math.max(0, x <= 0.0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055));
+  const encode = (x: number) =>
+    255 * Math.min(1, Math.max(0, x <= 0.0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055));
   return [encode(linear[0] ?? 0), encode(linear[1] ?? 0), encode(linear[2] ?? 0)];
 }
 
@@ -48,12 +52,16 @@ function parse(value: string): RGBA {
 /** Paint layers bottom to top; returns the opaque colour the eye sees. */
 function composite(base: RGBA, ...layers: RGBA[]): [number, number, number] {
   let out: [number, number, number] = [base[0], base[1], base[2]];
-  for (const [r, g, b, a] of layers) out = [r * a + out[0] * (1 - a), g * a + out[1] * (1 - a), b * a + out[2] * (1 - a)];
+  for (const [r, g, b, a] of layers)
+    out = [r * a + out[0] * (1 - a), g * a + out[1] * (1 - a), b * a + out[2] * (1 - a)];
   return out;
 }
 
 function luminance([r, g, b]: [number, number, number]): number {
-  const lin = (c: number) => { const v = c / 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+  const lin = (c: number) => {
+    const v = c / 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  };
   return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
 }
 
@@ -65,15 +73,58 @@ function ratio(a: [number, number, number], b: [number, number, number]): number
 
 /** Text colour token, and the stacks of background tokens it appears on. */
 const pairs: Array<[string, string[][]]> = [
-  ['label', [['bg'], ['bg-grouped'], ['surface'], ['surface-raised'], ['surface-raised', 'fill-tertiary'], ['bg', 'fill-tertiary'], ['surface-raised', 'fill-secondary']]],
-  ['label-secondary', [['bg'], ['bg-grouped'], ['surface'], ['surface-raised'], ['bg', 'fill-tertiary'], ['surface-raised', 'fill-tertiary'], ['bg', 'fill-secondary'], ['surface-raised', 'fill-secondary']]],
-  ['accent-text', [['bg'], ['bg-grouped'], ['surface'], ['surface-raised'], ['bg', 'fill-tertiary'], ['surface-raised', 'fill-tertiary'], ['bg', 'fill-secondary'], ['surface-raised', 'fill-secondary']]],
+  [
+    'label',
+    [
+      ['bg'],
+      ['bg-grouped'],
+      ['surface'],
+      ['surface-raised'],
+      ['surface-raised', 'fill-tertiary'],
+      ['bg', 'fill-tertiary'],
+      ['surface-raised', 'fill-secondary'],
+    ],
+  ],
+  [
+    'label-secondary',
+    [
+      ['bg'],
+      ['bg-grouped'],
+      ['surface'],
+      ['surface-raised'],
+      ['bg', 'fill-tertiary'],
+      ['surface-raised', 'fill-tertiary'],
+      ['bg', 'fill-secondary'],
+      ['surface-raised', 'fill-secondary'],
+    ],
+  ],
+  [
+    'accent-text',
+    [
+      ['bg'],
+      ['bg-grouped'],
+      ['surface'],
+      ['surface-raised'],
+      ['bg', 'fill-tertiary'],
+      ['surface-raised', 'fill-tertiary'],
+      ['bg', 'fill-secondary'],
+      ['surface-raised', 'fill-secondary'],
+    ],
+  ],
   ['green-text', [['bg'], ['surface'], ['surface-raised'], ['surface', 'green-tint']]],
   ['medal-gold', [['bg'], ['surface']]],
   ['medal-silver', [['bg'], ['surface']]],
   ['medal-bronze', [['bg'], ['surface']]],
   ['red-text', [['bg'], ['surface'], ['surface-raised']]],
-  ['red-on-fill', [['bg', 'fill-tertiary'], ['surface-raised', 'fill-tertiary'], ['bg', 'fill-secondary'], ['surface-raised', 'fill-secondary']]],
+  [
+    'red-on-fill',
+    [
+      ['bg', 'fill-tertiary'],
+      ['surface-raised', 'fill-tertiary'],
+      ['bg', 'fill-secondary'],
+      ['surface-raised', 'fill-secondary'],
+    ],
+  ],
   ['on-accent', [['accent']]],
   // Spec §6.1 names, checked directly as well as through the names above.
   ['text-primary', [['surface-canvas'], ['surface-card']]],
@@ -92,7 +143,10 @@ describe('reading OKLCH', () => {
   });
 });
 
-describe.each([['light', light], ['dark', dark]] as const)('%s appearance', (_name, t) => {
+describe.each([
+  ['light', light],
+  ['dark', dark],
+] as const)('%s appearance', (_name, t) => {
   it.each(pairs)('%s text is at least 4.5:1 on every background it sits on', (text, stacks) => {
     // Follows var(--other) to the colour it names, as the browser does.
     const token = (k: string): RGBA => {

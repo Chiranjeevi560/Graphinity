@@ -19,7 +19,11 @@ function buildChecksPlugin(): Plugin {
       // Only these paths run the host's Functions (/functions); everything
       // else is a free static file. If the free daily allowance runs out,
       // "fail open" in Cloudflare serves the static page instead.
-      this.emitFile({ type: 'asset', fileName: '_routes.json', source: JSON.stringify({ version: 1, include: ['/q/*', '/sitemap.xml'], exclude: [] }) });
+      this.emitFile({
+        type: 'asset',
+        fileName: '_routes.json',
+        source: JSON.stringify({ version: 1, include: ['/q/*', '/sitemap.xml'], exclude: [] }),
+      });
     },
   };
 }
@@ -32,7 +36,11 @@ export default defineConfig(({ mode, command }) => {
     const problems = settingsProblems(local, false);
     if (problems.length) throw new Error(`Local settings: ${problems.join('; ')}`);
   }
-  const devStamp: Plugin = { name: 'graphinity-dev-settings', apply: 'serve', transformIndexHtml: html => stampIndexHtml(html, local) };
+  const devStamp: Plugin = {
+    name: 'graphinity-dev-settings',
+    apply: 'serve',
+    transformIndexHtml: html => stampIndexHtml(html, local),
+  };
 
   return {
     plugins: [react(), buildChecksPlugin(), devStamp],
@@ -42,7 +50,11 @@ export default defineConfig(({ mode, command }) => {
       modulePreload: { polyfill: false },
     },
     // `npm run preview` serves a stamped copy (dist-local) with the production headers.
-    preview: { port: 4173, strictPort: true, headers: securityHeaders({ connectSrc: [local.apiOrigin, local.supabaseUrl], localHttp: true }) },
+    preview: {
+      port: 4173,
+      strictPort: true,
+      headers: securityHeaders({ connectSrc: [local.apiOrigin, local.supabaseUrl], localHttp: true }),
+    },
     server: { port: 5173, strictPort: true },
   };
 });

@@ -3,7 +3,14 @@ import { api } from '../session.tsx';
 
 export interface StandingData {
   /** Per field (spec §11.3): reputation 0-100, picks that stand, Wilson of helped/answered. */
-  points: Array<{ field: { slug: string; name: string }; points: number; medal: 'gold' | 'silver' | 'bronze' | 'verified' | null; reputation: number; accepted: number; wilson: number }>;
+  points: Array<{
+    field: { slug: string; name: string };
+    points: number;
+    medal: 'gold' | 'silver' | 'bronze' | 'verified' | null;
+    reputation: number;
+    accepted: number;
+    wilson: number;
+  }>;
   trust: { correct: number; askers: number } | null;
 }
 
@@ -14,7 +21,9 @@ export function Standing({ standing }: { standing: StandingData }) {
   if (standing.points.length === 0 && !standing.trust) return null;
   return (
     <section className="profile-section" aria-labelledby="standing-heading">
-      <h2 id="standing-heading" className="text-headline">Helped people with</h2>
+      <h2 id="standing-heading" className="text-headline">
+        Helped people with
+      </h2>
       {standing.points.length > 0 && (
         <ul className="standing-list">
           {standing.points.map(p => (
@@ -43,10 +52,14 @@ export function useStanding(handle: string): StandingData | null {
   useEffect(() => {
     let live = true;
     api<{ standing: StandingData }>(`/profiles/${encodeURIComponent(handle)}`)
-      .then(res => { if (live) setStanding(res.standing); })
+      .then(res => {
+        if (live) setStanding(res.standing);
+      })
       // Standing is extra: if it can't load, the profile still shows.
       .catch(() => {});
-    return () => { live = false; };
+    return () => {
+      live = false;
+    };
   }, [handle]);
   return standing;
 }

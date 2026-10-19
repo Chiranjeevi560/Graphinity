@@ -34,7 +34,9 @@ describe('createSupabaseAdmin().deleteUser', () => {
   it('also sends a legacy service_role key (a JWT) as a bearer token', async () => {
     const { f, calls } = fakeFetch(200, '{}');
     await admin(f, 'eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.c2ln').deleteUser(ID);
-    expect((calls[0]?.init.headers as Record<string, string>).authorization).toBe('Bearer eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.c2ln');
+    expect((calls[0]?.init.headers as Record<string, string>).authorization).toBe(
+      'Bearer eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.c2ln',
+    );
   });
 
   it('treats Supabase\'s own "user not found" as already done (a retry after success)', async () => {
@@ -43,7 +45,11 @@ describe('createSupabaseAdmin().deleteUser', () => {
   });
 
   it('treats any other 404 as a failure, so the deletion is retried rather than wrongly reported done', async () => {
-    for (const [body, type] of [['<h1>Not Found</h1>', 'text/html'], ['{"message":"no Route matched with those values"}', 'application/json'], ['', 'text/plain']]) {
+    for (const [body, type] of [
+      ['<h1>Not Found</h1>', 'text/html'],
+      ['{"message":"no Route matched with those values"}', 'application/json'],
+      ['', 'text/plain'],
+    ]) {
       const { f } = fakeFetch(404, body ?? '', type);
       await expect(admin(f).deleteUser(ID), body).rejects.toBeInstanceOf(AuthAdminError);
     }

@@ -4,7 +4,12 @@ import { isPushOn, pushSupport, turnPushOff, turnPushOn } from '../src/lib/push.
 
 // A browser with push: one service worker, subscriptions that remember
 // whether they were cancelled.
-interface FakeSubscription { endpoint: string; cancelled: boolean; toJSON(): object; unsubscribe(): Promise<boolean> }
+interface FakeSubscription {
+  endpoint: string;
+  cancelled: boolean;
+  toJSON(): object;
+  unsubscribe(): Promise<boolean>;
+}
 let current: FakeSubscription | null = null;
 let made = 0;
 
@@ -14,7 +19,11 @@ function subscription(): FakeSubscription {
     endpoint: `https://fcm.googleapis.com/fcm/send/${String(made)}`,
     cancelled: false,
     toJSON: () => ({ endpoint: sub.endpoint, keys: { p256dh: 'p', auth: 'a' } }),
-    unsubscribe: () => { sub.cancelled = true; current = null; return Promise.resolve(true); },
+    unsubscribe: () => {
+      sub.cancelled = true;
+      current = null;
+      return Promise.resolve(true);
+    },
   };
   return sub;
 }
@@ -23,7 +32,7 @@ beforeEach(() => {
   current = null;
   made = 0;
   const pushManager = {
-    subscribe: () => Promise.resolve(current ??= subscription()),
+    subscribe: () => Promise.resolve((current ??= subscription())),
     getSubscription: () => Promise.resolve(current),
   };
   const registration = { pushManager };
@@ -31,11 +40,19 @@ beforeEach(() => {
   vi.stubGlobal('window', { PushManager: {}, Notification: {} });
   vi.stubGlobal('Notification', { permission: 'granted', requestPermission: () => Promise.resolve('granted') });
   vi.stubGlobal('navigator', {
-    userAgent: 'test', platform: 'test', maxTouchPoints: 0,
-    serviceWorker: { register: () => Promise.resolve(registration), ready: Promise.resolve(registration), getRegistration: () => Promise.resolve(registration) },
+    userAgent: 'test',
+    platform: 'test',
+    maxTouchPoints: 0,
+    serviceWorker: {
+      register: () => Promise.resolve(registration),
+      ready: Promise.resolve(registration),
+      getRegistration: () => Promise.resolve(registration),
+    },
   });
 });
-afterEach(() => { vi.unstubAllGlobals(); });
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 /** An API that answers each call in turn and records what was asked. */
 function fakeApi(...answers: Array<() => unknown>) {
@@ -51,7 +68,9 @@ function fakeApi(...answers: Array<() => unknown>) {
   return { api, calls };
 }
 
-const refuse = (status: number, code: string) => () => { throw new ApiError(status, code, code); };
+const refuse = (status: number, code: string) => () => {
+  throw new ApiError(status, code, code);
+};
 
 describe('turning notifications on', () => {
   it('cancels the browser’s subscription when the server didn’t save it', async () => {
@@ -116,7 +135,11 @@ describe('turning notifications off', () => {
 describe('where notifications are possible', () => {
   it('tells iPhone visitors to add the site to the Home Screen first', () => {
     vi.stubGlobal('window', {});
-    vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)', platform: 'iPhone', maxTouchPoints: 5 });
+    vi.stubGlobal('navigator', {
+      userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)',
+      platform: 'iPhone',
+      maxTouchPoints: 5,
+    });
     vi.stubGlobal('matchMedia', () => ({ matches: false }));
     expect(pushSupport()).toBe('install-first');
     vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 (X11; Linux x86_64)', platform: 'Linux', maxTouchPoints: 0 });

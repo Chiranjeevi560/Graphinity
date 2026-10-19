@@ -25,12 +25,21 @@ function HomeGraph({ mine }: { mine: string[] | null }) {
     if (!data || Graph) return;
     let live = true;
     import('../components/LivingGraph.tsx').then(
-      m => { if (live) setGraph(() => m.LivingGraph); },
-      (err: unknown) => { if (live) setFailed(err); },
+      m => {
+        if (live) setGraph(() => m.LivingGraph);
+      },
+      (err: unknown) => {
+        if (live) setFailed(err);
+      },
     );
-    return () => { live = false; };
+    return () => {
+      live = false;
+    };
   }, [data, Graph, attempt]);
-  const retry = useCallback(() => { setFailed(null); setAttempt(a => a + 1); }, []);
+  const retry = useCallback(() => {
+    setFailed(null);
+    setAttempt(a => a + 1);
+  }, []);
   useRetryWhenOnline(failed, retry);
 
   const you = useMemo(() => {
@@ -53,7 +62,7 @@ function HomeGraph({ mine }: { mine: string[] | null }) {
 
 export default function Home() {
   const { state } = useSession();
-  const mine = useMemo(() => state.status === 'ready' ? state.profile.fields.map(f => f.slug) : null, [state]);
+  const mine = useMemo(() => (state.status === 'ready' ? state.profile.fields.map(f => f.slug) : null), [state]);
   return (
     <main className="page home">
       {state.status === 'ready' ? (
@@ -72,8 +81,9 @@ export default function Home() {
         <div className="home-action">
           <GoogleButton />
           <p className="text-footnote secondary">
-            Google only confirms who you are. You choose the name people see, and we never show your Google name or email.
-            By continuing you agree to the <Link to="/terms">terms</Link> and <Link to="/privacy">privacy</Link> policy.
+            Google only confirms who you are. You choose the name people see, and we never show your Google name or
+            email. By continuing you agree to the <Link to="/terms">terms</Link> and <Link to="/privacy">privacy</Link>{' '}
+            policy.
           </p>
         </div>
       )}
@@ -83,11 +93,15 @@ export default function Home() {
         </div>
       )}
       {state.status === 'unreachable' && (
-        <div className="home-action"><LoadFailed error={state.error} onRetry={retrySession} inline /></div>
+        <div className="home-action">
+          <LoadFailed error={state.error} onRetry={retrySession} inline />
+        </div>
       )}
       {state.status === 'ready' && <Inbox />}
       <section className="home-questions" aria-labelledby="recent-heading">
-        <h2 id="recent-heading" className="text-title3">Recent questions</h2>
+        <h2 id="recent-heading" className="text-title3">
+          Recent questions
+        </h2>
         <QuestionList />
       </section>
       <footer className="site-footer text-footnote secondary">

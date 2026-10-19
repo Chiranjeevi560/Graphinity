@@ -3,7 +3,12 @@ import { TokenBuckets, visitorAddress, visitorKey } from '../src/rate-limit.ts';
 
 function fakeClock(start = 1_000_000) {
   let t = start;
-  return { now: () => t, advance: (ms: number) => { t += ms; } };
+  return {
+    now: () => t,
+    advance: (ms: number) => {
+      t += ms;
+    },
+  };
 }
 
 describe('TokenBuckets', () => {
@@ -17,7 +22,8 @@ describe('TokenBuckets', () => {
   it('refills over time, never beyond capacity', () => {
     const clock = fakeClock();
     const b = new TokenBuckets({ capacity: 2, refillPerSecond: 1, maxKeys: 10 }, clock);
-    b.take('a'); b.take('a');
+    b.take('a');
+    b.take('a');
     expect(b.take('a').ok).toBe(false);
     clock.advance(1_000);
     expect(b.take('a').ok).toBe(true);
@@ -37,7 +43,8 @@ describe('TokenBuckets', () => {
 
   it('forgets the least recently used key once full, so memory stays bounded', () => {
     const b = new TokenBuckets({ capacity: 1, refillPerSecond: 0.001, maxKeys: 2 }, fakeClock());
-    b.take('a'); b.take('b');
+    b.take('a');
+    b.take('b');
     b.take('a'); // touch a, so b is now the oldest
     b.take('c'); // evicts b
     expect(b.size).toBe(2);

@@ -12,16 +12,28 @@ describe('background runs, one at a time', () => {
   /** A task whose runs finish only when the test says so. */
   function controlled() {
     const finishers: Array<() => void> = [];
-    const task = () => new Promise<void>(resolve => { finishers.push(resolve); });
-    const finish = async () => { finishers.shift()?.(); await new Promise(r => setTimeout(r, 0)); };
+    const task = () =>
+      new Promise<void>(resolve => {
+        finishers.push(resolve);
+      });
+    const finish = async () => {
+      finishers.shift()?.();
+      await new Promise(r => setTimeout(r, 0));
+    };
     return { task, finish };
   }
 
   it('never overlaps, and runs once more after however many asks came in meanwhile', async () => {
     const t = controlled();
     let started = 0;
-    const run = serial(() => { started += 1; return t.task(); });
-    run(); run(); run(); run();
+    const run = serial(() => {
+      started += 1;
+      return t.task();
+    });
+    run();
+    run();
+    run();
+    run();
     expect(started).toBe(1);
     await t.finish();
     expect(started).toBe(2);

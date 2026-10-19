@@ -6,22 +6,37 @@ import type { PersonEvent } from './events.ts';
 import { encryptPush, isPushService, vapidHeader, type VapidKeys } from './push.ts';
 import { errorKind } from './jobs.ts';
 
-interface Log { warn(obj: object, msg: string): void }
+interface Log {
+  warn(obj: object, msg: string): void;
+}
 
 const titles = { routed: 'A question for you', answered: 'New answer to your question' } as const;
 
-export function createPushSender(deps: { db: Database; vapid: VapidKeys; fetch: typeof fetch; log: Log; now: () => number }) {
+export function createPushSender(deps: {
+  db: Database;
+  vapid: VapidKeys;
+  fetch: typeof fetch;
+  log: Log;
+  now: () => number;
+}) {
   return async (userId: string, event: PersonEvent): Promise<void> => {
     // Shown on the asker's open page only: a phone buzz for each wave would be noise.
     if (event.type === 'sent') return;
     const { subscriptions, question } = await deps.db.asSystem(async q => ({
-      subscriptions: (await q.query<{ endpoint: string; p256dh: string; auth: string }>(
-        'SELECT endpoint, p256dh, auth FROM app.push_subscriptions WHERE profile_id = $1', [userId])).rows,
-      question: (await q.query<{ title: string }>('SELECT title FROM app.questions WHERE id = $1', [event.questionId])).rows[0],
+      subscriptions: (
+        await q.query<{ endpoint: string; p256dh: string; auth: string }>(
+          'SELECT endpoint, p256dh, auth FROM app.push_subscriptions WHERE profile_id = $1',
+          [userId],
+        )
+      ).rows,
+      question: (await q.query<{ title: string }>('SELECT title FROM app.questions WHERE id = $1', [event.questionId]))
+        .rows[0],
     }));
     if (!question) return;
     // Encrypted for the device; the push service can't read it.
-    const payload = Buffer.from(JSON.stringify({ title: titles[event.type], body: question.title, questionId: event.questionId }));
+    const payload = Buffer.from(
+      JSON.stringify({ title: titles[event.type], body: question.title, questionId: event.questionId }),
+    );
     for (const sub of subscriptions) {
       if (!isPushService(sub.endpoint)) continue;
       let status = 0;
@@ -36,7 +51,9 @@ export function createPushSender(deps: { db: Database; vapid: VapidKeys; fetch: 
             ttl: '86400',
             urgency: 'normal',
           },
-          body: new Uint8Array(encryptPush(payload, Buffer.from(sub.p256dh, 'base64url'), Buffer.from(sub.auth, 'base64url'))),
+          body: new Uint8Array(
+            encryptPush(payload, Buffer.from(sub.p256dh, 'base64url'), Buffer.from(sub.auth, 'base64url')),
+          ),
           signal: AbortSignal.timeout(10_000),
         });
         status = res.status;
@@ -59,7 +76,10 @@ export function createLimiter(max: number) {
   let running = 0;
   const waiting: Array<() => void> = [];
   return async function run<T>(task: () => Promise<T>): Promise<T> {
-    if (running >= max) await new Promise<void>(resolve => { waiting.push(resolve); });
+    if (running >= max)
+      await new Promise<void>(resolve => {
+        waiting.push(resolve);
+      });
     running += 1;
     try {
       return await task();
@@ -69,4 +89,3 @@ export function createLimiter(max: number) {
     }
   };
 }
-

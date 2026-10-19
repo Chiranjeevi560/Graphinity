@@ -15,5 +15,16 @@
     "types": ["vite/client", "node"],
     "noEmit": true
   },
-  "include": ["src", "test", "e2e", "headers.ts", "seo.ts", "share.ts", "stamp.ts", "stamp-dist.ts", "vite.config.ts", "vitest.config.ts"]
+  "include": [
+    "src",
+    "test",
+    "e2e",
+    "headers.ts",
+    "seo.ts",
+    "share.ts",
+    "stamp.ts",
+    "stamp-dist.ts",
+    "vite.config.ts",
+    "vitest.config.ts"
+  ]
 }

@@ -14,7 +14,8 @@
 const PHONE = /(?:\+\s?)?\(?\d(?:[\s()-]{0,2}\d){9,}/;
 const EMAIL = /[\p{L}\p{N}._%+-]+@[\p{L}\p{N}.-]+\.[\p{L}]{2,}/u;
 /** Links and handles on messaging apps, and invitations to use them. */
-const MESSAGING = /\b(?:wa\.me|t\.me|telegram\.me|chat\.whatsapp\.com|signal\.me)\/|(?:\b(?:dm|message|msg|ping|text|contact|whatsapp|telegram|call)\s+(?:me|us)\b)|(?:\b(?:whatsapp|telegram|signal)\s+(?:me|us|on|at|number|no\.?)\b)/iu;
+const MESSAGING =
+  /\b(?:wa\.me|t\.me|telegram\.me|chat\.whatsapp\.com|signal\.me)\/|(?:\b(?:dm|message|msg|ping|text|contact|whatsapp|telegram|call)\s+(?:me|us)\b)|(?:\b(?:whatsapp|telegram|signal)\s+(?:me|us|on|at|number|no\.?)\b)/iu;
 
 export type Solicitation = 'phone' | 'email' | 'messaging';
 
@@ -27,4 +28,5 @@ export function contactDetails(text: string): Solicitation | null {
   return null;
 }
 
-export const solicitationMessage = 'Keep contact details out of answers: no phone numbers, email addresses or invitations to message elsewhere. Share what happened here, where everyone can see it.';
+export const solicitationMessage =
+  'Keep contact details out of answers: no phone numbers, email addresses or invitations to message elsewhere. Share what happened here, where everyone can see it.';

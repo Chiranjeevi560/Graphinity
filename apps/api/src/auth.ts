@@ -78,7 +78,11 @@ export function createTokenVerifier({ issuer, keys }: VerifierOptions): TokenVer
         if (TOKEN_PROBLEMS.some(type => err instanceof type)) throw new AuthError((err as errors.JOSEError).code);
         throw new AuthUnavailableError(errorKind(err));
       }
-      if (typeof payload.exp !== 'number' || typeof payload.iat !== 'number' || payload.exp - payload.iat > MAX_TOKEN_LIFETIME_SECONDS + 60) {
+      if (
+        typeof payload.exp !== 'number' ||
+        typeof payload.iat !== 'number' ||
+        payload.exp - payload.iat > MAX_TOKEN_LIFETIME_SECONDS + 60
+      ) {
         throw new AuthError('lifetime');
       }
       // jose doesn't reject a future issue time on its own. A token "issued"

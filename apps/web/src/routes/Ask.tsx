@@ -11,13 +11,27 @@ import { Link, navigate } from '../lib/router.ts';
 import { api, type Profile } from '../session.tsx';
 import { useMeta } from './profile-form.ts';
 
-interface Draft { title: string; details: string; field: string; country: string }
+interface Draft {
+  title: string;
+  details: string;
+  field: string;
+  country: string;
+}
 
 const isDraft = (v: unknown): v is Draft =>
-  typeof v === 'object' && v !== null && (['title', 'details', 'field', 'country'] as const).every(k => typeof (v as Record<string, unknown>)[k] === 'string');
+  typeof v === 'object' &&
+  v !== null &&
+  (['title', 'details', 'field', 'country'] as const).every(k => typeof (v as Record<string, unknown>)[k] === 'string');
 
-interface Similar { id: string; title: string; answerCount: number }
-interface Precheck { verdict: 'duplicate' | 'related' | 'clear'; questions: Similar[] }
+interface Similar {
+  id: string;
+  title: string;
+  answerCount: number;
+}
+interface Precheck {
+  verdict: 'duplicate' | 'related' | 'clear';
+  questions: Similar[];
+}
 
 /**
  * Has this been asked already? Asked of the server once the person pauses
@@ -34,11 +48,18 @@ function usePrecheck(title: string, field: string): Precheck {
     let live = true;
     const timer = setTimeout(() => {
       api<Precheck>('/questions/precheck', { method: 'POST', body: { title: query, ...(field ? { field } : {}) } })
-        .then(result => { if (live) setAnswer({ key, result }); })
+        .then(result => {
+          if (live) setAnswer({ key, result });
+        })
         // Matching is a help, not a step: if it fails, asking still works.
-        .catch(() => { if (live) setAnswer({ key, result: { verdict: 'clear', questions: [] } }); });
+        .catch(() => {
+          if (live) setAnswer({ key, result: { verdict: 'clear', questions: [] } });
+        });
     }, 250);
-    return () => { live = false; clearTimeout(timer); };
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
   }, [key, query, field, ready]);
   // Keep showing the last matches while new ones load, so the list doesn't flicker.
   return ready && answer ? answer.result : { verdict: 'clear', questions: [] };
@@ -67,15 +88,33 @@ export default function Ask({ profile }: { profile: Profile }) {
   }, [title, details, field, country]);
 
   if (metaError) return <LoadFailed error={metaError} onRetry={retryMeta} />;
-  if (!meta) return <main className="page stack-message"><p className="text-body status" role="status">Loading…</p></main>;
+  if (!meta)
+    return (
+      <main className="page stack-message">
+        <p className="text-body status" role="status">
+          Loading…
+        </p>
+      </main>
+    );
 
   const titleLength = charCount(title.trim());
   const detailsLength = charCount(details.trim());
-  const canPost = titleLength >= TITLE.min && titleLength <= TITLE.max && detailsLength <= DETAILS_MAX && field !== '' && !posting && !intercepted;
+  const canPost =
+    titleLength >= TITLE.min &&
+    titleLength <= TITLE.max &&
+    detailsLength <= DETAILS_MAX &&
+    field !== '' &&
+    !posting &&
+    !intercepted;
   // Why the button is greyed out, so it never just sits there.
-  const missing = titleLength < TITLE.min ? `Write your question in full, at least ${String(TITLE.min)} characters.`
-    : field === '' ? 'Choose a topic so it reaches the right people.'
-    : intercepted ? 'Read the answers above, or say yours is different.' : null;
+  const missing =
+    titleLength < TITLE.min
+      ? `Write your question in full, at least ${String(TITLE.min)} characters.`
+      : field === ''
+        ? 'Choose a topic so it reaches the right people.'
+        : intercepted
+          ? 'Read the answers above, or say yours is different.'
+          : null;
   // Their own topics first: the likeliest choice is one tap away.
   const mine = new Set(profile.fields.map(f => f.slug));
   const topics = [...meta.fields].sort((a, b) => Number(mine.has(b.slug)) - Number(mine.has(a.slug)));
@@ -87,7 +126,8 @@ export default function Ask({ profile }: { profile: Profile }) {
     setError(null);
     try {
       const res = await api<{ question: { id: string } }>('/questions', {
-        method: 'POST', signedIn: true,
+        method: 'POST',
+        signedIn: true,
         body: { title, details, field, country: country || null },
       });
       drafts.save('ask', null);
@@ -95,7 +135,12 @@ export default function Ask({ profile }: { profile: Profile }) {
       navigate(questionPath({ id: res.question.id, title }), { replace: true });
     } catch (err) {
       const text = err instanceof ApiError ? err.message : 'Your question couldn’t be posted. Try again in a minute.';
-      const on = err instanceof ApiError && err.code === 'invalid_title' ? 'title' : err instanceof ApiError && err.code === 'invalid_details' ? 'details' : 'form';
+      const on =
+        err instanceof ApiError && err.code === 'invalid_title'
+          ? 'title'
+          : err instanceof ApiError && err.code === 'invalid_details'
+            ? 'details'
+            : 'form';
       setError({ on, text });
       setPosting(false);
     }
@@ -103,9 +148,16 @@ export default function Ask({ profile }: { profile: Profile }) {
 
   return (
     <main className="page">
-      <form className="edit-form" onSubmit={e => { void post(e); }}>
+      <form
+        className="edit-form"
+        onSubmit={e => {
+          void post(e);
+        }}
+      >
         <div className="onboarding-top">
-          <Link to="/" className="btn btn-plain">Cancel</Link>
+          <Link to="/" className="btn btn-plain">
+            Cancel
+          </Link>
         </div>
         <h1 className="text-title1">Ask a question</h1>
         <TextField
@@ -115,19 +167,35 @@ export default function Ask({ profile }: { profile: Profile }) {
           maxLength={TITLE.max * 2}
           enterKeyHint="next"
           status={error?.on === 'title' ? { tone: 'bad', text: error.text } : null}
-          hint={titleLength > TITLE.max - 20 ? `${String(TITLE.max - titleLength)} characters left` : 'Ask it the way you’d ask a friend who’s done it.'}
+          hint={
+            titleLength > TITLE.max - 20
+              ? `${String(TITLE.max - titleLength)} characters left`
+              : 'Ask it the way you’d ask a friend who’s done it.'
+          }
         />
         {match && intercepted && (
           <section className="match-card sq-host" aria-labelledby="match-heading">
             <SquircleLayers radius={1.25} />
-            <h2 id="match-heading" className="text-headline">This was asked and answered recently</h2>
+            <h2 id="match-heading" className="text-headline">
+              This was asked and answered recently
+            </h2>
             <Link to={questionPath(match)} className="question-link">
               <span className="text-body question-title">{match.title}</span>
-              <span className="text-footnote secondary">{match.answerCount === 1 ? '1 answer' : `${String(match.answerCount)} answers`}</span>
+              <span className="text-footnote secondary">
+                {match.answerCount === 1 ? '1 answer' : `${String(match.answerCount)} answers`}
+              </span>
             </Link>
             <div className="match-actions">
               <LinkButton to={questionPath(match)}>Read the answers</LinkButton>
-              <button type="button" className="btn btn-plain" onClick={() => { setDifferentFrom(match.id); }}>Mine is different</button>
+              <button
+                type="button"
+                className="btn btn-plain"
+                onClick={() => {
+                  setDifferentFrom(match.id);
+                }}
+              >
+                Mine is different
+              </button>
             </div>
           </section>
         )}
@@ -139,7 +207,9 @@ export default function Ask({ profile }: { profile: Profile }) {
                 <li key={q.id} className="question-row">
                   <Link to={questionPath(q)} className="question-link">
                     <span className="text-headline question-title">{q.title}</span>
-                    <span className="text-footnote secondary">{q.answerCount === 1 ? '1 answer' : `${String(q.answerCount)} answers`}</span>
+                    <span className="text-footnote secondary">
+                      {q.answerCount === 1 ? '1 answer' : `${String(q.answerCount)} answers`}
+                    </span>
                   </Link>
                 </li>
               ))}
@@ -152,7 +222,11 @@ export default function Ask({ profile }: { profile: Profile }) {
           onChange={setDetails}
           rows={5}
           status={error?.on === 'details' ? { tone: 'bad', text: error.text } : null}
-          hint={detailsLength > DETAILS_MAX - 200 ? `${String(DETAILS_MAX - detailsLength)} characters left` : 'What you’ve tried, and what would help.'}
+          hint={
+            detailsLength > DETAILS_MAX - 200
+              ? `${String(DETAILS_MAX - detailsLength)} characters left`
+              : 'What you’ve tried, and what would help.'
+          }
         />
         <SelectField
           label="Topic"
@@ -167,9 +241,15 @@ export default function Ask({ profile }: { profile: Profile }) {
           hint="People who live there see it first."
           options={[{ value: '', label: 'Anywhere' }, ...meta.countries.map(c => ({ value: c.code, label: c.name }))]}
         />
-        {error?.on === 'form' && <p className="form-note tone-bad" role="alert">{error.text}</p>}
+        {error?.on === 'form' && (
+          <p className="form-note tone-bad" role="alert">
+            {error.text}
+          </p>
+        )}
         {missing && !posting && <p className="form-note">{missing}</p>}
-        <Button type="submit" className="btn-block" disabled={!canPost}>{posting ? 'Posting…' : 'Post question'}</Button>
+        <Button type="submit" className="btn-block" disabled={!canPost}>
+          {posting ? 'Posting…' : 'Post question'}
+        </Button>
       </form>
     </main>
   );

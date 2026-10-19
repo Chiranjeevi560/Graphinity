@@ -49,7 +49,9 @@ export async function createTestDatabase(): Promise<TestDatabase> {
   // Supabase has these roles with broad defaults elsewhere; mimic them so the
   // schema's "never grant to them" rule is tested, not assumed.
   for (const r of ['anon', 'authenticated']) {
-    await admin.query(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${r}') THEN CREATE ROLE ${r} NOLOGIN; END IF; END $$`);
+    await admin.query(
+      `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${r}') THEN CREATE ROLE ${r} NOLOGIN; END IF; END $$`,
+    );
   }
   // Supabase's `postgres` role owns our tables there: not a superuser, but
   // able to bypass row-level security (the schema seeds tables under FORCE

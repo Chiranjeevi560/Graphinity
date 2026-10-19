@@ -18,22 +18,32 @@ export function TextField({ label, value, onChange, prefix, status, hint, ...res
   const note = status?.text ?? hint;
   return (
     <div className="form-row">
-      <label className="form-label" htmlFor={id}>{label}</label>
+      <label className="form-label" htmlFor={id}>
+        {label}
+      </label>
       <div className="input-box sq-host">
         <SquircleLayers radius={0.75} focusRing />
-        {prefix && <span className="input-prefix" aria-hidden="true">{prefix}</span>}
+        {prefix && (
+          <span className="input-prefix" aria-hidden="true">
+            {prefix}
+          </span>
+        )}
         <input
           id={id}
           className="input"
           value={value}
-          onChange={(e: ChangeEvent<HTMLInputElement>) => { onChange(e.target.value); }}
+          onChange={(e: ChangeEvent<HTMLInputElement>) => {
+            onChange(e.target.value);
+          }}
           aria-describedby={note ? noteId : undefined}
           aria-invalid={status?.tone === 'bad' || undefined}
           {...rest}
         />
       </div>
       {/* Announced as it changes, so screen reader users hear "Available". */}
-      <p id={noteId} className={`form-note tone-${status?.tone ?? 'neutral'}`} aria-live="polite">{note}</p>
+      <p id={noteId} className={`form-note tone-${status?.tone ?? 'neutral'}`} aria-live="polite">
+        {note}
+      </p>
     </div>
   );
 }
@@ -50,16 +60,43 @@ export function SelectField({ label, value, onChange, options, hint }: SelectFie
   const id = useId();
   return (
     <div className="form-row">
-      <label className="form-label" htmlFor={id}>{label}</label>
+      <label className="form-label" htmlFor={id}>
+        {label}
+      </label>
       <div className="input-box sq-host">
         <SquircleLayers radius={0.75} focusRing />
         {/* The native picker: on iPhone it opens the system wheel, which people already know. */}
-        <select id={id} className="input select" value={value} onChange={e => { onChange(e.target.value); }} aria-describedby={hint ? `${id}-note` : undefined}>
-          {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        <select
+          id={id}
+          className="input select"
+          value={value}
+          onChange={e => {
+            onChange(e.target.value);
+          }}
+          aria-describedby={hint ? `${id}-note` : undefined}
+        >
+          {options.map(o => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
         </select>
-        <svg className="select-chevron" viewBox="0 0 12 8" aria-hidden="true"><path d="M1 1.5l5 5 5-5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        <svg className="select-chevron" viewBox="0 0 12 8" aria-hidden="true">
+          <path
+            d="M1 1.5l5 5 5-5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
       </div>
-      {hint && <p id={`${id}-note`} className="form-note">{hint}</p>}
+      {hint && (
+        <p id={`${id}-note`} className="form-note">
+          {hint}
+        </p>
+      )}
     </div>
   );
 }
@@ -87,7 +124,9 @@ export function ChipPicker({ legend, options, selected, onToggle, max }: ChipPic
               className={`chip sq-host${on ? ' is-on' : ''}`}
               aria-pressed={on}
               disabled={!on && full}
-              onClick={() => { onToggle(o.slug); }}
+              onClick={() => {
+                onToggle(o.slug);
+              }}
             >
               <SquircleLayers radius={0.75} focusRing />
               <span className="chip-label">{o.name}</span>
@@ -102,13 +141,36 @@ export function ChipPicker({ legend, options, selected, onToggle, max }: ChipPic
   );
 }
 
-export function Checkbox({ checked, onChange, children }: { checked: boolean; onChange: (v: boolean) => void; children: ReactNode }) {
+export function Checkbox({
+  checked,
+  onChange,
+  children,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  children: ReactNode;
+}) {
   return (
     <label className="checkbox">
-      <input type="checkbox" checked={checked} onChange={e => { onChange(e.target.checked); }} />
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={e => {
+          onChange(e.target.checked);
+        }}
+      />
       <span className="checkbox-box sq-host" aria-hidden="true">
         <SquircleLayers radius={0.375} />
-        <svg viewBox="0 0 14 11"><path d="M1.5 5.5l3.5 3.5 7.5-7.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        <svg viewBox="0 0 14 11">
+          <path
+            d="M1.5 5.5l3.5 3.5 7.5-7.5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
       </span>
       <span>{children}</span>
     </label>
@@ -130,21 +192,26 @@ export function TextArea({ label, value, onChange, hint, status, ...rest }: Text
   const note = status?.text ?? hint;
   return (
     <div className="form-row">
-      <label className="form-label" htmlFor={id}>{label}</label>
+      <label className="form-label" htmlFor={id}>
+        {label}
+      </label>
       <div className="input-box textarea-box sq-host">
         <SquircleLayers radius={0.75} focusRing />
         <textarea
           id={id}
           className="input textarea"
           value={value}
-          onChange={e => { onChange(e.target.value); }}
+          onChange={e => {
+            onChange(e.target.value);
+          }}
           aria-describedby={note ? noteId : undefined}
           aria-invalid={status?.tone === 'bad' || undefined}
           {...rest}
         />
       </div>
-      <p id={noteId} className={`form-note tone-${status?.tone ?? 'neutral'}`} aria-live="polite">{note}</p>
+      <p id={noteId} className={`form-note tone-${status?.tone ?? 'neutral'}`} aria-live="polite">
+        {note}
+      </p>
     </div>
   );
 }
-

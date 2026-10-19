@@ -14,13 +14,16 @@ import type { SiteSettings } from './src/lib/settings.ts';
 export const STAMPED_FILES = ['index.html', '_headers', 'robots.txt', 'sitemap.xml'] as const;
 
 /** Addresses that would mean an environment slipped into the build itself. */
-const ENVIRONMENT_TRACES = /https?:\/\/(localhost|127\.0\.0\.1)[:/]|\.pages\.dev|\.onrender\.com|\.supabase\.co|apps\.googleusercontent\.com/;
+const ENVIRONMENT_TRACES =
+  /https?:\/\/(localhost|127\.0\.0\.1)[:/]|\.pages\.dev|\.onrender\.com|\.supabase\.co|apps\.googleusercontent\.com/;
 
-const escapeAttribute = (s: string) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c);
+const escapeAttribute = (s: string) =>
+  s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c);
 
 /** index.html for one environment. Refuses a page already stamped, or one with an unknown placeholder. */
 export function stampIndexHtml(html: string, settings: SiteSettings): string {
-  if (!html.includes('%GRAPHINITY_SETTINGS%')) throw new Error('index.html has no %GRAPHINITY_SETTINGS% placeholder: was it stamped already?');
+  if (!html.includes('%GRAPHINITY_SETTINGS%'))
+    throw new Error('index.html has no %GRAPHINITY_SETTINGS% placeholder: was it stamped already?');
   const out = html
     .replaceAll('%GRAPHINITY_SETTINGS%', escapeAttribute(JSON.stringify(settings)))
     // An origin checked by settingsProblems: letters, digits, dots, colons and slashes only.
@@ -42,17 +45,31 @@ export function assertNeutral(dist: string): void {
   for (const path of files(dist)) {
     if (!/\.(js|css|html|json|txt|xml|webmanifest)$/.test(path)) continue;
     const hit = ENVIRONMENT_TRACES.exec(readFileSync(path, 'utf8'));
-    if (hit) throw new Error(`The build names an environment (${hit[0]}) in ${relative(dist, path)}: settings belong in the stamp, not the build.`);
+    if (hit)
+      throw new Error(
+        `The build names an environment (${hit[0]}) in ${relative(dist, path)}: settings belong in the stamp, not the build.`,
+      );
   }
 }
 
 /** Copies the build to `out` and writes the environment's files there. `dist` is never changed. */
-export function stampDist(dist: string, out: string, settings: SiteSettings, options: { localHttp?: boolean } = {}): void {
+export function stampDist(
+  dist: string,
+  out: string,
+  settings: SiteSettings,
+  options: { localHttp?: boolean } = {},
+): void {
   if (!existsSync(join(dist, 'index.html'))) throw new Error(`No build in ${dist}: run the build first.`);
   assertNeutral(dist);
   cpSync(dist, out, { recursive: true, force: true });
   writeFileSync(join(out, 'index.html'), stampIndexHtml(readFileSync(join(dist, 'index.html'), 'utf8'), settings));
-  writeFileSync(join(out, '_headers'), pagesHeadersFile({ connectSrc: [settings.apiOrigin, settings.supabaseUrl], ...(options.localHttp ? { localHttp: true } : {}) }));
+  writeFileSync(
+    join(out, '_headers'),
+    pagesHeadersFile({
+      connectSrc: [settings.apiOrigin, settings.supabaseUrl],
+      ...(options.localHttp ? { localHttp: true } : {}),
+    }),
+  );
   writeFileSync(join(out, 'robots.txt'), robotsTxt(settings.siteOrigin));
   writeFileSync(join(out, 'sitemap.xml'), sitemapXml(settings.siteOrigin));
 }

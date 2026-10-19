@@ -23,8 +23,23 @@ describe('tidying what people type', () => {
 
   it('refuses characters that make text display as something else, but keeps right-to-left marks', () => {
     // Direction overrides and isolates: what you see isn't the stored order.
-    for (const mark of ['\u202A', '\u202B', '\u202C', '\u202D', '\u202E', '\u2066', '\u2067', '\u2068', '\u2069', '\u0080', '\u0085', '\u009F']) {
-      expect(textProblem(`price ${mark}reversed here`, 5, 100), mark.codePointAt(0)?.toString(16)).toBe('invalid_characters');
+    for (const mark of [
+      '\u202A',
+      '\u202B',
+      '\u202C',
+      '\u202D',
+      '\u202E',
+      '\u2066',
+      '\u2067',
+      '\u2068',
+      '\u2069',
+      '\u0080',
+      '\u0085',
+      '\u009F',
+    ]) {
+      expect(textProblem(`price ${mark}reversed here`, 5, 100), mark.codePointAt(0)?.toString(16)).toBe(
+        'invalid_characters',
+      );
     }
     expect(textProblem('שלום \u200Fעולם and \u200Emore', 5, 100)).toBeNull();
     expect(textProblem('مرحبا \u061C بالعالم', 5, 100)).toBeNull();
@@ -49,7 +64,9 @@ describe('matching while typing', () => {
 
   it('ignores repeats and keeps the query short', () => {
     expect(prefixQuery('tax tax tax')).toBe('tax:*');
-    expect(prefixQuery(Array.from({ length: 30 }, (_, i) => `word${String(i)}`).join(' '))?.split(' | ')).toHaveLength(12);
+    expect(prefixQuery(Array.from({ length: 30 }, (_, i) => `word${String(i)}`).join(' '))?.split(' | ')).toHaveLength(
+      12,
+    );
   });
 
   it('keeps letters from any language', () => {

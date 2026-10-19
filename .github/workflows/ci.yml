@@ -58,6 +58,9 @@ jobs:
       - name: Lint (no new findings)
         run: npm run lint
 
+      - name: Formatting (Prettier)
+        run: npm run format:check
+
       - name: Floor guard (nothing silenced, skipped or left unfinished)
         run: |
           BASE="${{ github.event.pull_request.base.sha || github.event.before }}"

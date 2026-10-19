@@ -14,10 +14,28 @@ export interface ShareEnv {
   VITE_SITE_ORIGIN: string;
 }
 
-interface Question { id: string; title: string; body: string; field: { name: string }; answerCount: number; createdAt: string; asker: { handle: string } }
-interface PageAnswer { id: string; body: string; createdAt: string; answerer: { handle: string }; hidden?: boolean }
+interface Question {
+  id: string;
+  title: string;
+  body: string;
+  field: { name: string };
+  answerCount: number;
+  createdAt: string;
+  asker: { handle: string };
+}
+interface PageAnswer {
+  id: string;
+  body: string;
+  createdAt: string;
+  answerer: { handle: string };
+  hidden?: boolean;
+}
 /** What /questions/:id returns that the head needs. */
-export interface QuestionPage { question: Question; answers: PageAnswer[]; selection: { answerId: string | null } | null }
+export interface QuestionPage {
+  question: Question;
+  answers: PageAnswer[];
+  selection: { answerId: string | null } | null;
+}
 
 /** Suggested answers listed for search engines besides the accepted one (Google reads a few). */
 const SUGGESTED_MAX = 5;
@@ -51,13 +69,17 @@ export function qaPageJson(page: QuestionPage, url: string): string | null {
       author: { '@type': 'Person', name: page.question.asker.handle },
       about: { '@type': 'Thing', name: page.question.field.name },
       ...(accepted ? { acceptedAnswer: answer(accepted) } : {}),
-      suggestedAnswer: visible.filter(a => a !== accepted).slice(0, SUGGESTED_MAX).map(answer),
+      suggestedAnswer: visible
+        .filter(a => a !== accepted)
+        .slice(0, SUGGESTED_MAX)
+        .map(answer),
     },
   };
   return JSON.stringify(data).replace(/</g, '\\u003c');
 }
 
-const escapeHtml = (s: string) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c);
+const escapeHtml = (s: string) =>
+  s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c);
 
 /** Up to 160 characters, cut at a word, with an ellipsis when cut. */
 function shorten(text: string, max = 160): string {
@@ -78,9 +100,14 @@ export function questionHead(html: string, page: QuestionPage, siteOrigin: strin
   const url = new URL(questionPath(q), siteOrigin).toString();
   const title = escapeHtml(`${q.title} – Graphinity`);
   const answers = q.answerCount === 1 ? '1 answer' : `${String(q.answerCount)} answers`;
-  const description = escapeHtml(shorten(q.body || `${answers} from people who know ${q.field.name}. Ask once, reach people who’ve done it.`));
+  const description = escapeHtml(
+    shorten(q.body || `${answers} from people who know ${q.field.name}. Ask once, reach people who’ve done it.`),
+  );
   const setMeta = (doc: string, attr: 'name' | 'property', key: string, value: string) =>
-    doc.replace(new RegExp(`(<meta ${attr}="${key}" content=")[^"]*(")`), (_m, open: string, close: string) => `${open}${value}${close}`);
+    doc.replace(
+      new RegExp(`(<meta ${attr}="${key}" content=")[^"]*(")`),
+      (_m, open: string, close: string) => `${open}${value}${close}`,
+    );
   // Replacements are functions so a title like "$'" is taken literally.
   let out = html.replace(/<title>[^<]*<\/title>/, () => `<title>${title}</title>`);
   out = setMeta(out, 'name', 'description', description);
@@ -88,7 +115,10 @@ export function questionHead(html: string, page: QuestionPage, siteOrigin: strin
   out = setMeta(out, 'property', 'og:description', description);
   out = setMeta(out, 'property', 'og:url', escapeHtml(url));
   out = setMeta(out, 'property', 'og:type', 'article');
-  out = out.replace(/(<link rel="canonical" href=")[^"]*(")/, (_m, open: string, close: string) => `${open}${escapeHtml(url)}${close}`);
+  out = out.replace(
+    /(<link rel="canonical" href=")[^"]*(")/,
+    (_m, open: string, close: string) => `${open}${escapeHtml(url)}${close}`,
+  );
   const json = qaPageJson(page, url);
   out = setMeta(out, 'name', 'robots', json ? 'index, follow, max-image-preview:large' : 'noindex, follow');
   if (json) out = out.replace('</head>', () => `<script type="application/ld+json">${json}</script>\n</head>`);
@@ -117,7 +147,7 @@ export async function questionPage(request: Request, env: ShareEnv, fetchFn: typ
     // Long enough for a free server waking up; previews wait about this long.
     const res = await fetchFn(`${env.VITE_API_ORIGIN}/questions/${id}`, { signal: AbortSignal.timeout(6000) });
     if (!res.ok) return plain();
-    page = await res.json() as QuestionPage;
+    page = (await res.json()) as QuestionPage;
   } catch {
     return plain();
   }
@@ -129,9 +159,16 @@ export async function sitemap(request: Request, env: ShareEnv, fetchFn: typeof f
   try {
     const res = await fetchFn(`${env.VITE_API_ORIGIN}/sitemap/questions`, { signal: AbortSignal.timeout(3000) });
     if (!res.ok) return await env.ASSETS.fetch(request);
-    const { questions } = await res.json() as { questions: Array<{ id: string; title: string; createdAt: string; lastAnsweredAt?: string }> };
-    const xml = sitemapXml(env.VITE_SITE_ORIGIN, questions.map(q => ({ path: questionPath(q), lastmod: (q.lastAnsweredAt ?? q.createdAt).slice(0, 10) })));
-    return new Response(xml, { headers: { 'content-type': 'application/xml; charset=utf-8', 'cache-control': 'public, max-age=3600' } });
+    const { questions } = (await res.json()) as {
+      questions: Array<{ id: string; title: string; createdAt: string; lastAnsweredAt?: string }>;
+    };
+    const xml = sitemapXml(
+      env.VITE_SITE_ORIGIN,
+      questions.map(q => ({ path: questionPath(q), lastmod: (q.lastAnsweredAt ?? q.createdAt).slice(0, 10) })),
+    );
+    return new Response(xml, {
+      headers: { 'content-type': 'application/xml; charset=utf-8', 'cache-control': 'public, max-age=3600' },
+    });
   } catch {
     return await env.ASSETS.fetch(request);
   }

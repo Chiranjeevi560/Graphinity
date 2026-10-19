@@ -44,11 +44,16 @@ export function workersAiEmbedder(deps: { accountId: string; token: string; fetc
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
       if (!res.ok) throw new EmbeddingError(`workers ai ${String(res.status)}`);
-      const body = await res.json() as { success?: boolean; result?: { data?: unknown } };
+      const body = (await res.json()) as { success?: boolean; result?: { data?: unknown } };
       const data = body.result?.data;
-      if (body.success !== true || !Array.isArray(data) || data.length !== texts.length) throw new EmbeddingError('workers ai: unexpected answer');
+      if (body.success !== true || !Array.isArray(data) || data.length !== texts.length)
+        throw new EmbeddingError('workers ai: unexpected answer');
       return data.map(row => {
-        if (!Array.isArray(row) || row.length !== DIMS || !row.every(x => typeof x === 'number' && Number.isFinite(x))) {
+        if (
+          !Array.isArray(row) ||
+          row.length !== DIMS ||
+          !row.every(x => typeof x === 'number' && Number.isFinite(x))
+        ) {
           throw new EmbeddingError('workers ai: unexpected vector');
         }
         return unit(row as number[]);
@@ -68,17 +73,23 @@ export function localEmbedder(): Embedder {
     model: 'local-hash-v1',
     dims: DIMS,
     embed(texts) {
-      return Promise.resolve(texts.map(text => {
-        const v = new Array<number>(DIMS).fill(0);
-        const words = text.normalize('NFC').toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
-        const grams = [...words, ...words.slice(1).map((w, i) => `${words[i] ?? ''} ${w}`)];
-        for (const g of grams) {
-          const h = createHash('sha256').update(g).digest();
-          const at = h.readUInt32BE(0) % DIMS;
-          v[at] = (v[at] ?? 0) + (h[4] !== undefined && h[4] & 1 ? 1 : -1);
-        }
-        return unit(v);
-      }));
+      return Promise.resolve(
+        texts.map(text => {
+          const v = new Array<number>(DIMS).fill(0);
+          const words =
+            text
+              .normalize('NFC')
+              .toLowerCase()
+              .match(/[\p{L}\p{N}]+/gu) ?? [];
+          const grams = [...words, ...words.slice(1).map((w, i) => `${words[i] ?? ''} ${w}`)];
+          for (const g of grams) {
+            const h = createHash('sha256').update(g).digest();
+            const at = h.readUInt32BE(0) % DIMS;
+            v[at] = (v[at] ?? 0) + (h[4] !== undefined && h[4] & 1 ? 1 : -1);
+          }
+          return unit(v);
+        }),
+      );
     },
   };
 }
@@ -90,7 +101,9 @@ export function cached(inner: Embedder, size = 500): Embedder {
     model: inner.model,
     dims: inner.dims,
     async embed(texts) {
-      const keys = texts.map(t => createHash('sha256').update(t.normalize('NFC').trim().toLowerCase()).digest('base64url'));
+      const keys = texts.map(t =>
+        createHash('sha256').update(t.normalize('NFC').trim().toLowerCase()).digest('base64url'),
+      );
       const missing = [...new Set(keys.filter(k => !memo.has(k)))];
       if (missing.length) {
         const fresh = await inner.embed(missing.map(k => texts[keys.indexOf(k)] ?? ''));
@@ -99,7 +112,10 @@ export function cached(inner: Embedder, size = 500): Embedder {
           if (!v) return;
           memo.delete(k);
           memo.set(k, v);
-          if (memo.size > size) { const oldest = memo.keys().next().value; if (oldest !== undefined) memo.delete(oldest); }
+          if (memo.size > size) {
+            const oldest = memo.keys().next().value;
+            if (oldest !== undefined) memo.delete(oldest);
+          }
         });
       }
       return keys.map(k => {
@@ -120,7 +136,10 @@ export class EmbeddingError extends Error {
  * local stand-in in development; none in production without Cloudflare
  * (word matching only: a hashed-words stand-in is no semantic search).
  */
-export function chooseEmbedder(config: { production: boolean; workersAi: { accountId: string; token: string } | null }, fetchImpl: typeof fetch): Embedder | null {
+export function chooseEmbedder(
+  config: { production: boolean; workersAi: { accountId: string; token: string } | null },
+  fetchImpl: typeof fetch,
+): Embedder | null {
   if (config.workersAi) return cached(workersAiEmbedder({ ...config.workersAi, fetch: fetchImpl }));
   return config.production ? null : localEmbedder();
 }

@@ -27,7 +27,10 @@ const TAU = SIGMA0 / 100;
  */
 export const OPPONENT_GAP = 8;
 
-export interface Skill { mu: number; sigma: number }
+export interface Skill {
+  mu: number;
+  sigma: number;
+}
 
 /** Spec §11.3: R = max(0, (μ − 3σ) × 2), 0 to 100. Starts at 0. */
 export function displayedReputation({ mu, sigma }: Skill): number {
@@ -93,7 +96,13 @@ export const SIGNAL = { bestRatedHigh: 1.5, helpful: 0.65, ignored: -0.05, false
  * and moves towards 1 on good signals, by learning rate η = 0.08, kept
  * within [0.01, 0.999].
  */
-export function nextWeight(weight: number, signal: number, daysSince: number, halfLifeDays: number, eta = 0.08): number {
+export function nextWeight(
+  weight: number,
+  signal: number,
+  daysSince: number,
+  halfLifeDays: number,
+  eta = 0.08,
+): number {
   const lambda = Math.LN2 / halfLifeDays;
   const next = weight * Math.exp(-lambda * Math.max(0, daysSince)) + eta * signal * (1 - weight);
   return Math.min(0.999, Math.max(0.01, Number.isFinite(next) ? next : 0.01));
@@ -113,7 +122,14 @@ export interface RankInputs {
 
 /** Spec §11.5: Ω = 0.30·best + 0.22·Wilson + 0.18·R + 0.12·M(C) + 0.10·Trust + 0.08·specificity. */
 export function answerRank(a: RankInputs): number {
-  return 0.3 * (a.best ? 1 : 0) + 0.22 * a.wilson + 0.18 * a.reputation + 0.12 * a.clusterMass + 0.1 * a.trust + 0.08 * a.specificity;
+  return (
+    0.3 * (a.best ? 1 : 0) +
+    0.22 * a.wilson +
+    0.18 * a.reputation +
+    0.12 * a.clusterMass +
+    0.1 * a.trust +
+    0.08 * a.specificity
+  );
 }
 
 /**
@@ -122,7 +138,7 @@ export function answerRank(a: RankInputs): number {
  */
 export function specificity(text: string): number {
   const signs = [
-    /\d/,                                                                 // any figure
+    /\d/, // any figure
     /[₹$€£¥]\s?\d|\b\d[\d,.]*\s?(?:rs|inr|usd|eur|gbp|aed|lakh|crore|k)\b/i, // an amount
     /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b|\b(?:19|20)\d{2}\b|\b\d+\s?(?:days?|weeks?|months?|hours?)\b/i, // when, how long
     /\b(?:form|receipt|invoice|counter|office|desk|portal|airport|port|appointment|document)\b/i, // named steps
@@ -143,7 +159,21 @@ function gaussianCdf(x: number): number {
 function erfc(x: number): number {
   const z = Math.abs(x);
   const t = 1 / (1 + 0.5 * z);
-  const r = t * Math.exp(-z * z - 1.26551223 + t * (1.00002368 + t * (0.37409196 + t * (0.09678418 + t * (-0.18628806
-    + t * (0.27886807 + t * (-1.13520398 + t * (1.48851587 + t * (-0.82215223 + t * 0.17087277)))))))));
+  const r =
+    t *
+    Math.exp(
+      -z * z -
+        1.26551223 +
+        t *
+          (1.00002368 +
+            t *
+              (0.37409196 +
+                t *
+                  (0.09678418 +
+                    t *
+                      (-0.18628806 +
+                        t *
+                          (0.27886807 + t * (-1.13520398 + t * (1.48851587 + t * (-0.82215223 + t * 0.17087277)))))))),
+    );
   return x >= 0 ? r : 2 - r;
 }

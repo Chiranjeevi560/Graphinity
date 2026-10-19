@@ -81,8 +81,13 @@ export function visitorAddress(address: string): string {
   const [head = '', tail = ''] = address.toLowerCase().split('::');
   const left = head ? head.split(':') : [];
   const right = address.includes('::') ? (tail ? tail.split(':') : []) : [];
-  const groups = address.includes('::') ? [...left, ...Array<string>(8 - left.length - right.length).fill('0'), ...right] : left;
-  return `${groups.slice(0, 4).map(g => parseInt(g, 16).toString(16)).join(':')}::/64`;
+  const groups = address.includes('::')
+    ? [...left, ...Array<string>(8 - left.length - right.length).fill('0'), ...right]
+    : left;
+  return `${groups
+    .slice(0, 4)
+    .map(g => parseInt(g, 16).toString(16))
+    .join(':')}::/64`;
 }
 
 /**

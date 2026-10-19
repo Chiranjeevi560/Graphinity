@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { answerRank, displayedReputation, medalFor, MU0, nextWeight, playGame, replay, SIGMA0, SIGNAL, specificity, wilsonLowerBound } from '../src/reputation.ts';
+import {
+  answerRank,
+  displayedReputation,
+  medalFor,
+  MU0,
+  nextWeight,
+  playGame,
+  replay,
+  SIGMA0,
+  SIGNAL,
+  specificity,
+  wilsonLowerBound,
+} from '../src/reputation.ts';
 
 describe('reputation in one field (TrueSkill, spec §11.3)', () => {
   it('starts everyone at 0 shown, from μ 25 and σ 25/3', () => {
@@ -27,7 +39,18 @@ describe('reputation in one field (TrueSkill, spec §11.3)', () => {
     const perfect = (n: number) => displayedReputation(replay(Array.from({ length: n }, () => true)));
     const rate = (p: number, n: number) => {
       let acc = 0;
-      return displayedReputation(replay(Array.from({ length: n }, () => { acc += p; if (acc >= 1) { acc -= 1; return true; } return false; })));
+      return displayedReputation(
+        replay(
+          Array.from({ length: n }, () => {
+            acc += p;
+            if (acc >= 1) {
+              acc -= 1;
+              return true;
+            }
+            return false;
+          }),
+        ),
+      );
     };
     expect(perfect(10)).toBeGreaterThanOrEqual(45); // Bronze bar at Bronze's 10 picks
     expect(perfect(30)).toBeGreaterThanOrEqual(68); // Silver at 30
@@ -87,8 +110,13 @@ describe('expertise weight over time (spec §10.2)', () => {
 
 describe('ordering answers (spec §11.5)', () => {
   it('adds the weighted parts exactly', () => {
-    expect(answerRank({ best: true, wilson: 1, reputation: 1, clusterMass: 1, trust: 1, specificity: 1 })).toBeCloseTo(1, 10);
-    expect(answerRank({ best: false, wilson: 0.5, reputation: 0, clusterMass: 0, trust: 0, specificity: 0 })).toBeCloseTo(0.11, 10);
+    expect(answerRank({ best: true, wilson: 1, reputation: 1, clusterMass: 1, trust: 1, specificity: 1 })).toBeCloseTo(
+      1,
+      10,
+    );
+    expect(
+      answerRank({ best: false, wilson: 0.5, reputation: 0, clusterMass: 0, trust: 0, specificity: 0 }),
+    ).toBeCloseTo(0.11, 10);
   });
 
   it('rewards concrete detail over vague advice', () => {

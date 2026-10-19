@@ -17,7 +17,14 @@ export async function startApp(now: () => number, opts: { vapidPublicKey?: strin
   const admin = fakeAuthAdmin();
   const events = createEvents();
   const app = await buildServer({
-    config: { production: true, environment: 'production', release: null, webOrigin: 'https://graphinity.pages.dev', trustProxyHops: 0, ipHashKey: IP_HASH_KEY },
+    config: {
+      production: true,
+      environment: 'production',
+      release: null,
+      webOrigin: 'https://graphinity.pages.dev',
+      trustProxyHops: 0,
+      ipHashKey: IP_HASH_KEY,
+    },
     db: t.database,
     clock: { now },
     auth: createTokenVerifier({ issuer: TEST_ISSUER, keys: issuer.keys }),
@@ -26,7 +33,11 @@ export async function startApp(now: () => number, opts: { vapidPublicKey?: strin
     vapidPublicKey: opts.vapidPublicKey ?? null,
     embedder: opts.embedder ?? null,
     // Generous limits: these tests are about behaviour, not rate limiting.
-    limits: { ...defaultLimits, visitor: { capacity: 10_000, refillPerSecond: 1000, maxKeys: 10 }, userWrites: { capacity: 1000, refillPerSecond: 100, maxKeys: 100 } },
+    limits: {
+      ...defaultLimits,
+      visitor: { capacity: 10_000, refillPerSecond: 1000, maxKeys: 10 },
+      userWrites: { capacity: 1000, refillPerSecond: 100, maxKeys: 100 },
+    },
     logStream: { write: () => {} },
   });
 
@@ -38,13 +49,26 @@ export async function startApp(now: () => number, opts: { vapidPublicKey?: strin
 
   function call(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', url: string, token?: string, payload?: object) {
     return app.inject({
-      method, url,
+      method,
+      url,
       headers: token ? { authorization: `Bearer ${token}` } : {},
       ...(payload ? { payload } : {}),
     });
   }
 
-  return { t, issuer, admin, events, app, person, call, close: async () => { await app.close(); await t.close(); } };
+  return {
+    t,
+    issuer,
+    admin,
+    events,
+    app,
+    person,
+    call,
+    close: async () => {
+      await app.close();
+      await t.close();
+    },
+  };
 }
 
 export type TestApp = Awaited<ReturnType<typeof startApp>>;

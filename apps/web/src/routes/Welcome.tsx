@@ -35,16 +35,28 @@ export default function Welcome() {
 
   // Move focus to each step's heading, so keyboard and screen reader users
   // know the screen changed.
-  useEffect(() => { if (step > 1) heading.current?.focus(); }, [step]);
+  useEffect(() => {
+    if (step > 1) heading.current?.focus();
+  }, [step]);
 
   if (metaError) return <LoadFailed error={metaError} onRetry={retryMeta} />;
-  if (!meta) return <main className="page stack-message"><p className="text-body status" role="status">Loading…</p></main>;
+  if (!meta)
+    return (
+      <main className="page stack-message">
+        <p className="text-body status" role="status">
+          Loading…
+        </p>
+      </main>
+    );
 
-  const toggle = (slug: string) => { setFields(prev => {
-    const next = new Set(prev);
-    if (next.has(slug)) next.delete(slug); else if (next.size < MAX_FIELDS) next.add(slug);
-    return next;
-  }); };
+  const toggle = (slug: string) => {
+    setFields(prev => {
+      const next = new Set(prev);
+      if (next.has(slug)) next.delete(slug);
+      else if (next.size < MAX_FIELDS) next.add(slug);
+      return next;
+    });
+  };
 
   async function create(e: SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -52,7 +64,8 @@ export default function Welcome() {
     setSubmitError(null);
     try {
       const { profile } = await api<{ profile: Profile }>('/me/profile', {
-        method: 'POST', signedIn: true,
+        method: 'POST',
+        signedIn: true,
         body: { handle, country, fields: [...fields], adult: true },
       });
       setProfile(profile);
@@ -74,14 +87,38 @@ export default function Welcome() {
   return (
     <main className="page onboarding">
       <div className="onboarding-top">
-        {step > 1 ? <button type="button" className="btn btn-plain" onClick={() => { setStep(step - 1); }}>Back</button> : <span />}
-        <p className="text-footnote secondary" aria-live="polite">Step {step} of 3</p>
+        {step > 1 ? (
+          <button
+            type="button"
+            className="btn btn-plain"
+            onClick={() => {
+              setStep(step - 1);
+            }}
+          >
+            Back
+          </button>
+        ) : (
+          <span />
+        )}
+        <p className="text-footnote secondary" aria-live="polite">
+          Step {step} of 3
+        </p>
       </div>
 
       {step === 1 && (
-        <form className="onboarding-step" onSubmit={e => { e.preventDefault(); if (check.available) setStep(2); }}>
-          <h1 className="text-title1" tabIndex={-1}>Choose your name</h1>
-          <p className="text-body secondary">This is how people see you on Graphinity. It isn’t taken from your Google account.</p>
+        <form
+          className="onboarding-step"
+          onSubmit={e => {
+            e.preventDefault();
+            if (check.available) setStep(2);
+          }}
+        >
+          <h1 className="text-title1" tabIndex={-1}>
+            Choose your name
+          </h1>
+          <p className="text-body secondary">
+            This is how people see you on Graphinity. It isn’t taken from your Google account.
+          </p>
           <TextField
             label="Name"
             prefix="@"
@@ -95,31 +132,63 @@ export default function Welcome() {
             spellCheck={false}
             maxLength={24}
           />
-          <Button type="submit" className="btn-block" disabled={!check.available}>Continue</Button>
+          <Button type="submit" className="btn-block" disabled={!check.available}>
+            Continue
+          </Button>
         </form>
       )}
 
       {step === 2 && (
-        <form className="onboarding-step" onSubmit={e => { e.preventDefault(); if (country) setStep(3); }}>
-          <h1 ref={heading} className="text-title1" tabIndex={-1}>Where do you live?</h1>
-          <p className="text-body secondary">Questions about your country reach you first. Your country shows on your profile.</p>
+        <form
+          className="onboarding-step"
+          onSubmit={e => {
+            e.preventDefault();
+            if (country) setStep(3);
+          }}
+        >
+          <h1 ref={heading} className="text-title1" tabIndex={-1}>
+            Where do you live?
+          </h1>
+          <p className="text-body secondary">
+            Questions about your country reach you first. Your country shows on your profile.
+          </p>
           <SelectField
             label="Country"
             value={country}
             onChange={setCountry}
-            options={[{ value: '', label: 'Choose a country' }, ...meta.countries.map(c => ({ value: c.code, label: c.name }))]}
+            options={[
+              { value: '', label: 'Choose a country' },
+              ...meta.countries.map(c => ({ value: c.code, label: c.name })),
+            ]}
           />
-          <Button type="submit" className="btn-block" disabled={!country}>Continue</Button>
+          <Button type="submit" className="btn-block" disabled={!country}>
+            Continue
+          </Button>
         </form>
       )}
 
       {step === 3 && (
-        <form className="onboarding-step" onSubmit={e => { void create(e); }}>
-          <h1 ref={heading} className="text-title1" tabIndex={-1}>What do you know about?</h1>
-          <p className="text-body secondary">Pick areas where you have real experience. You’ll be asked questions about them. You can change these later.</p>
+        <form
+          className="onboarding-step"
+          onSubmit={e => {
+            void create(e);
+          }}
+        >
+          <h1 ref={heading} className="text-title1" tabIndex={-1}>
+            What do you know about?
+          </h1>
+          <p className="text-body secondary">
+            Pick areas where you have real experience. You’ll be asked questions about them. You can change these later.
+          </p>
           <ChipPicker legend="Your fields" options={meta.fields} selected={fields} onToggle={toggle} max={MAX_FIELDS} />
-          <Checkbox checked={adult} onChange={setAdult}>I’m 18 or older</Checkbox>
-          {submitError && <p className="form-note tone-bad" role="alert">{submitError}</p>}
+          <Checkbox checked={adult} onChange={setAdult}>
+            I’m 18 or older
+          </Checkbox>
+          {submitError && (
+            <p className="form-note tone-bad" role="alert">
+              {submitError}
+            </p>
+          )}
           <Button type="submit" className="btn-block" disabled={fields.size === 0 || !adult || submitting}>
             {submitting ? 'Creating…' : 'Create profile'}
           </Button>

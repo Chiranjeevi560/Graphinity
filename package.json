@@ -26,7 +26,9 @@
     "check:deps": ".local/tools/osv-scanner scan source --lockfile package-lock.json && npm audit --audit-level=high",
     "check:size": "size-limit",
     "check:perf": "node scripts/lighthouse.mjs",
-    "check:fast": "npm run typecheck && npm run lint && node scripts/floor-guard.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check:fast": "npm run typecheck && npm run lint && npm run format:check && node scripts/floor-guard.mjs",
     "check:task": "npm run check:fast && npm run test:coverage && npm run build && npm run check:size",
     "check:full": "npm run check:task && npm run check:secrets && npm run check:deps && npm run test:e2e && npm run check:perf",
     "dev:api:local": "npm --workspace apps/api run dev:local"
@@ -42,6 +44,7 @@
     "eslint-plugin-react-hooks": "7.1.1",
     "globals": "17.13.0",
     "lighthouse": "13.5.0",
+    "prettier": "3.9.9",
     "size-limit": "14.1.0",
     "typescript-eslint": "8.71.0"
   },

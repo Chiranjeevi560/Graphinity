@@ -3,7 +3,11 @@
 import { createElement, useSyncExternalStore, type AnchorHTMLAttributes, type MouseEvent } from 'react';
 
 const listeners = new Set<() => void>();
-const notify = () => { listeners.forEach(l => { l(); }); };
+const notify = () => {
+  listeners.forEach(l => {
+    l();
+  });
+};
 
 if (typeof window !== 'undefined') window.addEventListener('popstate', notify);
 
@@ -29,7 +33,11 @@ export function navigate(to: string, { replace = false } = {}) {
 }
 
 export function usePath(): string {
-  return useSyncExternalStore(subscribe, () => location.pathname, () => '/');
+  return useSyncExternalStore(
+    subscribe,
+    () => location.pathname,
+    () => '/',
+  );
 }
 
 interface LinkProps extends AnchorHTMLAttributes<HTMLAnchorElement> {

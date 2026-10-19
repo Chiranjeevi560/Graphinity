@@ -2,10 +2,31 @@
 // app.is_valid_handle(); a test runs examples through both so they can't drift.
 
 const RESERVED = new Set([
-  'about', 'admin', 'administrator', 'anonymous', 'api', 'deleted', 'everyone',
-  'help', 'here', 'me', 'mod', 'moderator', 'null', 'official', 'privacy', 'root',
-  'security', 'settings', 'staff', 'support', 'system', 'team', 'terms',
-  'undefined', 'www',
+  'about',
+  'admin',
+  'administrator',
+  'anonymous',
+  'api',
+  'deleted',
+  'everyone',
+  'help',
+  'here',
+  'me',
+  'mod',
+  'moderator',
+  'null',
+  'official',
+  'privacy',
+  'root',
+  'security',
+  'settings',
+  'staff',
+  'support',
+  'system',
+  'team',
+  'terms',
+  'undefined',
+  'www',
 ]);
 
 export type HandleProblem = 'length' | 'characters' | 'edges' | 'dots' | 'digits' | 'reserved';

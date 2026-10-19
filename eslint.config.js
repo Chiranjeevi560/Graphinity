@@ -7,7 +7,17 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['**/dist/**', '**/dist-local/**', '**/node_modules/**', '.local/**', '**/coverage/**', 'test-results/**', 'playwright-report/**'] },
+  {
+    ignores: [
+      '**/dist/**',
+      '**/dist-local/**',
+      '**/node_modules/**',
+      '.local/**',
+      '**/coverage/**',
+      'test-results/**',
+      'playwright-report/**',
+    ],
+  },
 
   js.configs.recommended,
   ...tseslint.configs.strictTypeChecked,
@@ -24,7 +34,10 @@ export default tseslint.config(
   },
 
   // Plain JavaScript (configs, scripts): no type information.
-  { files: ['**/*.js', '**/*.mjs', '**/vitest.config.ts', '**/vite.config.ts', '**/playwright.config.ts'], ...tseslint.configs.disableTypeChecked },
+  {
+    files: ['**/*.js', '**/*.mjs', '**/vitest.config.ts', '**/vite.config.ts', '**/playwright.config.ts'],
+    ...tseslint.configs.disableTypeChecked,
+  },
   { files: ['scripts/**', '*.config.*', 'apps/*/*.config.*'], languageOptions: { globals: globals.node } },
   // The notification worker runs in the browser as a service worker.
   { files: ['apps/web/public/sw.js'], languageOptions: { globals: globals.serviceworker } },
@@ -43,5 +56,8 @@ export default tseslint.config(
   },
 
   // The server and its tests run on Node.
-  { files: ['apps/api/**/*.ts', 'apps/web/test/**', 'apps/web/e2e/**', 'apps/web/*.ts'], languageOptions: { globals: globals.node } },
+  {
+    files: ['apps/api/**/*.ts', 'apps/web/test/**', 'apps/web/e2e/**', 'apps/web/*.ts'],
+    languageOptions: { globals: globals.node },
+  },
 );

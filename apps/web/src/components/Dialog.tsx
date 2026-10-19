@@ -27,10 +27,21 @@ export function Dialog({ open, onClose, title, children, actions }: Props) {
   }, [open]);
 
   return (
-    <dialog ref={ref} className="dialog" aria-labelledby={titleId} onClose={onClose} onCancel={e => { e.preventDefault(); onClose(); }}>
+    <dialog
+      ref={ref}
+      className="dialog"
+      aria-labelledby={titleId}
+      onClose={onClose}
+      onCancel={e => {
+        e.preventDefault();
+        onClose();
+      }}
+    >
       <div className="dialog-panel sq-host">
         <SquircleLayers radius={1.25} />
-        <h2 id={titleId} className="text-title3">{title}</h2>
+        <h2 id={titleId} className="text-title3">
+          {title}
+        </h2>
         <div className="dialog-body text-body">{children}</div>
         <div className="dialog-actions">{actions}</div>
       </div>

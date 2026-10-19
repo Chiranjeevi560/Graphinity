@@ -36,7 +36,9 @@ export function LivingGraph({ data, you, caption }: { data: GraphData; you?: num
       if (entry) setSize({ width: entry.contentRect.width, height: entry.contentRect.height });
     });
     observer.observe(stage);
-    return () => { observer.disconnect(); };
+    return () => {
+      observer.disconnect();
+    };
   }, []);
 
   const clusters = clustersFor(data.fields, size.width, size.height);
@@ -44,7 +46,14 @@ export function LivingGraph({ data, you, caption }: { data: GraphData; you?: num
 
   function onKeyDown(event: KeyboardEvent<HTMLButtonElement>, rank: number) {
     const last = order.length - 1;
-    const next = { ArrowRight: rank + 1, ArrowDown: rank + 1, ArrowLeft: rank - 1, ArrowUp: rank - 1, Home: 0, End: last }[event.key];
+    const next = {
+      ArrowRight: rank + 1,
+      ArrowDown: rank + 1,
+      ArrowLeft: rank - 1,
+      ArrowUp: rank - 1,
+      Home: 0,
+      End: last,
+    }[event.key];
     if (next === undefined) return;
     event.preventDefault();
     const to = Math.max(0, Math.min(last, next));
@@ -66,16 +75,30 @@ export function LivingGraph({ data, you, caption }: { data: GraphData; you?: num
                 return (
                   <li key={field.slug}>
                     <button
-                      ref={el => { buttons.current[rank] = el; }}
+                      ref={el => {
+                        buttons.current[rank] = el;
+                      }}
                       type="button"
                       className="graph-node"
                       tabIndex={rank === at ? 0 : -1}
                       aria-expanded={open === index}
                       aria-controls={detailId}
-                      style={{ left: `${String(c.x)}px`, top: `${String(c.y)}px`, '--node-size': `${String(c.r * 2)}px` } as CSSProperties}
-                      onFocus={() => { setCurrent(rank); }}
-                      onClick={() => { setOpen(open === index ? null : index); }}
-                      onKeyDown={e => { onKeyDown(e, rank); }}
+                      style={
+                        {
+                          left: `${String(c.x)}px`,
+                          top: `${String(c.y)}px`,
+                          '--node-size': `${String(c.r * 2)}px`,
+                        } as CSSProperties
+                      }
+                      onFocus={() => {
+                        setCurrent(rank);
+                      }}
+                      onClick={() => {
+                        setOpen(open === index ? null : index);
+                      }}
+                      onKeyDown={e => {
+                        onKeyDown(e, rank);
+                      }}
                     >
                       <span className="visually-hidden">{fieldLabel(field)}</span>
                     </button>

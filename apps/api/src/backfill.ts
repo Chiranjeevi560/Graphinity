@@ -11,10 +11,17 @@ export const BACKFILL_BATCH = 20;
 
 /** Returns how many questions got their embedding. Throws only if the database does. */
 export async function embedMissing(db: Database, embedder: Embedder): Promise<number> {
-  const todo = await db.asSystem(async q => (await q.query<{ id: string; title: string; body: string }>(
-    `SELECT id::text AS id, title, body FROM app.questions
+  const todo = await db.asSystem(
+    async q =>
+      (
+        await q.query<{ id: string; title: string; body: string }>(
+          `SELECT id::text AS id, title, body FROM app.questions
      WHERE embedding IS NULL OR embedding_model IS DISTINCT FROM $1
-     ORDER BY id DESC LIMIT ${String(BACKFILL_BATCH)}`, [embedder.model])).rows);
+     ORDER BY id DESC LIMIT ${String(BACKFILL_BATCH)}`,
+          [embedder.model],
+        )
+      ).rows,
+  );
   if (todo.length === 0) return 0;
   let vectors: number[][];
   try {
@@ -26,7 +33,12 @@ export async function embedMissing(db: Database, embedder: Embedder): Promise<nu
   await db.asSystem(async q => {
     for (const [i, t] of todo.entries()) {
       const v = vectors[i];
-      if (v) await q.query('UPDATE app.questions SET embedding = $2, embedding_model = $3 WHERE id = $1', [t.id, vectorLiteral(v), embedder.model]);
+      if (v)
+        await q.query('UPDATE app.questions SET embedding = $2, embedding_model = $3 WHERE id = $1', [
+          t.id,
+          vectorLiteral(v),
+          embedder.model,
+        ]);
     }
   });
   return todo.length;

@@ -1,0 +1,15 @@
+# Written by tools, not people.
+package-lock.json
+**/dist/
+**/dist-local/
+coverage/
+test-results/
+playwright-report/
+.local/
+# Prose and tables are laid out by hand; formatting them would only re-flow them.
+*.md
+# Layout is a contract here: link previews (apps/web/share.ts) read and rewrite these tags, and the
+# deploy stamp fills its placeholders.
+apps/web/index.html
+# Holds generated spring curves, one per line, that test/spring.test.ts compares character for character.
+apps/web/src/styles/tokens.css

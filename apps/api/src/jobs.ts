@@ -14,11 +14,17 @@ export function serial(task: () => Promise<void>): () => void {
   let running = false;
   let again = false;
   const run = () => {
-    if (running) { again = true; return; }
+    if (running) {
+      again = true;
+      return;
+    }
     running = true;
     void task().finally(() => {
       running = false;
-      if (again) { again = false; run(); }
+      if (again) {
+        again = false;
+        run();
+      }
     });
   };
   return run;

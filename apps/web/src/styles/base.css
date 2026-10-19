@@ -1,4 +1,8 @@
-*, *::before, *::after { box-sizing: border-box; }
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
 
 html {
   /* Respect the person's text size; never pin the root in px. */
@@ -25,44 +29,129 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
-h1, h2, h3, p { margin: 0; }
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
 /* No lone last word on a line: balanced headings, tidier paragraphs. */
-h1, h2, h3 { text-wrap: balance; }
-p, li { text-wrap: pretty; }
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+p,
+li {
+  text-wrap: pretty;
+}
 
 /* Text styles. Weight, size, leading and tracking always change together. */
-.text-large { font-size: var(--text-large-size); line-height: var(--text-large-leading); letter-spacing: var(--text-large-tracking); font-weight: 700; }
-.text-title1 { font-size: var(--text-title1-size); line-height: var(--text-title1-leading); letter-spacing: var(--text-title1-tracking); font-weight: 700; }
-.text-title2 { font-size: var(--text-title2-size); line-height: var(--text-title2-leading); letter-spacing: var(--text-title2-tracking); font-weight: 700; }
-.text-title3 { font-size: var(--text-title3-size); line-height: var(--text-title3-leading); letter-spacing: var(--text-title3-tracking); font-weight: 600; }
-.text-headline { font-size: var(--text-body-size); line-height: var(--text-body-leading); letter-spacing: var(--text-body-tracking); font-weight: 600; }
-.text-body { font-size: var(--text-body-size); line-height: var(--text-body-leading); letter-spacing: var(--text-body-tracking); }
-.text-callout { font-size: var(--text-callout-size); line-height: var(--text-callout-leading); letter-spacing: var(--text-callout-tracking); }
-.text-subhead { font-size: var(--text-subhead-size); line-height: var(--text-subhead-leading); letter-spacing: var(--text-subhead-tracking); }
-.text-footnote { font-size: var(--text-footnote-size); line-height: var(--text-footnote-leading); letter-spacing: var(--text-footnote-tracking); }
-.text-caption { font-size: var(--text-caption-size); line-height: var(--text-caption-leading); letter-spacing: var(--text-caption-tracking); }
-.secondary { color: var(--label-secondary); }
+.text-large {
+  font-size: var(--text-large-size);
+  line-height: var(--text-large-leading);
+  letter-spacing: var(--text-large-tracking);
+  font-weight: 700;
+}
+.text-title1 {
+  font-size: var(--text-title1-size);
+  line-height: var(--text-title1-leading);
+  letter-spacing: var(--text-title1-tracking);
+  font-weight: 700;
+}
+.text-title2 {
+  font-size: var(--text-title2-size);
+  line-height: var(--text-title2-leading);
+  letter-spacing: var(--text-title2-tracking);
+  font-weight: 700;
+}
+.text-title3 {
+  font-size: var(--text-title3-size);
+  line-height: var(--text-title3-leading);
+  letter-spacing: var(--text-title3-tracking);
+  font-weight: 600;
+}
+.text-headline {
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-leading);
+  letter-spacing: var(--text-body-tracking);
+  font-weight: 600;
+}
+.text-body {
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-leading);
+  letter-spacing: var(--text-body-tracking);
+}
+.text-callout {
+  font-size: var(--text-callout-size);
+  line-height: var(--text-callout-leading);
+  letter-spacing: var(--text-callout-tracking);
+}
+.text-subhead {
+  font-size: var(--text-subhead-size);
+  line-height: var(--text-subhead-leading);
+  letter-spacing: var(--text-subhead-tracking);
+}
+.text-footnote {
+  font-size: var(--text-footnote-size);
+  line-height: var(--text-footnote-leading);
+  letter-spacing: var(--text-footnote-tracking);
+}
+.text-caption {
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-leading);
+  letter-spacing: var(--text-caption-tracking);
+}
+.secondary {
+  color: var(--label-secondary);
+}
 
 /* Inputs at 16px or more, or iOS zooms the page when one is focused. */
-input, textarea, select, button {
+input,
+textarea,
+select,
+button {
   font: inherit;
   letter-spacing: inherit;
   color: inherit;
 }
-input, textarea, select { font-size: max(1rem, 16px); }
+input,
+textarea,
+select {
+  font-size: max(1rem, 16px);
+}
 
-a { color: var(--accent-text); text-decoration: none; }
+a {
+  color: var(--accent-text);
+  text-decoration: none;
+}
 /* Links inside sentences are underlined: colour alone can't be the only cue
    (WCAG 1.4.1), and many people can't tell the colours apart. */
-a:hover, p a, li a { text-decoration: underline; text-underline-offset: 0.15em; }
+a:hover,
+p a,
+li a {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
 
 /* spec §6.2: a double ring, the accent outside a band of page colour, so
    it shows on any fill, photo or graph behind it. */
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; box-shadow: 0 0 0 4px var(--surface-canvas); }
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--surface-canvas);
+}
 
 .visually-hidden {
-  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
-  overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* Page frame: content column with a 16px gutter and the device's safe areas. */

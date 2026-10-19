@@ -15,7 +15,9 @@ function finishOnce(): Promise<{ returnTo: string }> {
     history.replaceState(null, '', '/auth/callback');
     finishing = auth.completeSignIn(params).finally(() => {
       // Let a later, separate sign-in start fresh.
-      setTimeout(() => { finishing = null; }, 0);
+      setTimeout(() => {
+        finishing = null;
+      }, 0);
     });
   }
   return finishing;
@@ -35,13 +37,17 @@ export default function AuthCallback() {
       .catch((err: unknown) => {
         if (alive) setError(err instanceof SignInError ? signInMessages[err.reason] : signInMessages.rejected);
       });
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [reload]);
 
   if (!error) {
     return (
       <main className="page stack-message">
-        <p className="text-body status" role="status">Signing you in…</p>
+        <p className="text-body status" role="status">
+          Signing you in…
+        </p>
       </main>
     );
   }

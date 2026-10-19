@@ -35,10 +35,16 @@ export function pageMeta(path: string): PageMeta {
 
 export function applyMeta(meta: PageMeta, path: string, siteOrigin: string): void {
   document.title = meta.title;
-  document.querySelector('meta[name="robots"]')?.setAttribute('content', meta.index ? 'index, follow, max-image-preview:large' : 'noindex');
+  document
+    .querySelector('meta[name="robots"]')
+    ?.setAttribute('content', meta.index ? 'index, follow, max-image-preview:large' : 'noindex');
   document.querySelector('link[rel="canonical"]')?.setAttribute('href', new URL(path, siteOrigin).toString());
 }
 
 function safeDecode(part: string): string {
-  try { return decodeURIComponent(part); } catch { return part; }
+  try {
+    return decodeURIComponent(part);
+  } catch {
+    return part;
+  }
 }

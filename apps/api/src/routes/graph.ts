@@ -22,43 +22,60 @@ export function registerGraphRoutes(app: FastifyInstance, { db, clock }: { db: D
       const body = build();
       kept = { at: clock.now(), body };
       // A failed build isn't kept: the next request tries again.
-      body.catch(() => { kept = null; });
+      body.catch(() => {
+        kept = null;
+      });
     }
     return kept.body;
   });
 
   async function build() {
     const graph = await db.withUser(null, async q => {
-      const fields = (await q.query<{ slug: string; name: string; members: number }>(
-        `SELECT f.slug, f.name, count(pf.profile_id)::int AS members
+      const fields = (
+        await q.query<{ slug: string; name: string; members: number }>(
+          `SELECT f.slug, f.name, count(pf.profile_id)::int AS members
          FROM app.fields f LEFT JOIN app.profile_fields pf ON pf.field = f.slug
-         GROUP BY f.slug, f.name, f.position ORDER BY f.position`)).rows;
-      const people = (await q.query<{ fields: string[] }>(
-        `SELECT array_agg(pf.field ORDER BY pf.field) AS fields
+         GROUP BY f.slug, f.name, f.position ORDER BY f.position`,
+        )
+      ).rows;
+      const people = (
+        await q.query<{ fields: string[] }>(
+          `SELECT array_agg(pf.field ORDER BY pf.field) AS fields
          FROM app.profile_fields pf
          GROUP BY pf.profile_id
-         ORDER BY random() LIMIT ${String(GRAPH_SAMPLE)}`)).rows;
+         ORDER BY random() LIMIT ${String(GRAPH_SAMPLE)}`,
+        )
+      ).rows;
       // What happened lately, per field: questions asked and answers given.
       // Removed or hidden posts are left out by row-level security, as everywhere.
-      const recent = (await q.query<{ field: string; kind: 'question' | 'answer' }>(
-        `SELECT field, kind FROM (
+      const recent = (
+        await q.query<{ field: string; kind: 'question' | 'answer' }>(
+          `SELECT field, kind FROM (
            SELECT q.field, 'question' AS kind, q.created_at AS at FROM app.questions q
            WHERE q.created_at > now() - interval '1 day'
            UNION ALL
            SELECT q.field, 'answer', a.created_at FROM app.answers a JOIN app.questions q ON q.id = a.question_id
            WHERE a.created_at > now() - interval '1 day'
-         ) e ORDER BY at DESC LIMIT ${String(RECENT_EVENTS)}`)).rows;
-      const counts = (await q.query<{ members: number; questions: number; answers: number }>(
-        `SELECT (SELECT count(DISTINCT profile_id) FROM app.profile_fields)::int AS members,
+         ) e ORDER BY at DESC LIMIT ${String(RECENT_EVENTS)}`,
+        )
+      ).rows;
+      const counts = (
+        await q.query<{ members: number; questions: number; answers: number }>(
+          `SELECT (SELECT count(DISTINCT profile_id) FROM app.profile_fields)::int AS members,
                 (SELECT count(*) FROM app.questions WHERE created_at > now() - interval '1 day')::int AS questions,
-                (SELECT count(*) FROM app.answers WHERE created_at > now() - interval '1 day')::int AS answers`)).rows[0];
+                (SELECT count(*) FROM app.answers WHERE created_at > now() - interval '1 day')::int AS answers`,
+        )
+      ).rows[0];
       // How many people know both of each pair of fields, from everyone (the
       // sample above is only for drawing). Under 5 the number stays here:
       // set against public profiles, it could point at who.
-      const links = (await q.query<{ a: string; b: string; shared: number | null }>(
-        `SELECT x.field AS a, y.field AS b, CASE WHEN count(*) >= 5 THEN count(*)::int END AS shared
+      const links = (
+        await q.query<{ a: string; b: string; shared: number | null }>(
+          `SELECT x.field AS a, y.field AS b, CASE WHEN count(*) >= 5 THEN count(*)::int END AS shared
          FROM app.profile_fields x JOIN app.profile_fields y ON y.profile_id = x.profile_id AND y.field > x.field
-         GROUP BY x.field, y.field`)).rows;
+         GROUP BY x.field, y.field`,
+        )
+      ).rows;
       return { fields, people, recent, counts, links };
     });
     const index = new Map(graph.fields.map((f, i) => [f.slug, i]));

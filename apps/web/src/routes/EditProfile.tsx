@@ -26,21 +26,35 @@ export default function EditProfile({ profile }: { profile: Profile }) {
   const nameLocked = nextChange !== null && nextChange.getTime() > openedAt;
 
   if (metaError) return <LoadFailed error={metaError} onRetry={retryMeta} />;
-  if (!meta) return <main className="page stack-message"><p className="text-body status" role="status">Loading…</p></main>;
+  if (!meta)
+    return (
+      <main className="page stack-message">
+        <p className="text-body status" role="status">
+          Loading…
+        </p>
+      </main>
+    );
 
-  const toggle = (slug: string) => { setFields(prev => {
-    const next = new Set(prev);
-    if (next.has(slug)) next.delete(slug); else if (next.size < 8) next.add(slug);
-    return next;
-  }); };
+  const toggle = (slug: string) => {
+    setFields(prev => {
+      const next = new Set(prev);
+      if (next.has(slug)) next.delete(slug);
+      else if (next.size < 8) next.add(slug);
+      return next;
+    });
+  };
 
   const normalized = handle.trim().toLowerCase();
   const changes: Record<string, unknown> = {};
   if (normalized !== profile.handle) changes.handle = normalized;
   if (country !== profile.country.code) changes.country = country;
-  const before = profile.fields.map(f => f.slug).sort().join();
+  const before = profile.fields
+    .map(f => f.slug)
+    .sort()
+    .join();
   if ([...fields].sort().join() !== before) changes.fields = [...fields];
-  const canSave = Object.keys(changes).length > 0 && fields.size > 0 && (changes.handle === undefined || check.available) && !saving;
+  const canSave =
+    Object.keys(changes).length > 0 && fields.size > 0 && (changes.handle === undefined || check.available) && !saving;
 
   async function save(e: SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -60,9 +74,16 @@ export default function EditProfile({ profile }: { profile: Profile }) {
 
   return (
     <main className="page">
-      <form className="edit-form" onSubmit={e => { void save(e); }}>
+      <form
+        className="edit-form"
+        onSubmit={e => {
+          void save(e);
+        }}
+      >
         <div className="onboarding-top">
-          <Link to="/me" className="btn btn-plain">Cancel</Link>
+          <Link to="/me" className="btn btn-plain">
+            Cancel
+          </Link>
         </div>
         <h1 className="text-title1">Edit profile</h1>
         <TextField
@@ -71,7 +92,11 @@ export default function EditProfile({ profile }: { profile: Profile }) {
           value={handle}
           onChange={setHandle}
           status={nameLocked ? null : check.status}
-          hint={nameLocked ? `You can change your name again on ${dateFormat.format(nextChange)}.` : 'You can change your name once a week.'}
+          hint={
+            nameLocked
+              ? `You can change your name again on ${dateFormat.format(nextChange)}.`
+              : 'You can change your name once a week.'
+          }
           disabled={nameLocked}
           autoComplete="off"
           autoCapitalize="none"
@@ -86,8 +111,14 @@ export default function EditProfile({ profile }: { profile: Profile }) {
           options={meta.countries.map(c => ({ value: c.code, label: c.name }))}
         />
         <ChipPicker legend="Your fields" options={meta.fields} selected={fields} onToggle={toggle} max={8} />
-        {error && <p className="form-note tone-bad" role="alert">{error}</p>}
-        <Button type="submit" className="btn-block" disabled={!canSave}>{saving ? 'Saving…' : 'Save'}</Button>
+        {error && (
+          <p className="form-note tone-bad" role="alert">
+            {error}
+          </p>
+        )}
+        <Button type="submit" className="btn-block" disabled={!canSave}>
+          {saving ? 'Saving…' : 'Save'}
+        </Button>
       </form>
     </main>
   );

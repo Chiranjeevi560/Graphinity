@@ -81,7 +81,11 @@ export function createAuth(deps: AuthDeps) {
   let access: { token: string; expiresAt: number } | null = null;
   let refreshing: Promise<string | null> | null = null;
   const listeners = new Set<() => void>();
-  const notify = () => { listeners.forEach(l => { l(); }); };
+  const notify = () => {
+    listeners.forEach(l => {
+      l();
+    });
+  };
 
   const authHeaders = { apikey: deps.supabaseKey, 'content-type': 'application/json' };
 
@@ -107,7 +111,9 @@ export function createAuth(deps: AuthDeps) {
 
   async function postToken(grant: 'id_token' | 'refresh_token', body: object): Promise<Response> {
     return deps.fetch(`${deps.supabaseUrl}/auth/v1/token?grant_type=${grant}`, {
-      method: 'POST', headers: authHeaders, body: JSON.stringify(body),
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify(body),
     });
   }
 
@@ -146,7 +152,11 @@ export function createAuth(deps: AuthDeps) {
       const state = params.get('state');
       if (!raw || !idToken || !state) throw new SignInError('mismatch');
       let pending: Pending;
-      try { pending = JSON.parse(raw) as Pending; } catch { throw new SignInError('mismatch'); }
+      try {
+        pending = JSON.parse(raw) as Pending;
+      } catch {
+        throw new SignInError('mismatch');
+      }
       // Our own state must match what this tab stored before leaving. That
       // stops someone feeding us a sign-in they started (login CSRF).
       if (!constantTimeEqual(pending.state, state)) throw new SignInError('mismatch');
@@ -159,7 +169,7 @@ export function createAuth(deps: AuthDeps) {
         throw new SignInError('offline');
       }
       if (!res.ok) throw new SignInError('rejected');
-      keep(await res.json() as TokenResponse);
+      keep((await res.json()) as TokenResponse);
       notify();
       return { returnTo: safePath(pending.returnTo) };
     },
@@ -168,7 +178,10 @@ export function createAuth(deps: AuthDeps) {
     async getAccessToken({ forceRefresh = false } = {}): Promise<string | null> {
       if (!forceRefresh && access && access.expiresAt - deps.now() > EARLY_REFRESH) return access.token;
       const refreshToken = storage.getItem(REFRESH_KEY);
-      if (!refreshToken) { forget(); return null; }
+      if (!refreshToken) {
+        forget();
+        return null;
+      }
       // One refresh at a time: refresh tokens are single use, so two parallel
       // refreshes would sign the person out.
       const started = generation;
@@ -180,9 +193,12 @@ export function createAuth(deps: AuthDeps) {
           // Only Supabase saying the refresh token is no good ends the
           // session. A server error or a rate limit is temporary: keep the
           // refresh token and try again on the next request.
-          if (res.status === 400 || res.status === 401 || res.status === 403) { forget(); return null; }
+          if (res.status === 400 || res.status === 401 || res.status === 403) {
+            forget();
+            return null;
+          }
           if (!res.ok) return null;
-          const session = await res.json() as TokenResponse;
+          const session = (await res.json()) as TokenResponse;
           // Signed out while this was on its way: keeping it would sign them back in.
           if (generation !== started) return null;
           return keep(session);
@@ -207,9 +223,12 @@ export function createAuth(deps: AuthDeps) {
       forget();
       if (token) {
         // Best effort: also ends the session on Supabase's side.
-        await deps.fetch(`${deps.supabaseUrl}/auth/v1/logout`, {
-          method: 'POST', headers: { ...authHeaders, authorization: `Bearer ${token}` },
-        }).catch(() => {});
+        await deps
+          .fetch(`${deps.supabaseUrl}/auth/v1/logout`, {
+            method: 'POST',
+            headers: { ...authHeaders, authorization: `Bearer ${token}` },
+          })
+          .catch(() => {});
       }
     },
 
@@ -218,7 +237,9 @@ export function createAuth(deps: AuthDeps) {
 
     subscribe(listener: () => void) {
       listeners.add(listener);
-      return () => { listeners.delete(listener); };
+      return () => {
+        listeners.delete(listener);
+      };
     },
   };
   return auth;

@@ -65,47 +65,82 @@ logger.current = app.log;
 // then every 5 minutes. The keep-awake ping keeps this instance running.
 const runDeletions = () => {
   completePendingDeletions({ db, authAdmin, subjectKey: config.ipHashKey, log: app.log })
-    .then(r => { if (r.completed || r.failed) app.log.info(r, 'pending deletions'); })
-    .catch((err: unknown) => { app.log.warn({ kind: errorKind(err) }, 'pending deletions run failed'); });
+    .then(r => {
+      if (r.completed || r.failed) app.log.info(r, 'pending deletions');
+    })
+    .catch((err: unknown) => {
+      app.log.warn({ kind: errorKind(err) }, 'pending deletions run failed');
+    });
   // Network marks are kept 30 days.
-  expireNetworkMarks(db).catch((err: unknown) => { app.log.warn({ kind: errorKind(err) }, 'network mark expiry failed'); });
+  expireNetworkMarks(db).catch((err: unknown) => {
+    app.log.warn({ kind: errorKind(err) }, 'network mark expiry failed');
+  });
 };
 runDeletions();
 const deletionTimer = setInterval(runDeletions, 5 * 60_000);
 deletionTimer.unref();
-app.addHook('onClose', (_instance, done) => { clearInterval(deletionTimer); done(); });
+app.addHook('onClose', (_instance, done) => {
+  clearInterval(deletionTimer);
+  done();
+});
 
 // Web push to people's devices, when keys are set (VAPID_*).
 if (config.vapid) {
-  const push = createPushSender({ db, vapid: config.vapid, fetch: (...args) => fetch(...args), log: app.log, now: () => Date.now() });
+  const push = createPushSender({
+    db,
+    vapid: config.vapid,
+    fetch: (...args) => fetch(...args),
+    log: app.log,
+    now: () => Date.now(),
+  });
   // A wave can publish 100 events at once; at most 2 pushes run together,
   // so requests always find a free database connection (the pool has 5).
   const limit = createLimiter(2);
   events.onPublish((userId, event) => {
-    limit(() => push(userId, event)).catch((err: unknown) => { app.log.warn({ kind: errorKind(err) }, 'push run failed'); });
+    limit(() => push(userId, event)).catch((err: unknown) => {
+      app.log.warn({ kind: errorKind(err) }, 'push run failed');
+    });
   });
 }
 
 // Put questions to people: right after each new question, and every
 // minute for the next waves. One run at a time; asks during a run are
 // picked up by one more run straight after it.
-const runRouting = serial(() => routeDueQuestions(db, app.log)
-  .then(results => {
-    announceRouting(events, results);
-    const people = results.reduce((n, r) => n + r.asked.length, 0);
-    if (people) app.log.info({ questions: results.length, people }, 'routed questions');
-  })
-  .catch((err: unknown) => { app.log.warn({ kind: errorKind(err) }, 'routing run failed'); }));
+const runRouting = serial(() =>
+  routeDueQuestions(db, app.log)
+    .then(results => {
+      announceRouting(events, results);
+      const people = results.reduce((n, r) => n + r.asked.length, 0);
+      if (people) app.log.info({ questions: results.length, people }, 'routed questions');
+    })
+    .catch((err: unknown) => {
+      app.log.warn({ kind: errorKind(err) }, 'routing run failed');
+    }),
+);
 events.onAsked(runRouting);
 // Embeddings a question is missing, a few each minute.
-const runBackfill = embedder ? serial(() => embedMissing(db, embedder).then(
-  n => { if (n) app.log.info({ questions: n }, 'embedded questions'); },
-  (err: unknown) => { app.log.warn({ kind: errorKind(err) }, 'embedding backfill failed'); },
-)) : null;
+const runBackfill = embedder
+  ? serial(() =>
+      embedMissing(db, embedder).then(
+        n => {
+          if (n) app.log.info({ questions: n }, 'embedded questions');
+        },
+        (err: unknown) => {
+          app.log.warn({ kind: errorKind(err) }, 'embedding backfill failed');
+        },
+      ),
+    )
+  : null;
 runRouting();
-const routingTimer = setInterval(() => { runRouting(); runBackfill?.(); }, 60_000);
+const routingTimer = setInterval(() => {
+  runRouting();
+  runBackfill?.();
+}, 60_000);
 routingTimer.unref();
-app.addHook('onClose', (_instance, done) => { clearInterval(routingTimer); done(); });
+app.addHook('onClose', (_instance, done) => {
+  clearInterval(routingTimer);
+  done();
+});
 
 // Render sends SIGTERM before replacing or stopping the instance. Finish
 // in-flight requests, then release database connections. A failure while
@@ -115,12 +150,16 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   process.once(signal, () => {
     app.log.info({ signal }, 'shutting down');
     setTimeout(() => process.exit(1), 25_000).unref();
-    app.close()
+    app
+      .close()
       .then(() => db.close())
-      .then(() => process.exit(0), (err: unknown) => {
-        app.log.error({ kind: errorKind(err) }, 'shutdown failed');
-        process.exit(1);
-      });
+      .then(
+        () => process.exit(0),
+        (err: unknown) => {
+          app.log.error({ kind: errorKind(err) }, 'shutdown failed');
+          process.exit(1);
+        },
+      );
   });
 }
 

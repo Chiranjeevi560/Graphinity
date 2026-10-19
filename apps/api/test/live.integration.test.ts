@@ -22,7 +22,12 @@ beforeAll(async () => {
 async function member() {
   const p = await h.person();
   names += 1;
-  const res = await h.call('POST', '/me/profile', p.token, { handle: `live.${String(names)}`, country: 'IN', fields: ['travel'], adult: true });
+  const res = await h.call('POST', '/me/profile', p.token, {
+    handle: `live.${String(names)}`,
+    country: 'IN',
+    fields: ['travel'],
+    adult: true,
+  });
   expect(res.statusCode).toBe(201);
   return p;
 }
@@ -32,23 +37,36 @@ function listen(token: string) {
   const controller = new AbortController();
   const received: string[] = [];
   let ended = false;
-  const ready = fetch(`${base}/events`, { headers: { authorization: `Bearer ${token}`, origin: SITE }, signal: controller.signal })
-    .then(res => {
-      const reader = must(res.body).getReader();
-      const decoder = new TextDecoder();
-      void (async () => {
-        try {
-          for (;;) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            received.push(decoder.decode(value));
-          }
-        } catch { /* aborted by the test */ }
-        ended = true;
-      })();
-      return res;
-    });
-  return { ready, received, stop: () => { controller.abort(); }, get ended() { return ended; } };
+  const ready = fetch(`${base}/events`, {
+    headers: { authorization: `Bearer ${token}`, origin: SITE },
+    signal: controller.signal,
+  }).then(res => {
+    const reader = must(res.body).getReader();
+    const decoder = new TextDecoder();
+    void (async () => {
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          received.push(decoder.decode(value));
+        }
+      } catch {
+        /* aborted by the test */
+      }
+      ended = true;
+    })();
+    return res;
+  });
+  return {
+    ready,
+    received,
+    stop: () => {
+      controller.abort();
+    },
+    get ended() {
+      return ended;
+    },
+  };
 }
 
 const until = async (check: () => boolean, ms = 3000) => {
@@ -61,16 +79,27 @@ const until = async (check: () => boolean, ms = 3000) => {
 
 describe('live updates', () => {
   it('tell the asker about a new answer, and nobody else', async () => {
-    const asker = await member(), answerer = await member(), bystander = await member();
-    const mine = listen(asker.token), theirs = listen(bystander.token);
+    const asker = await member(),
+      answerer = await member(),
+      bystander = await member();
+    const mine = listen(asker.token),
+      theirs = listen(bystander.token);
     const res = await mine.ready;
     await theirs.ready;
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toBe('text/event-stream; charset=utf-8');
     expect(res.headers.get('access-control-allow-origin')).toBe(SITE);
-    const q = must((await h.call('POST', '/questions', asker.token, { title: 'Best way to get from the airport to the city late at night?', field: 'travel' }))
-      .json<{ question: { id: string } }>().question.id);
-    await h.call('POST', `/questions/${q}/answers`, answerer.token, { body: 'The night bus runs every 30 minutes until 2am.' });
+    const q = must(
+      (
+        await h.call('POST', '/questions', asker.token, {
+          title: 'Best way to get from the airport to the city late at night?',
+          field: 'travel',
+        })
+      ).json<{ question: { id: string } }>().question.id,
+    );
+    await h.call('POST', `/questions/${q}/answers`, answerer.token, {
+      body: 'The night bus runs every 30 minutes until 2am.',
+    });
     await until(() => mine.received.join('').includes('event: answered'));
     expect(mine.received.join('')).toContain(`event: answered\ndata: {"questionId":"${q}"}\n\n`);
     expect(theirs.received.join('')).not.toContain('event:');
@@ -115,7 +144,10 @@ describe('clients that leave while being let in', () => {
     // Abandon streams at once, again and again, while sign-in is being checked.
     for (let i = 0; i < 12; i++) {
       const controller = new AbortController();
-      const started = fetch(`${base}/events`, { headers: { authorization: `Bearer ${p.token}` }, signal: controller.signal }).catch(() => null);
+      const started = fetch(`${base}/events`, {
+        headers: { authorization: `Bearer ${p.token}` },
+        signal: controller.signal,
+      }).catch(() => null);
       await new Promise(r => setTimeout(r, i % 3));
       controller.abort();
       await started;
@@ -134,14 +166,25 @@ describe('shutting down', () => {
     try {
       const address = await other.app.listen({ port: 0, host: '127.0.0.1' });
       const p = await other.person();
-      await other.call('POST', '/me/profile', p.token, { handle: 'live.shutdown', country: 'IN', fields: ['travel'], adult: true });
+      await other.call('POST', '/me/profile', p.token, {
+        handle: 'live.shutdown',
+        country: 'IN',
+        fields: ['travel'],
+        adult: true,
+      });
       const { request } = await import('node:http');
       // node:http with no agent: exactly one socket, kept open by the stream.
       const ended = new Promise<void>((resolve, reject) => {
-        const req = request(`${address}/events`, { agent: false, headers: { authorization: `Bearer ${p.token}` } }, res => {
-          res.on('data', () => { /* pings */ });
-          res.on('end', resolve);
-        });
+        const req = request(
+          `${address}/events`,
+          { agent: false, headers: { authorization: `Bearer ${p.token}` } },
+          res => {
+            res.on('data', () => {
+              /* pings */
+            });
+            res.on('end', resolve);
+          },
+        );
         req.on('error', reject);
         req.end();
       });

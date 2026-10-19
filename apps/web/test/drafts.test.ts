@@ -3,9 +3,25 @@ import { draftStore } from '../src/lib/drafts.ts';
 
 function memory() {
   const m = new Map<string, string>();
-  return { m, storage: { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => { m.set(k, v); }, removeItem: (k: string) => { m.delete(k); }, key: (i: number) => [...m.keys()][i] ?? null, get length() { return m.size; } } };
+  return {
+    m,
+    storage: {
+      getItem: (k: string) => m.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        m.set(k, v);
+      },
+      removeItem: (k: string) => {
+        m.delete(k);
+      },
+      key: (i: number) => [...m.keys()][i] ?? null,
+      get length() {
+        return m.size;
+      },
+    },
+  };
 }
-const isText = (v: unknown): v is { body: string } => typeof v === 'object' && v !== null && typeof (v as { body?: unknown }).body === 'string';
+const isText = (v: unknown): v is { body: string } =>
+  typeof v === 'object' && v !== null && typeof (v as { body?: unknown }).body === 'string';
 
 describe('drafts', () => {
   it('keep what was typed across a reload, and forget it once posted', () => {
@@ -53,7 +69,23 @@ describe('drafts', () => {
   });
 
   it('still work for the page when storage is blocked', () => {
-    const blocked = { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); }, removeItem: () => { throw new Error('blocked'); }, key: () => { throw new Error('blocked'); }, get length(): number { throw new Error('blocked'); } };
+    const blocked = {
+      getItem: () => {
+        throw new Error('blocked');
+      },
+      setItem: () => {
+        throw new Error('blocked');
+      },
+      removeItem: () => {
+        throw new Error('blocked');
+      },
+      key: () => {
+        throw new Error('blocked');
+      },
+      get length(): number {
+        throw new Error('blocked');
+      },
+    };
     const d = draftStore(blocked);
     d.save('ask', { body: 'typed' });
     expect(d.load('ask', isText)).toEqual({ body: 'typed' });

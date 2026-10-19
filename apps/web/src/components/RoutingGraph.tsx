@@ -22,19 +22,26 @@ export function RoutingGraph(props: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const latest = useRef(props);
   // Read by the drawing loop on each frame, so new numbers never restart it.
-  useEffect(() => { latest.current = props; });
+  useEffect(() => {
+    latest.current = props;
+  });
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    return runCanvas(canvas, routingScene(() => latest.current));
+    return runCanvas(
+      canvas,
+      routingScene(() => latest.current),
+    );
   }, []);
 
   return (
     <figure className="routing-graph">
       <canvas ref={canvasRef} className="routing-graph-canvas" aria-hidden="true" />
       {/* Spec §20.1: each milestone (a wave going out, an answer arriving) is read out as it happens. */}
-      <figcaption className="text-subhead secondary" aria-live="polite">{props.caption}</figcaption>
+      <figcaption className="text-subhead secondary" aria-live="polite">
+        {props.caption}
+      </figcaption>
     </figure>
   );
 }

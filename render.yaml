@@ -16,7 +16,7 @@ services:
     autoDeployTrigger: checksPass
     envVars:
       - key: NODE_VERSION
-        value: "24"
+        value: '24'
       - key: NODE_ENV
         value: production
       # staging or production (docs/adr/0002); the server refuses anything else.

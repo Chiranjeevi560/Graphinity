@@ -15,13 +15,20 @@ export function Inbox() {
     let live = true;
     const load = () => {
       api<{ questions: InboxQuestion[]; unseen: number }>('/me/inbox', { signedIn: true })
-        .then(res => { if (live) setInbox(res); })
+        .then(res => {
+          if (live) setInbox(res);
+        })
         // The inbox is extra on this screen: if it can't load, the rest still works.
         .catch(() => {});
     };
     load();
-    const stop = onLive(e => { if (e.type === 'routed') load(); });
-    return () => { live = false; stop(); };
+    const stop = onLive(e => {
+      if (e.type === 'routed') load();
+    });
+    return () => {
+      live = false;
+      stop();
+    };
   }, []);
 
   if (!inbox || inbox.questions.length === 0) return null;

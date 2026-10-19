@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { along, ARRIVAL, arrivalSwell, bendFor, MAX_DRAWN, routingLayout, stagger, travel } from '../src/lib/routing-layout.ts';
+import {
+  along,
+  ARRIVAL,
+  arrivalSwell,
+  bendFor,
+  MAX_DRAWN,
+  routingLayout,
+  stagger,
+  travel,
+} from '../src/lib/routing-layout.ts';
 import { must } from './must.ts';
 
 describe('the picture of a question travelling', () => {
@@ -17,7 +26,8 @@ describe('the picture of a question travelling', () => {
   });
 
   it('runs each path from the asker to the person, curving to alternate sides', () => {
-    const from = { x: 0, y: 0 }, to = { x: 100, y: 0 };
+    const from = { x: 0, y: 0 },
+      to = { x: 100, y: 0 };
     expect(along(from, to, 0, 0.2)).toEqual(from);
     expect(along(from, to, 1, 0.2)).toEqual(to);
     expect(must(along(from, to, 0.5, bendFor(0))).y).toBeGreaterThan(0);

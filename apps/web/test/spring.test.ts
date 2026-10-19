@@ -11,18 +11,22 @@ describe('springPosition', () => {
   });
 
   it('never overshoots when critically damped', () => {
-    for (let t = 0; t < 2; t += 0.001) expect(springPosition({ response: 0.35, dampingFraction: 1 }, t)).toBeLessThanOrEqual(1 + 1e-9);
+    for (let t = 0; t < 2; t += 0.001)
+      expect(springPosition({ response: 0.35, dampingFraction: 1 }, t)).toBeLessThanOrEqual(1 + 1e-9);
   });
 
   it('overshoots a little when under-damped (0.8)', () => {
     let peak = 0;
-    for (let t = 0; t < 2; t += 0.001) peak = Math.max(peak, springPosition({ response: 0.3, dampingFraction: 0.8 }, t));
+    for (let t = 0; t < 2; t += 0.001)
+      peak = Math.max(peak, springPosition({ response: 0.3, dampingFraction: 0.8 }, t));
     expect(peak).toBeGreaterThan(1.01);
     expect(peak).toBeLessThan(1.05);
   });
 
   it('a shorter response arrives sooner', () => {
-    expect(settleTime({ response: 0.2, dampingFraction: 1 })).toBeLessThan(settleTime({ response: 0.5, dampingFraction: 1 }));
+    expect(settleTime({ response: 0.2, dampingFraction: 1 })).toBeLessThan(
+      settleTime({ response: 0.5, dampingFraction: 1 }),
+    );
   });
 });
 
@@ -49,9 +53,13 @@ describe('the spec’s springs (§8.1)', () => {
   it('turn into the same motion as the equation, m x\u2032\u2032 + c x\u2032 + k x = 0', () => {
     // Integrated straight from the spec's equation, to compare against.
     for (const [name, { mass, stiffness, damping }] of Object.entries(physics)) {
-      let x = 0, v = 0;
+      let x = 0,
+        v = 0;
       const h = 1 / 10_000;
-      for (let i = 0; i < 2000; i++) { v += ((-stiffness * (x - 1) - damping * v) / mass) * h; x += v * h; }
+      for (let i = 0; i < 2000; i++) {
+        v += ((-stiffness * (x - 1) - damping * v) / mass) * h;
+        x += v * h;
+      }
       expect(springPosition(fromPhysics({ mass, stiffness, damping }), 0.2), name).toBeCloseTo(x, 3);
     }
   });

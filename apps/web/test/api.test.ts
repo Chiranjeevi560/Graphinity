@@ -8,9 +8,16 @@ function fakeAuth(tokens: Array<string | null>, session = false) {
   const auth = {
     getAccessToken: () => Promise.resolve(tokens.shift() ?? null),
     hasSession: () => session,
-    clear: () => { cleared = true; },
+    clear: () => {
+      cleared = true;
+    },
   } as unknown as Auth;
-  return { auth, get cleared() { return cleared; } };
+  return {
+    auth,
+    get cleared() {
+      return cleared;
+    },
+  };
 }
 
 function fetchSequence(responses: Array<() => Response>) {
@@ -22,7 +29,10 @@ function fetchSequence(responses: Array<() => Response>) {
   return { f, seen };
 }
 
-const json = (body: object | null, status = 200) => () => new Response(body === null ? null : JSON.stringify(body), { status });
+const json =
+  (body: object | null, status = 200) =>
+  () =>
+    new Response(body === null ? null : JSON.stringify(body), { status });
 
 describe('api', () => {
   it('sends the access token on signed-in requests', async () => {
@@ -43,7 +53,10 @@ describe('api', () => {
 
   it('clears the session if the retried request is still refused', async () => {
     const fa = fakeAuth(['old', 'new']);
-    const { f } = fetchSequence([json({ error: 'signed_out', message: 'You’re signed out.' }, 401), json({ error: 'signed_out', message: 'You’re signed out.' }, 401)]);
+    const { f } = fetchSequence([
+      json({ error: 'signed_out', message: 'You’re signed out.' }, 401),
+      json({ error: 'signed_out', message: 'You’re signed out.' }, 401),
+    ]);
     const api = createApi({ origin: 'https://api.test', auth: fa.auth, fetch: f, online: () => true });
     await expect(api('/me', { signedIn: true })).rejects.toMatchObject({ status: 401, code: 'signed_out' });
     expect(fa.cleared).toBe(true);
@@ -51,20 +64,40 @@ describe('api', () => {
 
   it('passes the server’s plain-words message and extra details through', async () => {
     const { auth } = fakeAuth(['t']);
-    const { f } = fetchSequence([json({ error: 'handle_change_too_soon', message: 'You changed your name recently.', availableAt: '2026-10-24T10:00:00.000Z' }, 409)]);
-    const err = await createApi({ origin: 'https://api.test', auth, fetch: f, online: () => true })('/me/profile', { method: 'PATCH', body: {}, signedIn: true }).catch((e: unknown) => e);
+    const { f } = fetchSequence([
+      json(
+        {
+          error: 'handle_change_too_soon',
+          message: 'You changed your name recently.',
+          availableAt: '2026-10-24T10:00:00.000Z',
+        },
+        409,
+      ),
+    ]);
+    const err = await createApi({ origin: 'https://api.test', auth, fetch: f, online: () => true })('/me/profile', {
+      method: 'PATCH',
+      body: {},
+      signedIn: true,
+    }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiError);
-    expect(err).toMatchObject({ status: 409, code: 'handle_change_too_soon', message: 'You changed your name recently.', details: { availableAt: '2026-10-24T10:00:00.000Z' } });
+    expect(err).toMatchObject({
+      status: 409,
+      code: 'handle_change_too_soon',
+      message: 'You changed your name recently.',
+      details: { availableAt: '2026-10-24T10:00:00.000Z' },
+    });
   });
 
   it('says the device is offline only when it is, and otherwise that Graphinity isn’t answering', async () => {
     const { auth } = fakeAuth([]);
     const f = (() => Promise.reject(new TypeError('Failed to fetch'))) as unknown as typeof fetch;
-    await expect(createApi({ origin: 'https://api.test', auth, fetch: f, online: () => false })('/meta'))
-      .rejects.toMatchObject({ code: 'offline', message: 'You’re offline. Connect to the internet and try again.' });
+    await expect(
+      createApi({ origin: 'https://api.test', auth, fetch: f, online: () => false })('/meta'),
+    ).rejects.toMatchObject({ code: 'offline', message: 'You’re offline. Connect to the internet and try again.' });
     // Online, but the server refused or never answered: the connection is fine, so don't blame it.
-    await expect(createApi({ origin: 'https://api.test', auth, fetch: f, online: () => true })('/meta'))
-      .rejects.toMatchObject({ code: 'unreachable', message: 'Graphinity isn’t responding. Try again in a moment.' });
+    await expect(
+      createApi({ origin: 'https://api.test', auth, fetch: f, online: () => true })('/meta'),
+    ).rejects.toMatchObject({ code: 'unreachable', message: 'Graphinity isn’t responding. Try again in a moment.' });
   });
 
   it('knows which failures are worth trying again', () => {
@@ -78,28 +111,44 @@ describe('api', () => {
   });
 
   it('says there’s no answer, not "signed out", when the token could not be refreshed', async () => {
-    const auth = { getAccessToken: () => Promise.resolve(null), hasSession: () => true, clear: () => {} } as unknown as Auth;
+    const auth = {
+      getAccessToken: () => Promise.resolve(null),
+      hasSession: () => true,
+      clear: () => {},
+    } as unknown as Auth;
     const { f, seen } = fetchSequence([]);
-    await expect(createApi({ origin: 'https://api.test', auth, fetch: f, online: () => false })('/me', { signedIn: true })).rejects.toMatchObject({ code: 'offline' });
-    await expect(createApi({ origin: 'https://api.test', auth, fetch: f, online: () => true })('/me', { signedIn: true })).rejects.toMatchObject({ code: 'unreachable' });
+    await expect(
+      createApi({ origin: 'https://api.test', auth, fetch: f, online: () => false })('/me', { signedIn: true }),
+    ).rejects.toMatchObject({ code: 'offline' });
+    await expect(
+      createApi({ origin: 'https://api.test', auth, fetch: f, online: () => true })('/me', { signedIn: true }),
+    ).rejects.toMatchObject({ code: 'unreachable' });
     expect(seen).toHaveLength(0);
   });
 
   it('does not call the server at all when a signed-in request has no session', async () => {
     const { auth } = fakeAuth([null]);
     const { f, seen } = fetchSequence([]);
-    await expect(createApi({ origin: 'https://api.test', auth, fetch: f, online: () => true })('/me', { signedIn: true })).rejects.toMatchObject({ code: 'signed_out' });
+    await expect(
+      createApi({ origin: 'https://api.test', auth, fetch: f, online: () => true })('/me', { signedIn: true }),
+    ).rejects.toMatchObject({ code: 'signed_out' });
     expect(seen).toHaveLength(0);
   });
 
   it('sends the sign-in on public reads when there is one, and reads as a visitor when not', async () => {
     const signedIn = fakeAuth(['tok-9'], true);
     const one = fetchSequence([json({ ok: true })]);
-    await createApi({ origin: 'https://api.test', auth: signedIn.auth, fetch: one.f, online: () => true })('/questions/1', { signedIn: 'if-possible' });
+    await createApi({ origin: 'https://api.test', auth: signedIn.auth, fetch: one.f, online: () => true })(
+      '/questions/1',
+      { signedIn: 'if-possible' },
+    );
     expect(one.seen[0]?.auth).toBe('Bearer tok-9');
     const visitor = fakeAuth([], false);
     const two = fetchSequence([json({ ok: true })]);
-    await createApi({ origin: 'https://api.test', auth: visitor.auth, fetch: two.f, online: () => true })('/questions/1', { signedIn: 'if-possible' });
+    await createApi({ origin: 'https://api.test', auth: visitor.auth, fetch: two.f, online: () => true })(
+      '/questions/1',
+      { signedIn: 'if-possible' },
+    );
     expect(two.seen[0]?.auth).toBeUndefined();
   });
 });

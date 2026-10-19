@@ -36,7 +36,11 @@ describe('laying out the graph', () => {
   });
 
   it('centres a graph with only one field in use', () => {
-    const one = layout({ fields: [field('a', 0), field('b', 9), field('c', 0)], people: Array.from({ length: 9 }, () => [1]) }, W, H);
+    const one = layout(
+      { fields: [field('a', 0), field('b', 9), field('c', 0)], people: Array.from({ length: 9 }, () => [1]) },
+      W,
+      H,
+    );
     expect(must(one.clusters[1]).x).toBeCloseTo(W / 2, 0);
     expect(Math.abs(must(one.clusters[1]).y - H / 2)).toBeLessThan(H * 0.1);
   });
@@ -97,7 +101,8 @@ describe('motion', () => {
   });
 
   it('draws the same random numbers from the same seed', () => {
-    const a = seededRandom(7), b = seededRandom(7);
+    const a = seededRandom(7),
+      b = seededRandom(7);
     expect([a(), a(), a()]).toEqual([b(), b(), b()]);
     expect(seededRandom(8)()).not.toBe(seededRandom(7)());
   });

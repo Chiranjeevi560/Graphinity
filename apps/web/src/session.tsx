@@ -13,9 +13,27 @@ export type { Profile, SessionState } from './lib/session-store.ts';
 function tabStorage(): Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> {
   const memory = new Map<string, string>();
   return {
-    getItem: k => { try { return sessionStorage.getItem(k); } catch { return memory.get(k) ?? null; } },
-    setItem: (k, v) => { try { sessionStorage.setItem(k, v); } catch { memory.set(k, v); } },
-    removeItem: k => { try { sessionStorage.removeItem(k); } catch { memory.delete(k); } },
+    getItem: k => {
+      try {
+        return sessionStorage.getItem(k);
+      } catch {
+        return memory.get(k) ?? null;
+      }
+    },
+    setItem: (k, v) => {
+      try {
+        sessionStorage.setItem(k, v);
+      } catch {
+        memory.set(k, v);
+      }
+    },
+    removeItem: k => {
+      try {
+        sessionStorage.removeItem(k);
+      } catch {
+        memory.delete(k);
+      }
+    },
   };
 }
 
@@ -27,11 +45,18 @@ export const auth: Auth = createAuth({
   siteOrigin: location.origin,
   storage: tabStorage(),
   fetch: (...args) => fetch(...args),
-  redirect: url => { location.assign(url); },
+  redirect: url => {
+    location.assign(url);
+  },
   now: () => Math.floor(Date.now() / 1000),
 });
 
-export const api: Api = createApi({ origin: site.apiOrigin, auth, fetch: (...args) => fetch(...args), online: () => navigator.onLine });
+export const api: Api = createApi({
+  origin: site.apiOrigin,
+  auth,
+  fetch: (...args) => fetch(...args),
+  online: () => navigator.onLine,
+});
 
 const store = createSessionStore({ auth, api });
 
@@ -42,13 +67,17 @@ interface SessionValue {
 }
 
 /** Ask the server again who is signed in (after it couldn't be reached). */
-export const retrySession = () => { void store.reload(); };
+export const retrySession = () => {
+  void store.reload();
+};
 
 const SessionContext = createContext<SessionValue | null>(null);
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const state = useSyncExternalStore(store.subscribe, store.getState);
-  useEffect(() => { void store.reload(); }, []);
+  useEffect(() => {
+    void store.reload();
+  }, []);
   // Couldn't reach the server to learn who's signed in: ask again once back online.
   useRetryWhenOnline(state.status === 'unreachable' ? state.error : null, retrySession);
   const value = useMemo<SessionValue>(() => ({ state, reload: store.reload, setProfile: store.setProfile }), [state]);

@@ -44,7 +44,8 @@ export function createApi(deps: {
   /** Whether the device has a network at all (navigator.onLine). */
   online: () => boolean;
 }) {
-  const noAnswer = () => deps.online() ? new ApiError(0, 'unreachable', UNREACHABLE) : new ApiError(0, 'offline', OFFLINE);
+  const noAnswer = () =>
+    deps.online() ? new ApiError(0, 'unreachable', UNREACHABLE) : new ApiError(0, 'offline', OFFLINE);
 
   async function send(path: string, options: RequestOptions, token: string | null) {
     const headers: Record<string, string> = {};
@@ -83,11 +84,15 @@ export function createApi(deps: {
       throw noAnswer();
     }
     if (res.status === 204) return undefined as T;
-    const data = await res.json().catch(() => null) as Record<string, unknown> | null;
+    const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
     if (!res.ok) {
       const { error, message, ...details } = data ?? {};
-      throw new ApiError(res.status, typeof error === 'string' ? error : 'unknown',
-        typeof message === 'string' ? message : UNKNOWN, details);
+      throw new ApiError(
+        res.status,
+        typeof error === 'string' ? error : 'unknown',
+        typeof message === 'string' ? message : UNKNOWN,
+        details,
+      );
     }
     return data as T;
   };

@@ -53,12 +53,18 @@ describe('creating a profile', () => {
     expect(res.json<Body>().profile).toEqual({
       handle: 'chiru.create',
       country: { code: 'IN', name: 'India' },
-      fields: [{ slug: 'imports-customs', name: 'Imports & Customs' }, { slug: 'watches-luxury', name: 'Watches & Luxury' }],
+      fields: [
+        { slug: 'imports-customs', name: 'Imports & Customs' },
+        { slug: 'watches-luxury', name: 'Watches & Luxury' },
+      ],
       joined: '2026-10',
       handleChangeAvailableAt: null,
     });
     expect((await call('GET', '/me', p.token)).json<Body>().profile?.handle).toBe('chiru.create');
-    const { rows } = await t.owner.query<{ adult_confirmed_at: Date }>('SELECT adult_confirmed_at FROM app.profiles WHERE id = $1', [p.id]);
+    const { rows } = await t.owner.query<{ adult_confirmed_at: Date }>(
+      'SELECT adult_confirmed_at FROM app.profiles WHERE id = $1',
+      [p.id],
+    );
     expect(must(rows[0], 'the profile row').adult_confirmed_at.toISOString()).toBe('2026-10-17T10:00:00.000Z');
   });
 
@@ -80,11 +86,16 @@ describe('creating a profile', () => {
     const p = await person();
     const res = await call('POST', '/me/profile', p.token, { ...valid, handle: 'admin' });
     expect(res.statusCode).toBe(400);
-    expect(res.json()).toMatchObject({ error: 'invalid_handle', reason: 'reserved', message: 'That name is reserved. Try another.' });
+    expect(res.json()).toMatchObject({
+      error: 'invalid_handle',
+      reason: 'reserved',
+      message: 'That name is reserved. Try another.',
+    });
   });
 
   it('keeps names unique regardless of capitals', async () => {
-    const a = await person(), b = await person();
+    const a = await person(),
+      b = await person();
     expect((await call('POST', '/me/profile', a.token, { ...valid, handle: 'unique.name' })).statusCode).toBe(201);
     const res = await call('POST', '/me/profile', b.token, { ...valid, handle: 'Unique.Name' });
     expect(res.statusCode).toBe(409);
@@ -100,7 +111,17 @@ describe('creating a profile', () => {
 
   it('needs 1 to 8 known fields and a known country', async () => {
     const p = await person();
-    const nine = ['imports-customs', 'study-abroad', 'visas-immigration', 'jobs-careers', 'cars-vehicles', 'housing-renting', 'money-tax', 'travel', 'fitness'];
+    const nine = [
+      'imports-customs',
+      'study-abroad',
+      'visas-immigration',
+      'jobs-careers',
+      'cars-vehicles',
+      'housing-renting',
+      'money-tax',
+      'travel',
+      'fitness',
+    ];
     for (const body of [
       { ...valid, fields: [] },
       { ...valid, fields: nine },
@@ -122,14 +143,20 @@ describe('editing a profile', () => {
     await call('POST', '/me/profile', p.token, { ...valid, handle: 'editor' });
     const res = await call('PATCH', '/me/profile', p.token, { country: 'AE', fields: ['travel'] });
     expect(res.statusCode).toBe(200);
-    expect(res.json<Body>().profile).toMatchObject({ country: { code: 'AE', name: 'United Arab Emirates' }, fields: [{ slug: 'travel', name: 'Travel' }] });
+    expect(res.json<Body>().profile).toMatchObject({
+      country: { code: 'AE', name: 'United Arab Emirates' },
+      fields: [{ slug: 'travel', name: 'Travel' }],
+    });
   });
 
   it('allows a name change once a week, timed by the database clock', async () => {
     const p = await person();
     await call('POST', '/me/profile', p.token, { ...valid, handle: 'first.name' });
     expect((await call('PATCH', '/me/profile', p.token, { handle: 'second.name' })).statusCode).toBe(200);
-    const { rows } = await t.owner.query<{ at: Date }>("SELECT handle_changed_at + interval '7 days' AS at FROM app.profiles WHERE id = $1", [p.id]);
+    const { rows } = await t.owner.query<{ at: Date }>(
+      "SELECT handle_changed_at + interval '7 days' AS at FROM app.profiles WHERE id = $1",
+      [p.id],
+    );
     const tooSoon = await call('PATCH', '/me/profile', p.token, { handle: 'third.name' });
     expect(tooSoon.statusCode).toBe(409);
     expect(tooSoon.json()).toMatchObject({ error: 'handle_change_too_soon', availableAt: rows[0]?.at.toISOString() });
@@ -138,7 +165,10 @@ describe('editing a profile', () => {
     // skips triggers for this one statement (superuser only).
     await t.owner.query('BEGIN');
     await t.owner.query('SET LOCAL session_replication_role = replica');
-    await t.owner.query("UPDATE app.profiles SET handle_changed_at = now() - interval '7 days 1 minute' WHERE id = $1", [p.id]);
+    await t.owner.query(
+      "UPDATE app.profiles SET handle_changed_at = now() - interval '7 days 1 minute' WHERE id = $1",
+      [p.id],
+    );
     await t.owner.query('COMMIT');
     expect((await call('PATCH', '/me/profile', p.token, { handle: 'third.name' })).statusCode).toBe(200);
   });
@@ -146,11 +176,16 @@ describe('editing a profile', () => {
   it('enforces the weekly name rule in the database too, and stamps the time itself', async () => {
     const p = await person();
     await call('POST', '/me/profile', p.token, { ...valid, handle: 'db.first' });
-    const rename = (handle: string, changedAt: string | null) => t.database.withUser(p.id, q =>
-      q.query('UPDATE app.profiles SET handle = $2, handle_changed_at = $3 WHERE id = $1', [p.id, handle, changedAt]));
+    const rename = (handle: string, changedAt: string | null) =>
+      t.database.withUser(p.id, q =>
+        q.query('UPDATE app.profiles SET handle = $2, handle_changed_at = $3 WHERE id = $1', [p.id, handle, changedAt]),
+      );
     // First change: allowed, and the database ignores the made-up time it was sent.
     await rename('db.second', '2000-01-01T00:00:00Z');
-    const { rows } = await t.owner.query<{ recent: boolean }>("SELECT handle_changed_at > now() - interval '1 minute' AS recent FROM app.profiles WHERE id = $1", [p.id]);
+    const { rows } = await t.owner.query<{ recent: boolean }>(
+      "SELECT handle_changed_at > now() - interval '1 minute' AS recent FROM app.profiles WHERE id = $1",
+      [p.id],
+    );
     expect(rows[0]?.recent).toBe(true);
     // Second change the same week: refused even when claiming the last change was long ago.
     await expect(rename('db.third', '2000-01-01T00:00:00Z')).rejects.toMatchObject({ code: '23514' });
@@ -168,18 +203,30 @@ describe('looking people up', () => {
     await call('POST', '/me/profile', p.token, { ...valid, handle: 'public.one' });
     const res = await call('GET', '/profiles/Public.One');
     expect(res.statusCode).toBe(200);
-    expect(Object.keys(must(res.json<Body>().profile, 'a profile')).sort()).toEqual(['country', 'fields', 'handle', 'joined']);
+    expect(Object.keys(must(res.json<Body>().profile, 'a profile')).sort()).toEqual([
+      'country',
+      'fields',
+      'handle',
+      'joined',
+    ]);
     expect(res.body).not.toContain(p.id);
   });
 
   it('reports name availability to signed-in people only', async () => {
-    const owner = await person(), other = await person();
+    const owner = await person(),
+      other = await person();
     await call('POST', '/me/profile', owner.token, { ...valid, handle: 'taken.name' });
     expect((await call('GET', '/handles/taken.name')).statusCode).toBe(401);
-    expect((await call('GET', '/handles/taken.name', other.token)).json()).toMatchObject({ available: false, reason: 'taken' });
+    expect((await call('GET', '/handles/taken.name', other.token)).json()).toMatchObject({
+      available: false,
+      reason: 'taken',
+    });
     expect((await call('GET', '/handles/taken.name', owner.token)).json()).toMatchObject({ available: true });
     expect((await call('GET', '/handles/free.name', other.token)).json()).toMatchObject({ available: true });
-    expect((await call('GET', '/handles/a..b', other.token)).json()).toMatchObject({ available: false, reason: 'dots' });
+    expect((await call('GET', '/handles/a..b', other.token)).json()).toMatchObject({
+      available: false,
+      reason: 'dots',
+    });
   });
 
   it('serves the field and country lists', async () => {
@@ -206,7 +253,9 @@ describe('deleting an account', () => {
     expect(admin.deleted).toContain(p.id);
     const left = await t.owner.query(
       `SELECT (SELECT count(*) FROM app.profiles WHERE id = $1)::int AS profiles,
-              (SELECT count(*) FROM app.profile_fields WHERE profile_id = $1)::int AS fields`, [p.id]);
+              (SELECT count(*) FROM app.profile_fields WHERE profile_id = $1)::int AS fields`,
+      [p.id],
+    );
     expect(left.rows[0]).toEqual({ profiles: 0, fields: 0 });
     // The token is still cryptographically valid for up to an hour; it must not be accepted.
     expect((await call('GET', '/me', p.token)).statusCode).toBe(401);
@@ -234,14 +283,21 @@ describe('when Supabase fails to remove the sign-in', () => {
     const res = await call('DELETE', '/me', p.token, { confirm: true });
     return { p, res };
   }
-  const job = () => completePendingDeletions({ db: t.database, authAdmin: admin, subjectKey: KEY, log: { warn: () => {} } });
+  const job = () =>
+    completePendingDeletions({ db: t.database, authAdmin: admin, subjectKey: KEY, log: { warn: () => {} } });
   // Each test starts with nothing pending, so the job's counts are this test's alone.
-  beforeEach(async () => { await t.owner.query('DELETE FROM app.pending_auth_deletions'); });
+  beforeEach(async () => {
+    await t.owner.query('DELETE FROM app.pending_auth_deletions');
+  });
 
   it('still tells the person their account is deleted, and records the sign-in as pending', async () => {
     const { p, res } = await deleteWithFailure();
     expect(res.statusCode).toBe(202);
-    expect(res.json()).toEqual({ status: 'finishing', message: 'Your account is deleted. Removing your sign-in is taking longer than usual; it will finish automatically.' });
+    expect(res.json()).toEqual({
+      status: 'finishing',
+      message:
+        'Your account is deleted. Removing your sign-in is taking longer than usual; it will finish automatically.',
+    });
     expect(admin.deleted).not.toContain(p.id);
     const { rows } = await t.owner.query('SELECT attempts FROM app.pending_auth_deletions WHERE user_id = $1', [p.id]);
     expect(rows).toEqual([{ attempts: 0 }]);
@@ -258,10 +314,15 @@ describe('when Supabase fails to remove the sign-in', () => {
 
   it('refuses, in the database itself, a profile for a sign-in that is pending removal', async () => {
     const { p } = await deleteWithFailure();
-    await expect(t.database.withUser(p.id, async q => {
-      await q.query("INSERT INTO app.profiles (id, handle, country, adult_confirmed_at) VALUES ($1, 'sneaky.back', 'IN', now())", [p.id]);
-      await q.query("INSERT INTO app.profile_fields (profile_id, field) VALUES ($1, 'travel')", [p.id]);
-    })).rejects.toMatchObject({ code: '23514' });
+    await expect(
+      t.database.withUser(p.id, async q => {
+        await q.query(
+          "INSERT INTO app.profiles (id, handle, country, adult_confirmed_at) VALUES ($1, 'sneaky.back', 'IN', now())",
+          [p.id],
+        );
+        await q.query("INSERT INTO app.profile_fields (profile_id, field) VALUES ($1, 'travel')", [p.id]);
+      }),
+    ).rejects.toMatchObject({ code: '23514' });
   });
 
   it('is finished automatically by the retry job, which then forgets the id', async () => {
@@ -271,7 +332,10 @@ describe('when Supabase fails to remove the sign-in', () => {
     const pending = await t.owner.query('SELECT 1 FROM app.pending_auth_deletions WHERE user_id = $1', [p.id]);
     expect(pending.rows).toHaveLength(0);
     // Tokens issued before Supabase removed the person are still refused for the next 2 hours.
-    const revoked = await t.owner.query("SELECT until > now() + interval '110 minutes' AS fresh FROM app.revoked_subjects WHERE subject_hash = $1", [subjectHash(p.id, KEY)]);
+    const revoked = await t.owner.query(
+      "SELECT until > now() + interval '110 minutes' AS fresh FROM app.revoked_subjects WHERE subject_hash = $1",
+      [subjectHash(p.id, KEY)],
+    );
     expect(revoked.rows).toEqual([{ fresh: true }]);
     expect((await call('GET', '/me', p.token)).statusCode).toBe(401);
   });
@@ -280,7 +344,10 @@ describe('when Supabase fails to remove the sign-in', () => {
     const { p } = await deleteWithFailure();
     admin.failNextDelete();
     expect(await job()).toEqual({ completed: 0, failed: 1 });
-    const { rows } = await t.owner.query("SELECT attempts, next_attempt_at > now() AS later FROM app.pending_auth_deletions WHERE user_id = $1", [p.id]);
+    const { rows } = await t.owner.query(
+      'SELECT attempts, next_attempt_at > now() AS later FROM app.pending_auth_deletions WHERE user_id = $1',
+      [p.id],
+    );
     expect(rows).toEqual([{ attempts: 1, later: true }]);
     // Not due yet: running the job again does nothing.
     expect(await job()).toEqual({ completed: 0, failed: 0 });
@@ -298,7 +365,8 @@ describe('when Supabase fails to remove the sign-in', () => {
 
 describe('the database itself', () => {
   it('stops one person editing or deleting another, even if the API forgot to check', async () => {
-    const a = await person(), b = await person();
+    const a = await person(),
+      b = await person();
     await call('POST', '/me/profile', a.token, { ...valid, handle: 'victim' });
     const changed = await t.database.withUser(b.id, async q => {
       const u = await q.query("UPDATE app.profiles SET country = 'US' WHERE id = $1", [a.id]);
@@ -307,15 +375,27 @@ describe('the database itself', () => {
       return [u.rowCount, d.rowCount, f.rowCount];
     });
     expect(changed).toEqual([0, 0, 0]);
-    await expect(t.database.withUser(b.id, q =>
-      q.query("INSERT INTO app.profiles (id, handle, country, adult_confirmed_at) VALUES ($1, 'impostor', 'IN', now())", [a.id]),
-    )).rejects.toMatchObject({ code: '42501' });
+    await expect(
+      t.database.withUser(b.id, q =>
+        q.query(
+          "INSERT INTO app.profiles (id, handle, country, adult_confirmed_at) VALUES ($1, 'impostor', 'IN', now())",
+          [a.id],
+        ),
+      ),
+    ).rejects.toMatchObject({ code: '42501' });
   });
 
   it('enforces the name rule, 18+ and field count even for direct inserts', async () => {
     const p = await person();
-    const insert = (handle: string, adult: string | null) => t.database.withUser(p.id, q =>
-      q.query('INSERT INTO app.profiles (id, handle, country, adult_confirmed_at) VALUES ($1, $2, $3, $4)', [p.id, handle, 'IN', adult]));
+    const insert = (handle: string, adult: string | null) =>
+      t.database.withUser(p.id, q =>
+        q.query('INSERT INTO app.profiles (id, handle, country, adult_confirmed_at) VALUES ($1, $2, $3, $4)', [
+          p.id,
+          handle,
+          'IN',
+          adult,
+        ]),
+      );
     await expect(insert('Admin', '2026-10-17')).rejects.toMatchObject({ code: '23514' });
     await expect(insert('fine.name', null)).rejects.toMatchObject({ code: '23502' });
     // A profile with no fields is refused when the transaction commits.

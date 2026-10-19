@@ -35,7 +35,9 @@ export function SquircleLayers({ radius, edge = false, focusRing = false }: Prop
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(host);
-    return () => { observer.disconnect(); };
+    return () => {
+      observer.disconnect();
+    };
   }, [radius]);
 
   const path = box ? squirclePath(box.w, box.h, box.r) : '';

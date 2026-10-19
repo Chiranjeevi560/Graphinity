@@ -22,14 +22,20 @@ describe('the decision (spec §11.1)', () => {
   const daysAgo = (d: number) => new Date(now.getTime() - d * 86_400_000);
 
   it('stops a duplicate only when it is the same in meaning and was answered recently', () => {
-    expect(verdict([{ similarity: DUPLICATE_AT, lastAnsweredAt: daysAgo(10), everyWord: false }], now, true)).toBe('duplicate');
-    expect(verdict([{ similarity: DUPLICATE_AT, lastAnsweredAt: daysAgo(181), everyWord: false }], now, true)).toBe('related');
+    expect(verdict([{ similarity: DUPLICATE_AT, lastAnsweredAt: daysAgo(10), everyWord: false }], now, true)).toBe(
+      'duplicate',
+    );
+    expect(verdict([{ similarity: DUPLICATE_AT, lastAnsweredAt: daysAgo(181), everyWord: false }], now, true)).toBe(
+      'related',
+    );
     expect(verdict([{ similarity: 0.95, lastAnsweredAt: null, everyWord: false }], now, true)).toBe('related');
   });
 
   it('shows related questions from 0.72, and nothing below', () => {
     expect(verdict([{ similarity: RELATED_AT, lastAnsweredAt: null, everyWord: false }], now, true)).toBe('related');
-    expect(verdict([{ similarity: RELATED_AT - 0.001, lastAnsweredAt: daysAgo(1), everyWord: false }], now, true)).toBe('clear');
+    expect(verdict([{ similarity: RELATED_AT - 0.001, lastAnsweredAt: daysAgo(1), everyWord: false }], now, true)).toBe(
+      'clear',
+    );
     expect(verdict([], now, true)).toBe('clear');
   });
 
@@ -49,11 +55,21 @@ describe('the decision (spec §11.1)', () => {
 
 describe('the few shown (spec §11.1)', () => {
   const now = new Date('2026-10-19T00:00:00Z');
-  const c = (id: string, similarity: number | null, everyWord: boolean, answeredDaysAgo: number | null = null) =>
-    ({ id, similarity, everyWord, lastAnsweredAt: answeredDaysAgo === null ? null : new Date(now.getTime() - answeredDaysAgo * 86_400_000) });
+  const c = (id: string, similarity: number | null, everyWord: boolean, answeredDaysAgo: number | null = null) => ({
+    id,
+    similarity,
+    everyWord,
+    lastAnsweredAt: answeredDaysAgo === null ? null : new Date(now.getTime() - answeredDaysAgo * 86_400_000),
+  });
 
   it('puts a recent duplicate first, then every-word matches, then the rest in fused order', () => {
-    const fused = [c('a', 0.8, false), c('b', 0.5, true), c('dup', DUPLICATE_AT, false, 3), c('d', 0.7, false), c('e', 0.4, true)];
+    const fused = [
+      c('a', 0.8, false),
+      c('b', 0.5, true),
+      c('dup', DUPLICATE_AT, false, 3),
+      c('d', 0.7, false),
+      c('e', 0.4, true),
+    ];
     expect(shortlist(fused, now, 5).map(x => x.id)).toEqual(['dup', 'b', 'e', 'a', 'd']);
   });
 

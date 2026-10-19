@@ -18,7 +18,9 @@ let database: Database;
 beforeAll(async () => {
   t = await createTestDatabase();
   ({ owner, api, database } = t);
-  return async () => { await t.close(); };
+  return async () => {
+    await t.close();
+  };
 });
 
 async function refused(sql: string): Promise<string> {
@@ -52,7 +54,9 @@ describe('schema', () => {
     for (const role of ['anon', 'authenticated']) {
       const { rows } = await owner.query(
         `SELECT has_schema_privilege($1, 'app', 'USAGE') AS usage,
-                has_table_privilege($1, 'app.schema_meta', 'SELECT') AS sel`, [role]);
+                has_table_privilege($1, 'app.schema_meta', 'SELECT') AS sel`,
+        [role],
+      );
       expect(rows[0], role).toEqual({ usage: false, sel: false });
     }
   });
@@ -65,7 +69,8 @@ describe('the API login role', () => {
 
   it('is not a superuser, cannot bypass RLS, create roles or databases', async () => {
     const { rows } = await api.query(
-      'SELECT rolsuper, rolbypassrls, rolcreaterole, rolcreatedb FROM pg_roles WHERE rolname = current_user');
+      'SELECT rolsuper, rolbypassrls, rolcreaterole, rolcreatedb FROM pg_roles WHERE rolname = current_user',
+    );
     expect(rows[0]).toEqual({ rolsuper: false, rolbypassrls: false, rolcreaterole: false, rolcreatedb: false });
   });
 
@@ -93,18 +98,26 @@ describe('the API login role', () => {
 describe('withUser', () => {
   it('sets the identity only inside its own transaction', async () => {
     const id = '00000000-0000-4000-8000-000000000001';
-    const inside = await database.withUser(id, async q => (await q.query<{ id: string | null }>('SELECT app.current_user_id() AS id')).rows[0]?.id);
+    const inside = await database.withUser(
+      id,
+      async q => (await q.query<{ id: string | null }>('SELECT app.current_user_id() AS id')).rows[0]?.id,
+    );
     expect(inside).toBe(id);
     // The same pooled connection, next transaction: identity must be gone.
-    const after = await database.withUser(null, async q => (await q.query<{ id: string | null }>('SELECT app.current_user_id() AS id')).rows[0]?.id);
+    const after = await database.withUser(
+      null,
+      async q => (await q.query<{ id: string | null }>('SELECT app.current_user_id() AS id')).rows[0]?.id,
+    );
     expect(after).toBeNull();
   });
 
   it('rolls back everything when the work fails', async () => {
-    await expect(database.withUser(null, async q => {
-      await q.query('SELECT 1');
-      throw new Error('fail midway');
-    })).rejects.toThrow('fail midway');
+    await expect(
+      database.withUser(null, async q => {
+        await q.query('SELECT 1');
+        throw new Error('fail midway');
+      }),
+    ).rejects.toThrow('fail midway');
     // The connection is still usable afterwards (not left mid-transaction).
     expect(await database.ping()).toEqual({ schemaVersion: VERSION });
   });
@@ -129,14 +142,18 @@ describe('a connection that dies mid-transaction', () => {
   it('is not handed to the next request', async () => {
     // Kill this transaction's server process from outside, as a database
     // restart or network drop would.
-    await expect(database.withUser(null, async q => {
-      const pid = (await q.query<{ pid: number }>('SELECT pg_backend_pid() AS pid')).rows[0]?.pid;
-      await owner.query('SELECT pg_terminate_backend($1)', [pid]);
-      await q.query('SELECT 1');
-    })).rejects.toThrow();
+    await expect(
+      database.withUser(null, async q => {
+        const pid = (await q.query<{ pid: number }>('SELECT pg_backend_pid() AS pid')).rows[0]?.pid;
+        await owner.query('SELECT pg_terminate_backend($1)', [pid]);
+        await q.query('SELECT 1');
+      }),
+    ).rejects.toThrow();
     // Every following request must get a working connection (the pool holds up to 5).
     for (let i = 0; i < 6; i++) {
-      expect(await database.withUser(null, async q => (await q.query<{ ok: number }>('SELECT 1 AS ok')).rows[0]?.ok)).toBe(1);
+      expect(
+        await database.withUser(null, async q => (await q.query<{ ok: number }>('SELECT 1 AS ok')).rows[0]?.ok),
+      ).toBe(1);
     }
   });
 });

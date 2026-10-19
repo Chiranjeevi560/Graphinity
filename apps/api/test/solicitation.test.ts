@@ -3,7 +3,12 @@ import { contactDetails } from '../src/solicitation.ts';
 
 describe('contact details in answers (spec §21.2)', () => {
   it('finds phone numbers however they are written', () => {
-    for (const t of ['DM me on +91 98765 43210 for clearance', 'call 9876543210', 'ring (022) 2345-6789-12 today', '+1-415-555-0199-22']) {
+    for (const t of [
+      'DM me on +91 98765 43210 for clearance',
+      'call 9876543210',
+      'ring (022) 2345-6789-12 today',
+      '+1-415-555-0199-22',
+    ]) {
       expect(contactDetails(t), t).toBe('phone');
     }
   });

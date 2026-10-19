@@ -6,7 +6,11 @@ import type { CanvasScene } from './canvas-loop.ts';
 import { edgeAt, layout, nodeAt, type GraphData, type Layout } from './graph-layout.ts';
 
 const PULSE_SECONDS = 1.8;
-interface Pulse { node: number; to: number | null; start: number }
+interface Pulse {
+  node: number;
+  to: number | null;
+  start: number;
+}
 
 export function livingScene(data: GraphData, you: number[] | undefined): CanvasScene {
   let graph: Layout = { clusters: [], nodes: [], edges: [] };
@@ -28,17 +32,23 @@ export function livingScene(data: GraphData, you: number[] | undefined): CanvasS
   }
 
   return {
-    resize(width, height) { graph = layout(data, width, height, you ? { you } : {}); },
+    resize(width, height) {
+      graph = layout(data, width, height, you ? { you } : {});
+    },
     draw({ ctx, t, colors, still }) {
       if (!still) {
-        if (t >= nextPulse) { addPulse(t); nextPulse = t + 2.4 + Math.random() * 1.6; }
+        if (t >= nextPulse) {
+          addPulse(t);
+          nextPulse = t + 2.4 + Math.random() * 1.6;
+        }
         while (pulses[0] && t - pulses[0].start > PULSE_SECONDS) pulses.shift();
       }
       const at = graph.nodes.map(n => (still ? n : nodeAt(n, t)));
       // Links: fading in and out; the viewer's own in the accent colour.
       ctx.lineWidth = 0.75;
       for (const e of graph.edges) {
-        const a = at[e.a], b = at[e.b];
+        const a = at[e.a],
+          b = at[e.b];
         if (!a || !b) continue;
         const mine = graph.nodes[e.a]?.you === true || graph.nodes[e.b]?.you === true;
         const alpha = still ? 0.35 : edgeAt(e, t);

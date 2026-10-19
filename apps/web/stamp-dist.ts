@@ -8,7 +8,9 @@ import { stampDist } from './stamp.ts';
 const [dist, out] = process.argv.slice(2).filter(a => !a.startsWith('--'));
 const local = process.argv.includes('--local');
 if (!dist || !out || dist === out) {
-  console.error('usage: node stamp-dist.ts <build> <out> [--local]  (out must differ from build: the build stays as it was)');
+  console.error(
+    'usage: node stamp-dist.ts <build> <out> [--local]  (out must differ from build: the build stays as it was)',
+  );
   process.exit(2);
 }
 const settings = settingsFromEnv(process.env, local);

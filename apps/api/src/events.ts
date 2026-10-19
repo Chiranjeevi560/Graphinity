@@ -24,13 +24,19 @@ export function createEvents(): Events {
   const people = new Map<string, Set<(event: PersonEvent) => void>>();
   const everyone: Array<(userId: string, event: PersonEvent) => void> = [];
   return {
-    asked: questionId => { for (const l of askedListeners) l(questionId); },
-    onAsked: listener => { askedListeners.push(listener); },
+    asked: questionId => {
+      for (const l of askedListeners) l(questionId);
+    },
+    onAsked: listener => {
+      askedListeners.push(listener);
+    },
     publish(userId, event) {
       for (const l of people.get(userId) ?? []) l(event);
       for (const l of everyone) l(userId, event);
     },
-    onPublish: listener => { everyone.push(listener); },
+    onPublish: listener => {
+      everyone.push(listener);
+    },
     subscribe(userId, listener) {
       const set = people.get(userId) ?? new Set();
       set.add(listener);

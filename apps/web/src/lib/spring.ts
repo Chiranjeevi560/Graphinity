@@ -21,7 +21,10 @@ export interface SpringPhysics {
 
 /** The same spring in Apple's terms: ω = √(k/m), response = 2π/ω, ζ = c / 2√(mk). */
 export function fromPhysics({ mass, stiffness, damping }: SpringPhysics): SpringParams {
-  return { response: (2 * Math.PI) / Math.sqrt(stiffness / mass), dampingFraction: damping / (2 * Math.sqrt(mass * stiffness)) };
+  return {
+    response: (2 * Math.PI) / Math.sqrt(stiffness / mass),
+    dampingFraction: damping / (2 * Math.sqrt(mass * stiffness)),
+  };
 }
 
 /** docs/SPEC.md §8.1, exactly as the table gives them. */
@@ -70,7 +73,10 @@ function springVelocity(params: SpringParams, t: number): number {
 export function settleTime(params: SpringParams): number {
   const dt = 1 / 240;
   for (let t = dt; t < 10; t += dt) {
-    if (Math.abs(1 - springPosition(params, t)) < SETTLE_DISTANCE && Math.abs(springVelocity(params, t)) < SETTLE_VELOCITY) {
+    if (
+      Math.abs(1 - springPosition(params, t)) < SETTLE_DISTANCE &&
+      Math.abs(springVelocity(params, t)) < SETTLE_VELOCITY
+    ) {
       return t;
     }
   }
@@ -124,7 +130,10 @@ export class Spring {
       this.value += this.velocity * h;
     }
     const scale = Math.max(1, Math.abs(this.target));
-    if (Math.abs(this.value - this.target) < SETTLE_DISTANCE * scale && Math.abs(this.velocity) < SETTLE_VELOCITY * scale) {
+    if (
+      Math.abs(this.value - this.target) < SETTLE_DISTANCE * scale &&
+      Math.abs(this.velocity) < SETTLE_VELOCITY * scale
+    ) {
       this.value = this.target;
       this.velocity = 0;
       return true;

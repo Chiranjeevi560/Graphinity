@@ -8,7 +8,11 @@ import { privateKeyText } from '../src/push.ts';
 
 const server = createECDH('prime256v1');
 server.generateKeys();
-const vapid = { publicKey: server.getPublicKey().toString('base64url'), privateKey: privateKeyText(server), subject: 'https://graphinity.pages.dev' };
+const vapid = {
+  publicKey: server.getPublicKey().toString('base64url'),
+  privateKey: privateKeyText(server),
+  subject: 'https://graphinity.pages.dev',
+};
 
 let h: TestApp;
 let names = 0;
@@ -21,7 +25,16 @@ beforeAll(async () => {
 async function member() {
   const p = await h.person();
   names += 1;
-  expect((await h.call('POST', '/me/profile', p.token, { handle: `push.${String(names)}`, country: 'IN', fields: ['travel'], adult: true })).statusCode).toBe(201);
+  expect(
+    (
+      await h.call('POST', '/me/profile', p.token, {
+        handle: `push.${String(names)}`,
+        country: 'IN',
+        fields: ['travel'],
+        adult: true,
+      })
+    ).statusCode,
+  ).toBe(201);
   return p;
 }
 
@@ -30,7 +43,12 @@ function device(endpoint = `https://fcm.googleapis.com/fcm/send/${randomBytes(12
   const keys = createECDH('prime256v1');
   keys.generateKeys();
   const auth = randomBytes(16);
-  return { endpoint, keys, auth, body: { endpoint, keys: { p256dh: keys.getPublicKey().toString('base64url'), auth: auth.toString('base64url') } } };
+  return {
+    endpoint,
+    keys,
+    auth,
+    body: { endpoint, keys: { p256dh: keys.getPublicKey().toString('base64url'), auth: auth.toString('base64url') } },
+  };
 }
 
 /** What the browser does on receipt: decrypt (RFC 8291). */
@@ -67,7 +85,8 @@ describe('subscribing a device', () => {
   });
 
   it('never sends one person’s notifications to a device another account registered', async () => {
-    const a = await member(), b = await member();
+    const a = await member(),
+      b = await member();
     const shared = device();
     expect((await h.call('PUT', '/me/push', a.token, shared.body)).statusCode).toBe(200);
     // Same browser again for the same person: fine.
@@ -76,13 +95,21 @@ describe('subscribing a device', () => {
     expect(res.statusCode).toBe(409);
     expect(res.json<Body>().error).toBe('device_in_use');
     // Each account learns only whether the device is its own.
-    expect((await h.call('POST', '/me/push/status', a.token, { endpoint: shared.endpoint })).json()).toEqual({ push: { on: true } });
-    expect((await h.call('POST', '/me/push/status', b.token, { endpoint: shared.endpoint })).json()).toEqual({ push: { on: false } });
+    expect((await h.call('POST', '/me/push/status', a.token, { endpoint: shared.endpoint })).json()).toEqual({
+      push: { on: true },
+    });
+    expect((await h.call('POST', '/me/push/status', b.token, { endpoint: shared.endpoint })).json()).toEqual({
+      push: { on: false },
+    });
     expect((await h.call('POST', '/me/push/status', undefined, { endpoint: shared.endpoint })).statusCode).toBe(401);
-    expect((await h.call('POST', '/me/push/status', a.token, { endpoint: shared.endpoint, extra: 1 })).statusCode).toBe(400);
+    expect((await h.call('POST', '/me/push/status', a.token, { endpoint: shared.endpoint, extra: 1 })).statusCode).toBe(
+      400,
+    );
     // And b can't remove a's device.
     await h.call('DELETE', '/me/push', b.token, { endpoint: shared.endpoint });
-    const { rows } = await h.t.owner.query('SELECT 1 FROM app.push_subscriptions WHERE endpoint = $1', [shared.endpoint]);
+    const { rows } = await h.t.owner.query('SELECT 1 FROM app.push_subscriptions WHERE endpoint = $1', [
+      shared.endpoint,
+    ]);
     expect(rows).toHaveLength(1);
   });
 
@@ -91,25 +118,46 @@ describe('subscribing a device', () => {
     const devices = Array.from({ length: 10 }, () => device());
     for (const d of devices) expect((await h.call('PUT', '/me/push', p.token, d.body)).statusCode).toBe(200);
     expect((await h.call('PUT', '/me/push', p.token, device().body)).json<Body>().error).toBe('too_many_devices');
-    expect((await h.call('DELETE', '/me/push', p.token, { endpoint: must(devices[0]).endpoint })).json()).toEqual({ push: { on: false } });
-    expect((await h.call('POST', '/me/push/status', p.token, { endpoint: must(devices[0]).endpoint })).json()).toEqual({ push: { on: false } });
+    expect((await h.call('DELETE', '/me/push', p.token, { endpoint: must(devices[0]).endpoint })).json()).toEqual({
+      push: { on: false },
+    });
+    expect((await h.call('POST', '/me/push/status', p.token, { endpoint: must(devices[0]).endpoint })).json()).toEqual({
+      push: { on: false },
+    });
     expect((await h.call('PUT', '/me/push', p.token, device().body)).statusCode).toBe(200);
   });
 });
 
 describe('sending', () => {
   it('sends each of the person’s devices an encrypted message only they can read, and drops gone devices', async () => {
-    const asker = await member(), other = await member();
-    const phone = device(), laptop = device('https://updates.push.services.mozilla.com/wpush/v2/abc'), theirs = device();
+    const asker = await member(),
+      other = await member();
+    const phone = device(),
+      laptop = device('https://updates.push.services.mozilla.com/wpush/v2/abc'),
+      theirs = device();
     await h.call('PUT', '/me/push', asker.token, phone.body);
     await h.call('PUT', '/me/push', asker.token, laptop.body);
     await h.call('PUT', '/me/push', other.token, theirs.body);
-    const q = must((await h.call('POST', '/questions', asker.token, { title: 'Is the old town walkable from the station?', field: 'travel' })).json<{ question: { id: string } }>().question.id);
+    const q = must(
+      (
+        await h.call('POST', '/questions', asker.token, {
+          title: 'Is the old town walkable from the station?',
+          field: 'travel',
+        })
+      ).json<{ question: { id: string } }>().question.id,
+    );
 
     const sent: Array<{ url: string; headers: Record<string, string>; body: Buffer }> = [];
     const warnings: object[] = [];
     const send = createPushSender({
-      db: h.t.database, vapid, now: () => Date.now(), log: { warn: o => { warnings.push(o); } },
+      db: h.t.database,
+      vapid,
+      now: () => Date.now(),
+      log: {
+        warn: o => {
+          warnings.push(o);
+        },
+      },
       fetch: ((url: string, init: RequestInit) => {
         sent.push({ url, headers: init.headers as Record<string, string>, body: Buffer.from(init.body as Uint8Array) });
         // The laptop's subscription has expired.
@@ -122,11 +170,18 @@ describe('sending', () => {
     const toPhone = must(sent.find(s => s.url === phone.endpoint));
     expect(toPhone.headers).toMatchObject({ 'content-encoding': 'aes128gcm', ttl: '86400' });
     expect(toPhone.headers.authorization).toMatch(/^vapid t=[\w-]+\.[\w-]+\.[\w-]+, k=/);
-    expect(JSON.parse(decrypt(toPhone.body, phone))).toEqual({ title: 'New answer to your question', body: 'Is the old town walkable from the station?', questionId: q });
+    expect(JSON.parse(decrypt(toPhone.body, phone))).toEqual({
+      title: 'New answer to your question',
+      body: 'Is the old town walkable from the station?',
+      questionId: q,
+    });
     // Someone else's key can't read it.
     expect(() => decrypt(toPhone.body, theirs)).toThrow();
     // The expired one is removed; the working one stays.
-    const left = await h.t.owner.query<{ endpoint: string }>('SELECT endpoint FROM app.push_subscriptions WHERE endpoint = ANY($1)', [[phone.endpoint, laptop.endpoint]]);
+    const left = await h.t.owner.query<{ endpoint: string }>(
+      'SELECT endpoint FROM app.push_subscriptions WHERE endpoint = ANY($1)',
+      [[phone.endpoint, laptop.endpoint]],
+    );
     expect(left.rows.map(r => r.endpoint)).toEqual([phone.endpoint]);
     expect(warnings).toEqual([]);
   });

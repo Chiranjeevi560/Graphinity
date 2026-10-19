@@ -6,7 +6,9 @@ export type PushSupport = 'ok' | 'unsupported' | 'install-first';
 export function pushSupport(): PushSupport {
   if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
     // iPhone and iPad offer push only to sites added to the Home Screen.
-    const apple = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const apple =
+      /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     return apple && !matchMedia('(display-mode: standalone)').matches ? 'install-first' : 'unsupported';
   }
   return 'ok';
@@ -30,7 +32,11 @@ export async function isPushOn(api: Api): Promise<boolean> {
   if (pushSupport() !== 'ok' || Notification.permission !== 'granted') return false;
   const subscription = await existing();
   if (!subscription) return false;
-  const res = await api<{ push: { on: boolean } }>('/me/push/status', { method: 'POST', signedIn: true, body: { endpoint: subscription.endpoint } });
+  const res = await api<{ push: { on: boolean } }>('/me/push/status', {
+    method: 'POST',
+    signedIn: true,
+    body: { endpoint: subscription.endpoint },
+  });
   return res.push.on;
 }
 
@@ -38,7 +44,8 @@ export async function turnPushOn(api: Api, publicKey: string): Promise<'on' | 'd
   if ((await Notification.requestPermission()) !== 'granted') return 'denied';
   const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
   await navigator.serviceWorker.ready;
-  const subscribe = () => registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: fromB64url(publicKey) });
+  const subscribe = () =>
+    registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: fromB64url(publicKey) });
   let subscription = await subscribe();
   try {
     try {
@@ -65,6 +72,8 @@ export async function turnPushOff(api: Api): Promise<void> {
   if (pushSupport() !== 'ok') return;
   const subscription = await existing();
   if (!subscription) return;
-  await api('/me/push', { method: 'DELETE', signedIn: true, body: { endpoint: subscription.endpoint } }).catch(() => { /* the browser side still goes */ });
+  await api('/me/push', { method: 'DELETE', signedIn: true, body: { endpoint: subscription.endpoint } }).catch(() => {
+    /* the browser side still goes */
+  });
   await subscription.unsubscribe();
 }

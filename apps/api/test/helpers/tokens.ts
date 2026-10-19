@@ -13,7 +13,14 @@ export async function testIssuer() {
   /** A token shaped like Supabase's, with any claim overridable. */
   async function sign(
     claims: JWTPayload & Record<string, unknown> = {},
-    options: { sub?: string; lifetime?: number; issuedAt?: number; issuer?: string; key?: CryptoKey; alg?: string } = {},
+    options: {
+      sub?: string;
+      lifetime?: number;
+      issuedAt?: number;
+      issuer?: string;
+      key?: CryptoKey;
+      alg?: string;
+    } = {},
   ) {
     const now = options.issuedAt ?? Math.floor(Date.now() / 1000);
     return new SignJWT({ role: 'authenticated', aal: 'aal1', is_anonymous: false, session_id: randomUUID(), ...claims })
@@ -35,9 +42,14 @@ export function fakeAuthAdmin() {
   let failNext = false;
   return {
     deleted,
-    failNextDelete() { failNext = true; },
+    failNextDelete() {
+      failNext = true;
+    },
     deleteUser(id: string) {
-      if (failNext) { failNext = false; return Promise.reject(new Error('supabase unavailable')); }
+      if (failNext) {
+        failNext = false;
+        return Promise.reject(new Error('supabase unavailable'));
+      }
       deleted.push(id);
       return Promise.resolve();
     },

@@ -55,11 +55,16 @@ export async function finishDeletion(deps: DeletionDeps, userId: string): Promis
  * isn't met with a flood of requests.
  */
 export async function completePendingDeletions(deps: DeletionDeps): Promise<{ completed: number; failed: number }> {
-  const due = await deps.db.withUser(null, async q =>
-    (await q.query<{ user_id: string; attempts: number }>(
-      'SELECT user_id, attempts FROM app.pending_auth_deletions WHERE next_attempt_at <= now() ORDER BY next_attempt_at LIMIT $1',
-      [BATCH],
-    )).rows);
+  const due = await deps.db.withUser(
+    null,
+    async q =>
+      (
+        await q.query<{ user_id: string; attempts: number }>(
+          'SELECT user_id, attempts FROM app.pending_auth_deletions WHERE next_attempt_at <= now() ORDER BY next_attempt_at LIMIT $1',
+          [BATCH],
+        )
+      ).rows,
+  );
 
   let completed = 0;
   let failed = 0;
@@ -70,10 +75,12 @@ export async function completePendingDeletions(deps: DeletionDeps): Promise<{ co
     }
     failed++;
     const waitMinutes = Math.min(5 * 2 ** attempts, 360);
-    await deps.db.withUser(null, q => q.query(
-      'UPDATE app.pending_auth_deletions SET attempts = attempts + 1, next_attempt_at = now() + make_interval(mins => $2) WHERE user_id = $1',
-      [userId, waitMinutes],
-    ));
+    await deps.db.withUser(null, q =>
+      q.query(
+        'UPDATE app.pending_auth_deletions SET attempts = attempts + 1, next_attempt_at = now() + make_interval(mins => $2) WHERE user_id = $1',
+        [userId, waitMinutes],
+      ),
+    );
   }
   return { completed, failed };
 }

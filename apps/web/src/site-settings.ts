@@ -5,7 +5,10 @@ import { parseSettings, type SiteSettings } from './lib/settings.ts';
 
 function read(): SiteSettings {
   const settings = parseSettings(document.querySelector('meta[name="graphinity-settings"]')?.getAttribute('content'));
-  if (!settings) throw new Error('This copy of Graphinity has no settings: its index.html was never stamped for an environment (apps/web/stamp.ts).');
+  if (!settings)
+    throw new Error(
+      'This copy of Graphinity has no settings: its index.html was never stamped for an environment (apps/web/stamp.ts).',
+    );
   return settings;
 }
 

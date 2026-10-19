@@ -16,16 +16,31 @@ const base = (() => {
 })();
 
 const git = args => {
-  try { return execFileSync('git', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }); } catch { return null; }
+  try {
+    return execFileSync('git', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  } catch {
+    return null;
+  }
 };
 
 const mergeBase = git(['merge-base', base, 'HEAD'])?.trim();
-if (!mergeBase) { console.error(`floor-guard: no merge base against ${base}`); process.exit(2); }
+if (!mergeBase) {
+  console.error(`floor-guard: no merge base against ${base}`);
+  process.exit(2);
+}
 
 const tracked = git(['diff', '--unified=0', mergeBase, '--']) ?? '';
 const untracked = (git(['ls-files', '--others', '--exclude-standard']) ?? '')
-  .split('\n').filter(Boolean)
-  .map(f => { try { execFileSync('git', ['diff', '--no-index', '--unified=0', '/dev/null', f], { encoding: 'utf8' }); return ''; } catch (e) { return e.stdout ?? ''; } })
+  .split('\n')
+  .filter(Boolean)
+  .map(f => {
+    try {
+      execFileSync('git', ['diff', '--no-index', '--unified=0', '/dev/null', f], { encoding: 'utf8' });
+      return '';
+    } catch (e) {
+      return e.stdout ?? '';
+    }
+  })
   .join('\n');
 
 const added = [];
@@ -46,13 +61,16 @@ const CODE = /\.(ts|tsx|js|mjs|cjs|sql|sh|css|ya?ml)$/;
 // to a commit message in the range, e.g. "Constraints-approved: E1, E2".
 // A changed number is approved by naming its whole row, one trailer per row
 // (row names contain commas), e.g. "Constraints-approved: Coverage, server".
-const approvals = [...(git(['log', `${mergeBase}..HEAD`, '--format=%B']) ?? '').matchAll(/^Constraints-approved:\s*(.+)$/gm)].map(m => m[1]);
+const approvals = [
+  ...(git(['log', `${mergeBase}..HEAD`, '--format=%B']) ?? '').matchAll(/^Constraints-approved:\s*(.+)$/gm),
+].map(m => m[1]);
 const approved = new Set(approvals.flatMap(a => a.split(/[,\s]+/).filter(Boolean)));
 const rowApproved = row => approvals.some(a => a.trim() === row);
 const findings = [];
 const flag = (rule, f, text) => findings.push({ rule, file: f, text: text.trim().slice(0, 120) });
 
-const SUPPRESSIONS = /@ts-ignore|@ts-nocheck|@ts-expect-error|eslint-disable|istanbul ignore|c8 ignore|v8 ignore|nosemgrep|gitleaks:allow/;
+const SUPPRESSIONS =
+  /@ts-ignore|@ts-nocheck|@ts-expect-error|eslint-disable|istanbul ignore|c8 ignore|v8 ignore|nosemgrep|gitleaks:allow/;
 const STUBS = /throw new Error\(.*[Nn]ot implemented|catch\s*(\(\w*\))?\s*\{\s*\}|\bTODO\b|\bFIXME\b/;
 const SKIPS = /\b(it|test|describe)\.(skip|todo|only)\b|\bxit\(|\bxdescribe\(|\.fixme\(/;
 
@@ -69,7 +87,9 @@ for (const { file: f, text } of added) {
 
 // Assertions replaced on purpose (the behaviour they checked changed) are
 // allowed when a commit in the range says why: "Assertions-changed: <reason>".
-const assertionReasons = [...(git(['log', `${mergeBase}..HEAD`, '--format=%B']) ?? '').matchAll(/^Assertions-changed:\s*(\S.{9,})$/gm)];
+const assertionReasons = [
+  ...(git(['log', `${mergeBase}..HEAD`, '--format=%B']) ?? '').matchAll(/^Assertions-changed:\s*(\S.{9,})$/gm),
+];
 
 // An assertion call removed from a test file, unless the same code was added
 // back in that file (moved, reorganised, or re-wrapped by the formatter).
@@ -112,11 +132,17 @@ for (const r of before) {
   if (!a) continue;
   const old = nums(r.text);
   if (rowApproved(rowKey(a.text))) continue;
-  if (nums(a.text).some((n, i) => old[i] !== undefined && n !== old[i])) flag('threshold-changed', r.file, `${r.text.trim()}  ->  ${a.text.trim()}`);
+  if (nums(a.text).some((n, i) => old[i] !== undefined && n !== old[i]))
+    flag('threshold-changed', r.file, `${r.text.trim()}  ->  ${a.text.trim()}`);
 }
 
-if (findings.length === 0) { console.log('floor-guard: clean'); process.exit(0); }
+if (findings.length === 0) {
+  console.log('floor-guard: clean');
+  process.exit(0);
+}
 console.error(`floor-guard: ${findings.length} floor violation(s):`);
 for (const f of findings) console.error(`  [${f.rule}] ${f.file}: ${f.text}`);
-console.error('\nEach one lowers the bar. Fix the code, or record a tracked exception in CONSTRAINTS.md with an owner and an expiry.');
+console.error(
+  '\nEach one lowers the bar. Fix the code, or record a tracked exception in CONSTRAINTS.md with an owner and an expiry.',
+);
 process.exit(1);

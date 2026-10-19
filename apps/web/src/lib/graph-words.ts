@@ -10,12 +10,17 @@ export function graphCaption(data: Pick<GraphData, 'members' | 'fields' | 'activ
   const fields = data.fields.filter(f => f.members > 0).length;
   const parts = [`${n(data.members, 'person', 'people')} across ${n(fields, 'field', 'fields')}`];
   const { questions, answers } = data.activity.lastDay;
-  if (questions + answers > 0) parts.push(`${n(questions, 'question', 'questions')} and ${n(answers, 'answer', 'answers')} in the last day`);
+  if (questions + answers > 0)
+    parts.push(`${n(questions, 'question', 'questions')} and ${n(answers, 'answer', 'answers')} in the last day`);
   return parts.join(' · ');
 }
 
 /** What the asker reads about where their question went. */
-export function routingLine(r: { asked: number | null; inCountry: number | null }, field: string, country: string | null): string {
+export function routingLine(
+  r: { asked: number | null; inCountry: number | null },
+  field: string,
+  country: string | null,
+): string {
   const who = r.asked === null ? 'a few people' : n(r.asked, 'person', 'people');
   const local = r.inCountry !== null && country ? ` · ${r.inCountry.toLocaleString('en')} in ${country}` : '';
   return `Sent to ${who} who know ${field}${local}`;
@@ -30,7 +35,10 @@ export function fieldLabel(field: GraphField): string {
 }
 
 /** The other fields a field's people also know, most shared first ("a few", null, last). */
-export function neighbours(data: Pick<GraphData, 'fields' | 'links'>, index: number): Array<{ index: number; shared: number | null }> {
+export function neighbours(
+  data: Pick<GraphData, 'fields' | 'links'>,
+  index: number,
+): Array<{ index: number; shared: number | null }> {
   return (data.links ?? [])
     .filter(l => (l.a === index || l.b === index) && data.fields[l.a === index ? l.b : l.a])
     .map(l => ({ index: l.a === index ? l.b : l.a, shared: l.shared }))
@@ -43,7 +51,12 @@ export function fieldNeighbourhood(data: Pick<GraphData, 'fields' | 'links'>, in
   if (!field) return '';
   const who = few(field.members, 'person', 'people');
   const opening = `${who.charAt(0).toUpperCase()}${who.slice(1)} know ${field.name}.`;
-  const near = neighbours(data, index).slice(0, 3).map(({ index: i, shared }) => `${shared === null || shared < 5 ? 'a few' : shared.toLocaleString('en')} also know ${data.fields[i]?.name ?? ''}`);
+  const near = neighbours(data, index)
+    .slice(0, 3)
+    .map(
+      ({ index: i, shared }) =>
+        `${shared === null || shared < 5 ? 'a few' : shared.toLocaleString('en')} also know ${data.fields[i]?.name ?? ''}`,
+    );
   if (near.length === 0) return `${opening} None of them list another field yet.`;
   const list = near.length === 1 ? near[0] : `${near.slice(0, -1).join(', ')}, and ${near[near.length - 1] ?? ''}`;
   return `${opening} ${(list ?? '').charAt(0).toUpperCase()}${(list ?? '').slice(1)}.`;

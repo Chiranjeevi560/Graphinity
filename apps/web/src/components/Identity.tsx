@@ -41,6 +41,15 @@ export function joinedLabel(joined: string): string {
 /** A name that wraps at its dots and underscores, never in the middle of a word or number. */
 export function Handle({ handle }: { handle: string }) {
   const parts = handle.split(/(?<=[._])/);
-  return <>@{parts.map((p, i) => <span key={i}>{i > 0 && <wbr />}{p}</span>)}</>;
+  return (
+    <>
+      @
+      {parts.map((p, i) => (
+        <span key={i}>
+          {i > 0 && <wbr />}
+          {p}
+        </span>
+      ))}
+    </>
+  );
 }
-

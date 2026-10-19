@@ -22,7 +22,9 @@ window.addEventListener('vite:preloadError', event => {
   try {
     if (Date.now() - (Number(sessionStorage.getItem(key)) || 0) < 10_000) return;
     sessionStorage.setItem(key, String(Date.now()));
-  } catch { return; }
+  } catch {
+    return;
+  }
   event.preventDefault();
   location.reload();
 });

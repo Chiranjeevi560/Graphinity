@@ -12,7 +12,12 @@ const fromB64url = (s: string) => Buffer.from(s, 'base64url');
  * exist only so a test can reproduce RFC 8291's example; real messages
  * use fresh random ones every time.
  */
-export function encryptPush(plaintext: Buffer, receiverPublicKey: Buffer, authSecret: Buffer, fixed: { salt?: Buffer; senderPrivateKey?: Buffer } = {}): Buffer {
+export function encryptPush(
+  plaintext: Buffer,
+  receiverPublicKey: Buffer,
+  authSecret: Buffer,
+  fixed: { salt?: Buffer; senderPrivateKey?: Buffer } = {},
+): Buffer {
   const ecdh = createECDH('prime256v1');
   if (fixed.senderPrivateKey) ecdh.setPrivateKey(fixed.senderPrivateKey);
   else ecdh.generateKeys();
@@ -25,7 +30,11 @@ export function encryptPush(plaintext: Buffer, receiverPublicKey: Buffer, authSe
   const nonce = Buffer.from(hkdfSync('sha256', ikm, salt, Buffer.from('Content-Encoding: nonce\0'), 12));
   // One record: the message, then the 0x02 delimiter that marks the last record.
   const cipher = createCipheriv('aes-128-gcm', cek, nonce);
-  const body = Buffer.concat([cipher.update(Buffer.concat([plaintext, Buffer.from([2])])), cipher.final(), cipher.getAuthTag()]);
+  const body = Buffer.concat([
+    cipher.update(Buffer.concat([plaintext, Buffer.from([2])])),
+    cipher.final(),
+    cipher.getAuthTag(),
+  ]);
   const header = Buffer.alloc(21);
   salt.copy(header, 0);
   header.writeUInt32BE(4096, 16);
@@ -55,10 +64,16 @@ export interface VapidKeys {
 /** The Authorization header that proves a push comes from us (RFC 8292). */
 export async function vapidHeader(endpoint: string, keys: VapidKeys, nowSeconds: number): Promise<string> {
   const pub = fromB64url(keys.publicKey);
-  const key = await importJWK({
-    kty: 'EC', crv: 'P-256',
-    x: b64url(pub.subarray(1, 33)), y: b64url(pub.subarray(33, 65)), d: keys.privateKey,
-  }, 'ES256');
+  const key = await importJWK(
+    {
+      kty: 'EC',
+      crv: 'P-256',
+      x: b64url(pub.subarray(1, 33)),
+      y: b64url(pub.subarray(33, 65)),
+      d: keys.privateKey,
+    },
+    'ES256',
+  );
   const jwt = await new SignJWT({ sub: keys.subject })
     .setProtectedHeader({ typ: 'JWT', alg: 'ES256' })
     .setAudience(new URL(endpoint).origin)
@@ -75,12 +90,18 @@ export async function vapidHeader(endpoint: string, keys: VapidKeys, nowSeconds:
  */
 export function isPushService(endpoint: string): boolean {
   let url: URL;
-  try { url = new URL(endpoint); } catch { return false; }
+  try {
+    url = new URL(endpoint);
+  } catch {
+    return false;
+  }
   if (url.protocol !== 'https:' || url.port !== '' || url.username || url.password) return false;
   const host = url.hostname;
-  return host === 'fcm.googleapis.com'
-    || host === 'updates.push.services.mozilla.com'
-    || host === 'web.push.apple.com'
-    || host.endsWith('.push.apple.com')
-    || host.endsWith('.notify.windows.com');
+  return (
+    host === 'fcm.googleapis.com' ||
+    host === 'updates.push.services.mozilla.com' ||
+    host === 'web.push.apple.com' ||
+    host.endsWith('.push.apple.com') ||
+    host.endsWith('.notify.windows.com')
+  );
 }

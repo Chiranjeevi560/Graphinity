@@ -68,11 +68,12 @@ function ownProfile(p: ProfileRow) {
 const handleSchema = { type: 'string', minLength: 1, maxLength: 64 } as const;
 const countrySchema = { type: 'string', pattern: '^[A-Z]{2}$' } as const;
 const fieldsSchema = {
-  type: 'array', minItems: 1, maxItems: 8, uniqueItems: true,
+  type: 'array',
+  minItems: 1,
+  maxItems: 8,
+  uniqueItems: true,
   items: { type: 'string', pattern: '^[a-z]+(-[a-z]+)*$', maxLength: 40 },
 } as const;
-
-
 
 /** Turns database refusals into answers a person can act on. Returns false if unrecognised. */
 function explainDbError(err: unknown, reply: FastifyReply): boolean {
@@ -95,10 +96,7 @@ function explainDbError(err: unknown, reply: FastifyReply): boolean {
 
 async function replaceFields(q: Queryable, userId: string, fields: string[]) {
   await q.query('DELETE FROM app.profile_fields WHERE profile_id = $1', [userId]);
-  await q.query(
-    'INSERT INTO app.profile_fields (profile_id, field) SELECT $1, unnest($2::text[])',
-    [userId, fields],
-  );
+  await q.query('INSERT INTO app.profile_fields (profile_id, field) SELECT $1, unnest($2::text[])', [userId, fields]);
 }
 
 export function registerProfileRoutes(app: FastifyInstance, deps: ProfileDeps) {
@@ -108,10 +106,15 @@ export function registerProfileRoutes(app: FastifyInstance, deps: ProfileDeps) {
   // applied (and the server redeployed), so they are read once and kept.
   let meta: Promise<{ fields: unknown[]; countries: unknown[] }> | null = null;
   app.get('/meta', async (_req, reply) => {
-    meta ??= db.withUser(null, async q => ({
-      fields: (await q.query('SELECT slug, name FROM app.fields ORDER BY position')).rows,
-      countries: (await q.query('SELECT code, name FROM app.countries ORDER BY name')).rows,
-    })).catch((err: unknown) => { meta = null; throw err; });
+    meta ??= db
+      .withUser(null, async q => ({
+        fields: (await q.query('SELECT slug, name FROM app.fields ORDER BY position')).rows,
+        countries: (await q.query('SELECT code, name FROM app.countries ORDER BY name')).rows,
+      }))
+      .catch((err: unknown) => {
+        meta = null;
+        throw err;
+      });
     reply.header('cache-control', 'public, max-age=3600');
     return meta;
   });
@@ -121,149 +124,209 @@ export function registerProfileRoutes(app: FastifyInstance, deps: ProfileDeps) {
     const found = await db.withUser(user.id, async q => {
       const profile = await loadProfile(q, 'id', user.id);
       return profile
-        ? { profile, standing: await standing(q, profile.id), moderator: await isModerator(q), blocked: await isBlocked(q) }
+        ? {
+            profile,
+            standing: await standing(q, profile.id),
+            moderator: await isModerator(q),
+            blocked: await isBlocked(q),
+          }
         : null;
     });
     // No profile yet means the person signed in but hasn't finished setting up.
     return found
-      ? { profile: ownProfile(found.profile), standing: found.standing, moderator: found.moderator, blocked: found.blocked }
+      ? {
+          profile: ownProfile(found.profile),
+          standing: found.standing,
+          moderator: found.moderator,
+          blocked: found.blocked,
+        }
       : { profile: null };
   });
 
-  app.post('/me/profile', {
-    config: { auth: 'required', write: true },
-    schema: {
-      body: {
-        type: 'object', additionalProperties: false,
-        required: ['handle', 'country', 'fields', 'adult'],
-        properties: { handle: handleSchema, country: countrySchema, fields: fieldsSchema, adult: { const: true } },
+  app.post(
+    '/me/profile',
+    {
+      config: { auth: 'required', write: true },
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['handle', 'country', 'fields', 'adult'],
+          properties: { handle: handleSchema, country: countrySchema, fields: fieldsSchema, adult: { const: true } },
+        },
       },
     },
-  }, async (req, reply) => {
-    const user = signedIn(req);
-    const body = req.body as { handle: string; country: string; fields: string[] };
-    const handle = normalizeHandle(body.handle);
-    const problem = handleProblem(handle);
-    if (problem) return fail(reply, 400, 'invalid_handle', handleProblemMessages[problem], { reason: problem });
-    let profile: ProfileRow;
-    try {
-      profile = await db.withUser(user.id, async q => {
-        await q.query(
-          'INSERT INTO app.profiles (id, handle, country, adult_confirmed_at) VALUES ($1, $2, $3, $4)',
-          [user.id, handle, body.country, new Date(clock.now())],
-        );
-        await replaceFields(q, user.id, body.fields);
-        return loadOwn(q, user.id);
-      });
-    } catch (err) {
-      if (explainDbError(err, reply)) return reply;
-      throw err;
-    }
-    return reply.code(201).send({ profile: ownProfile(profile) });
-  });
-
-  app.patch('/me/profile', {
-    config: { auth: 'required', write: true },
-    schema: {
-      body: {
-        type: 'object', additionalProperties: false, minProperties: 1,
-        properties: { handle: handleSchema, country: countrySchema, fields: fieldsSchema },
-      },
-    },
-  }, async (req, reply) => {
-    const user = signedIn(req);
-    const body = req.body as { handle?: string; country?: string; fields?: string[] };
-    const handle = body.handle === undefined ? undefined : normalizeHandle(body.handle);
-    if (handle !== undefined) {
+    async (req, reply) => {
+      const user = signedIn(req);
+      const body = req.body as { handle: string; country: string; fields: string[] };
+      const handle = normalizeHandle(body.handle);
       const problem = handleProblem(handle);
       if (problem) return fail(reply, 400, 'invalid_handle', handleProblemMessages[problem], { reason: problem });
-    }
-    let outcome: { kind: 'missing' } | { kind: 'too_soon'; availableAt: string } | { kind: 'ok'; profile: ProfileRow };
-    try {
-      outcome = await db.withUser(user.id, async q => {
-        // Lock the row so two edits at once can't both pass the weekly check.
-        // The database's clock decides (it also enforces the rule itself).
-        const { rows } = await q.query<{ handle: string; available_at: Date | null; too_soon: boolean }>(
-          `SELECT handle, handle_changed_at + interval '7 days' AS available_at,
+      let profile: ProfileRow;
+      try {
+        profile = await db.withUser(user.id, async q => {
+          await q.query('INSERT INTO app.profiles (id, handle, country, adult_confirmed_at) VALUES ($1, $2, $3, $4)', [
+            user.id,
+            handle,
+            body.country,
+            new Date(clock.now()),
+          ]);
+          await replaceFields(q, user.id, body.fields);
+          return loadOwn(q, user.id);
+        });
+      } catch (err) {
+        if (explainDbError(err, reply)) return reply;
+        throw err;
+      }
+      return reply.code(201).send({ profile: ownProfile(profile) });
+    },
+  );
+
+  app.patch(
+    '/me/profile',
+    {
+      config: { auth: 'required', write: true },
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          minProperties: 1,
+          properties: { handle: handleSchema, country: countrySchema, fields: fieldsSchema },
+        },
+      },
+    },
+    async (req, reply) => {
+      const user = signedIn(req);
+      const body = req.body as { handle?: string; country?: string; fields?: string[] };
+      const handle = body.handle === undefined ? undefined : normalizeHandle(body.handle);
+      if (handle !== undefined) {
+        const problem = handleProblem(handle);
+        if (problem) return fail(reply, 400, 'invalid_handle', handleProblemMessages[problem], { reason: problem });
+      }
+      let outcome:
+        { kind: 'missing' } | { kind: 'too_soon'; availableAt: string } | { kind: 'ok'; profile: ProfileRow };
+      try {
+        outcome = await db.withUser(user.id, async q => {
+          // Lock the row so two edits at once can't both pass the weekly check.
+          // The database's clock decides (it also enforces the rule itself).
+          const { rows } = await q.query<{ handle: string; available_at: Date | null; too_soon: boolean }>(
+            `SELECT handle, handle_changed_at + interval '7 days' AS available_at,
                   COALESCE(handle_changed_at + interval '7 days' > now(), false) AS too_soon
-           FROM app.profiles WHERE id = $1 FOR UPDATE`, [user.id]);
-        const current = rows[0];
-        if (!current) return { kind: 'missing' as const };
-        const now = clock.now();
-        if (handle !== undefined && handle !== current.handle) {
-          if (current.too_soon && current.available_at) {
-            return { kind: 'too_soon' as const, availableAt: current.available_at.toISOString() };
+           FROM app.profiles WHERE id = $1 FOR UPDATE`,
+            [user.id],
+          );
+          const current = rows[0];
+          if (!current) return { kind: 'missing' as const };
+          const now = clock.now();
+          if (handle !== undefined && handle !== current.handle) {
+            if (current.too_soon && current.available_at) {
+              return { kind: 'too_soon' as const, availableAt: current.available_at.toISOString() };
+            }
+            await q.query('UPDATE app.profiles SET handle = $2 WHERE id = $1', [user.id, handle]);
           }
-          await q.query('UPDATE app.profiles SET handle = $2 WHERE id = $1', [user.id, handle]);
-        }
-        if (body.country !== undefined) {
-          await q.query('UPDATE app.profiles SET country = $2 WHERE id = $1', [user.id, body.country]);
-        }
-        if (body.fields !== undefined) await replaceFields(q, user.id, body.fields);
-        await q.query('UPDATE app.profiles SET updated_at = $2 WHERE id = $1', [user.id, new Date(now)]);
-        return { kind: 'ok' as const, profile: await loadOwn(q, user.id) };
-      });
-    } catch (err) {
-      if (explainDbError(err, reply)) return reply;
-      throw err;
-    }
-    if (outcome.kind === 'missing') return fail(reply, 404, 'no_profile', 'Set up your profile first.');
-    if (outcome.kind === 'too_soon') {
-      return fail(reply, 409, 'handle_change_too_soon', 'You changed your name recently. You can change it again in a few days.', { availableAt: outcome.availableAt });
-    }
-    return { profile: ownProfile(outcome.profile) };
-  });
+          if (body.country !== undefined) {
+            await q.query('UPDATE app.profiles SET country = $2 WHERE id = $1', [user.id, body.country]);
+          }
+          if (body.fields !== undefined) await replaceFields(q, user.id, body.fields);
+          await q.query('UPDATE app.profiles SET updated_at = $2 WHERE id = $1', [user.id, new Date(now)]);
+          return { kind: 'ok' as const, profile: await loadOwn(q, user.id) };
+        });
+      } catch (err) {
+        if (explainDbError(err, reply)) return reply;
+        throw err;
+      }
+      if (outcome.kind === 'missing') return fail(reply, 404, 'no_profile', 'Set up your profile first.');
+      if (outcome.kind === 'too_soon') {
+        return fail(
+          reply,
+          409,
+          'handle_change_too_soon',
+          'You changed your name recently. You can change it again in a few days.',
+          { availableAt: outcome.availableAt },
+        );
+      }
+      return { profile: ownProfile(outcome.profile) };
+    },
+  );
 
   // Live feedback while someone types a name. Signed-in only, so it can't be
   // used anonymously to list who is on Graphinity.
-  app.get('/handles/:handle', {
-    config: { auth: 'required' },
-    schema: { params: { type: 'object', properties: { handle: handleSchema }, required: ['handle'] } },
-  }, async req => {
-    const user = signedIn(req);
-    const handle = normalizeHandle((req.params as { handle: string }).handle);
-    const problem = handleProblem(handle);
-    if (problem) return { handle, available: false, reason: problem, message: handleProblemMessages[problem] };
-    const owner = await db.withUser(user.id, async q =>
-      (await q.query<{ id: string }>('SELECT id FROM app.profiles WHERE handle = $1', [handle])).rows[0]?.id);
-    if (owner && owner !== user.id) return { handle, available: false, reason: 'taken', message: 'That name is taken. Try another.' };
-    return { handle, available: true };
-  });
+  app.get(
+    '/handles/:handle',
+    {
+      config: { auth: 'required' },
+      schema: { params: { type: 'object', properties: { handle: handleSchema }, required: ['handle'] } },
+    },
+    async req => {
+      const user = signedIn(req);
+      const handle = normalizeHandle((req.params as { handle: string }).handle);
+      const problem = handleProblem(handle);
+      if (problem) return { handle, available: false, reason: problem, message: handleProblemMessages[problem] };
+      const owner = await db.withUser(
+        user.id,
+        async q =>
+          (await q.query<{ id: string }>('SELECT id FROM app.profiles WHERE handle = $1', [handle])).rows[0]?.id,
+      );
+      if (owner && owner !== user.id)
+        return { handle, available: false, reason: 'taken', message: 'That name is taken. Try another.' };
+      return { handle, available: true };
+    },
+  );
 
-  app.get('/profiles/:handle', {
-    schema: { params: { type: 'object', properties: { handle: handleSchema }, required: ['handle'] } },
-  }, async (req, reply) => {
-    const handle = normalizeHandle((req.params as { handle: string }).handle);
-    const found = handleProblem(handle) ? null : await db.withUser(null, async q => {
-      const profile = await loadProfile(q, 'handle', handle);
-      return profile ? { profile, standing: await standing(q, profile.id) } : null;
-    });
-    if (!found) return fail(reply, 404, 'not_found', 'There’s no one with that name.');
-    return { profile: publicProfile(found.profile), standing: found.standing };
-  });
+  app.get(
+    '/profiles/:handle',
+    {
+      schema: { params: { type: 'object', properties: { handle: handleSchema }, required: ['handle'] } },
+    },
+    async (req, reply) => {
+      const handle = normalizeHandle((req.params as { handle: string }).handle);
+      const found = handleProblem(handle)
+        ? null
+        : await db.withUser(null, async q => {
+            const profile = await loadProfile(q, 'handle', handle);
+            return profile ? { profile, standing: await standing(q, profile.id) } : null;
+          });
+      if (!found) return fail(reply, 404, 'not_found', 'There’s no one with that name.');
+      return { profile: publicProfile(found.profile), standing: found.standing };
+    },
+  );
 
   // Deleting an account really deletes it: the profile and everything that
   // cascades from it at once, then the sign-in at Supabase. If Supabase fails,
   // the deletion is recorded as pending and finished by the retry job
   // (deletions.ts); until then the account is refused everywhere and the
   // database won't accept a new profile for it. Safe to call again.
-  app.delete('/me', {
-    config: { auth: 'required', write: true, allowRevoked: true },
-    schema: { body: { type: 'object', additionalProperties: false, required: ['confirm'], properties: { confirm: { const: true } } } },
-  }, async (req, reply) => {
-    const user = signedIn(req);
-    await db.withUser(user.id, async q => {
-      await q.query('DELETE FROM app.revoked_subjects WHERE until < now()');
-      await q.query('DELETE FROM app.profiles WHERE id = $1', [user.id]);
-      await q.query('INSERT INTO app.pending_auth_deletions (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING', [user.id]);
-      await lockOut(q, user.id, subjectKey);
-    });
-    if (await finishDeletion({ db, authAdmin: deps.authAdmin, subjectKey, log: deps.log }, user.id)) {
-      return reply.code(204).send();
-    }
-    return reply.code(202).send({
-      status: 'finishing',
-      message: 'Your account is deleted. Removing your sign-in is taking longer than usual; it will finish automatically.',
-    });
-  });
+  app.delete(
+    '/me',
+    {
+      config: { auth: 'required', write: true, allowRevoked: true },
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['confirm'],
+          properties: { confirm: { const: true } },
+        },
+      },
+    },
+    async (req, reply) => {
+      const user = signedIn(req);
+      await db.withUser(user.id, async q => {
+        await q.query('DELETE FROM app.revoked_subjects WHERE until < now()');
+        await q.query('DELETE FROM app.profiles WHERE id = $1', [user.id]);
+        await q.query('INSERT INTO app.pending_auth_deletions (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING', [
+          user.id,
+        ]);
+        await lockOut(q, user.id, subjectKey);
+      });
+      if (await finishDeletion({ db, authAdmin: deps.authAdmin, subjectKey, log: deps.log }, user.id)) {
+        return reply.code(204).send();
+      }
+      return reply.code(202).send({
+        status: 'finishing',
+        message:
+          'Your account is deleted. Removing your sign-in is taking longer than usual; it will finish automatically.',
+      });
+    },
+  );
 }

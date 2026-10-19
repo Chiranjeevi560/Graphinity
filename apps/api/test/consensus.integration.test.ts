@@ -15,16 +15,41 @@ async function member() {
   const p = await h.person();
   names += 1;
   const handle = `agree.${String(names)}`;
-  expect((await h.call('POST', '/me/profile', p.token, { handle, country: 'IN', fields: ['imports-customs'], adult: true })).statusCode).toBe(201);
+  expect(
+    (await h.call('POST', '/me/profile', p.token, { handle, country: 'IN', fields: ['imports-customs'], adult: true }))
+      .statusCode,
+  ).toBe(201);
   return { ...p, handle };
 }
 
-interface PageAnswer { id: string; body: string; claim: { minor: number; currency: string } | null; minorityPinned: boolean; rank: number; author: { reputation: number; accepted: number; medal: string | null } }
-interface Page { answers: PageAnswer[]; consensus: { confidence: number; clusters: Array<{ currency: string; lowMinor: number; highMinor: number; share: number; answers: number }> } | null; selection: { stars: number | null } | null }
+interface PageAnswer {
+  id: string;
+  body: string;
+  claim: { minor: number; currency: string } | null;
+  minorityPinned: boolean;
+  rank: number;
+  author: { reputation: number; accepted: number; medal: string | null };
+}
+interface Page {
+  answers: PageAnswer[];
+  consensus: {
+    confidence: number;
+    clusters: Array<{ currency: string; lowMinor: number; highMinor: number; share: number; answers: number }>;
+  } | null;
+  selection: { stars: number | null } | null;
+}
 
 async function questionWith(bodies: string[]) {
   const asker = await member();
-  const q = must((await h.call('POST', '/questions', asker.token, { title: 'How much customs did you pay on a ₹3 lakh watch through Chennai?', field: 'imports-customs', country: 'IN' })).json<{ question: { id: string } }>().question.id);
+  const q = must(
+    (
+      await h.call('POST', '/questions', asker.token, {
+        title: 'How much customs did you pay on a ₹3 lakh watch through Chennai?',
+        field: 'imports-customs',
+        country: 'IN',
+      })
+    ).json<{ question: { id: string } }>().question.id,
+  );
   const ids: string[] = [];
   const authors: Array<{ token: string }> = [];
   for (const body of bodies) {
@@ -47,7 +72,10 @@ describe('agreement among the answers', () => {
       'Paid ₹1,40,000 because the invoice value didn’t match my card statement.',
     ]);
     const p = await page();
-    expect(must(p.consensus).clusters.map(c => [c.lowMinor / 100, c.highMinor / 100, c.answers])).toEqual([[94_000, 96_500, 3], [140_000, 140_000, 1]]);
+    expect(must(p.consensus).clusters.map(c => [c.lowMinor / 100, c.highMinor / 100, c.answers])).toEqual([
+      [94_000, 96_500, 3],
+      [140_000, 140_000, 1],
+    ]);
     expect(must(p.consensus).confidence).toBeGreaterThan(0);
     expect(must(p.consensus).confidence).toBeLessThan(1);
     const outlier = must(p.answers.find(a => a.id === ids[3]));
@@ -68,7 +96,11 @@ describe('agreement among the answers', () => {
   });
 
   it('leaves hidden answers out', async () => {
-    const { ids, authors, page } = await questionWith(['Paid ₹95,000 in duty at Chennai.', 'Paid ₹96,000 in duty at Chennai.', 'Paid ₹2,00,000 in duty at Chennai.']);
+    const { ids, authors, page } = await questionWith([
+      'Paid ₹95,000 in duty at Chennai.',
+      'Paid ₹96,000 in duty at Chennai.',
+      'Paid ₹2,00,000 in duty at Chennai.',
+    ]);
     await h.t.owner.query("INSERT INTO app.decisions (answer_id, decision) VALUES ($1, 'remove')", [ids[2]]);
     expect((await page()).consensus).toBeNull();
     // Its author still sees it, marked hidden; it still doesn't count.

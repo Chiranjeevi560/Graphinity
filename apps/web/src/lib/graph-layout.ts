@@ -8,7 +8,11 @@
 // who share a field. Motion is a slow, smooth wander around each resting
 // place, and links fade in and out: alive, never busy. docs/GRAPH.md.
 
-export interface GraphField { slug: string; name: string; members: number }
+export interface GraphField {
+  slug: string;
+  name: string;
+  members: number;
+}
 export interface GraphData {
   /** Everyone with a profile, once. */
   members: number;
@@ -20,10 +24,18 @@ export interface GraphData {
    * Absent from a server older than the site, for the minutes a deploy takes.
    */
   links?: Array<{ a: number; b: number; shared: number | null }>;
-  activity: { lastDay: { questions: number; answers: number }; recent: Array<{ field: number; kind: 'question' | 'answer' }> };
+  activity: {
+    lastDay: { questions: number; answers: number };
+    recent: Array<{ field: number; kind: 'question' | 'answer' }>;
+  };
 }
 
-export interface Cluster { x: number; y: number; r: number; members: number }
+export interface Cluster {
+  x: number;
+  y: number;
+  r: number;
+  members: number;
+}
 export interface GraphNode {
   /** Resting place. */
   x: number;
@@ -38,8 +50,17 @@ export interface GraphNode {
   size: number;
   you: boolean;
 }
-export interface GraphEdge { a: number; b: number; speed: number; phase: number }
-export interface Layout { clusters: Cluster[]; nodes: GraphNode[]; edges: GraphEdge[] }
+export interface GraphEdge {
+  a: number;
+  b: number;
+  speed: number;
+  phase: number;
+}
+export interface Layout {
+  clusters: Cluster[];
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
 
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 /** Links per person, at most, to the nearest people sharing a field. */
@@ -59,7 +80,11 @@ export function seededRandom(seed: number): () => number {
 
 /** Fields with someone in them, biggest first: the order clusters are placed and visited in. */
 export function fieldOrder(fields: readonly GraphField[]): number[] {
-  return fields.map((f, i) => ({ i, members: f.members })).filter(f => f.members > 0).sort((a, b) => b.members - a.members || a.i - b.i).map(f => f.i);
+  return fields
+    .map((f, i) => ({ i, members: f.members }))
+    .filter(f => f.members > 0)
+    .sort((a, b) => b.members - a.members || a.i - b.i)
+    .map(f => f.i);
 }
 
 /**
@@ -72,7 +97,10 @@ export function clustersFor(fields: readonly GraphField[], width: number, height
   const cx = width / 2;
   const cy = height / 2;
   const short = Math.min(width, height);
-  const allMembers = Math.max(1, fields.reduce((sum, f) => sum + f.members, 0));
+  const allMembers = Math.max(
+    1,
+    fields.reduce((sum, f) => sum + f.members, 0),
+  );
   const order = fieldOrder(fields);
   const clusters: Cluster[] = fields.map(() => ({ x: cx, y: cy, r: 0, members: 0 }));
   order.forEach((i, rank) => {
@@ -96,7 +124,12 @@ export function clustersFor(fields: readonly GraphField[], width: number, height
  * Lays out the graph in a width × height box (CSS pixels). `you`, when
  * given, adds the viewer as one more node in their fields, drawn brighter.
  */
-export function layout(data: Pick<GraphData, 'fields' | 'people'>, width: number, height: number, options: { you?: number[]; seed?: number } = {}): Layout {
+export function layout(
+  data: Pick<GraphData, 'fields' | 'people'>,
+  width: number,
+  height: number,
+  options: { you?: number[]; seed?: number } = {},
+): Layout {
   const random = seededRandom(options.seed ?? 1);
   const clusters = clustersFor(data.fields, width, height);
 
@@ -105,10 +138,13 @@ export function layout(data: Pick<GraphData, 'fields' | 'people'>, width: number
   people.forEach((fields, index) => {
     const known = fields.filter(f => clusters[f] !== undefined);
     if (known.length === 0) return;
-    const centre = known.reduce((sum, f) => {
-      const c = clusters[f] as Cluster;
-      return { x: sum.x + c.x / known.length, y: sum.y + c.y / known.length };
-    }, { x: 0, y: 0 });
+    const centre = known.reduce(
+      (sum, f) => {
+        const c = clusters[f] as Cluster;
+        return { x: sum.x + c.x / known.length, y: sum.y + c.y / known.length };
+      },
+      { x: 0, y: 0 },
+    );
     // Denser towards the middle, thinning out at the edge, like a real
     // cluster; tighter for people between clusters.
     const home = clusters[known[0] as number] as Cluster;

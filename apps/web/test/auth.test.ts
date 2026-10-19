@@ -6,7 +6,12 @@ import { must } from './must.ts';
 // localStorage must never be used for anything sign-in related. Any access fails the test.
 const original = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
 beforeAll(() => {
-  Object.defineProperty(globalThis, 'localStorage', { configurable: true, get() { throw new Error('localStorage was touched'); } });
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    get() {
+      throw new Error('localStorage was touched');
+    },
+  });
 });
 afterAll(() => {
   if (original) Object.defineProperty(globalThis, 'localStorage', original);
@@ -18,12 +23,19 @@ function memoryStorage() {
   return {
     map,
     getItem: (k: string) => map.get(k) ?? null,
-    setItem: (k: string, v: string) => { map.set(k, v); },
-    removeItem: (k: string) => { map.delete(k); },
+    setItem: (k: string, v: string) => {
+      map.set(k, v);
+    },
+    removeItem: (k: string) => {
+      map.delete(k);
+    },
   };
 }
 
-interface Call { url: string; init: RequestInit }
+interface Call {
+  url: string;
+  init: RequestInit;
+}
 
 function harness(responses: Array<() => Response> = []) {
   const storage = memoryStorage();
@@ -41,19 +53,45 @@ function harness(responses: Array<() => Response> = []) {
       calls.push({ url, init });
       return Promise.resolve(must(responses.shift(), `a response for ${url}`)());
     }) as unknown as typeof fetch,
-    redirect: url => { redirectedTo = url; },
+    redirect: url => {
+      redirectedTo = url;
+    },
     now: () => clock,
   };
   const auth = createAuth(deps);
-  return { auth, storage, calls, responses, get redirectedTo() { return redirectedTo; }, tick(s: number) { clock += s; }, get now() { return clock; } };
+  return {
+    auth,
+    storage,
+    calls,
+    responses,
+    get redirectedTo() {
+      return redirectedTo;
+    },
+    tick(s: number) {
+      clock += s;
+    },
+    get now() {
+      return clock;
+    },
+  };
 }
 
-const json = (body: object, status = 200) => () => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
-const session = (n: number, expiresIn = 3600) => ({ access_token: `access-${n}`, refresh_token: `refresh-${n}`, expires_in: expiresIn });
+const json =
+  (body: object, status = 200) =>
+  () =>
+    new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+const session = (n: number, expiresIn = 3600) => ({
+  access_token: `access-${n}`,
+  refresh_token: `refresh-${n}`,
+  expires_in: expiresIn,
+});
 
 /** The sign-in waiting in session storage between leaving and coming back. */
 function pendingSignIn(h: ReturnType<typeof harness>): { nonce: string; state: string } {
-  return JSON.parse(must(h.storage.map.get('graphinity:signin'), 'a pending sign-in')) as { nonce: string; state: string };
+  return JSON.parse(must(h.storage.map.get('graphinity:signin'), 'a pending sign-in')) as {
+    nonce: string;
+    state: string;
+  };
 }
 
 function bodyOf(call: { init: RequestInit }): unknown {
@@ -65,7 +103,10 @@ function bodyOf(call: { init: RequestInit }): unknown {
 async function startAndReturn(h: ReturnType<typeof harness>, returnTo = '/') {
   await h.auth.startSignIn(returnTo);
   const authorize = new URL(h.redirectedTo);
-  const params = new URLSearchParams({ id_token: 'google-id-token', state: must(authorize.searchParams.get('state'), 'state') });
+  const params = new URLSearchParams({
+    id_token: 'google-id-token',
+    state: must(authorize.searchParams.get('state'), 'state'),
+  });
   return { authorize, params };
 }
 
@@ -76,7 +117,8 @@ describe('nonce and random values', () => {
   });
 
   it('makes long, URL-safe, different values every time', () => {
-    const a = randomToken(), b = randomToken();
+    const a = randomToken(),
+      b = randomToken();
     expect(a).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(a).not.toBe(b);
   });
@@ -84,7 +126,9 @@ describe('nonce and random values', () => {
 
 describe('starting sign-in', () => {
   let h: ReturnType<typeof harness>;
-  beforeEach(() => { h = harness(); });
+  beforeEach(() => {
+    h = harness();
+  });
 
   it('goes to Google, which returns to this site, asking only for openid and email', async () => {
     const { authorize } = await startAndReturn(h);
@@ -137,9 +181,11 @@ describe('finishing sign-in', () => {
     expect(h.calls).toHaveLength(0);
   });
 
-  it('refuses a return with no sign-in started in this tab (someone else\'s link)', async () => {
+  it("refuses a return with no sign-in started in this tab (someone else's link)", async () => {
     const h = harness();
-    await expect(h.auth.completeSignIn(new URLSearchParams('id_token=x&state=y'))).rejects.toMatchObject({ reason: 'mismatch' });
+    await expect(h.auth.completeSignIn(new URLSearchParams('id_token=x&state=y'))).rejects.toMatchObject({
+      reason: 'mismatch',
+    });
   });
 
   it('can be used only once', async () => {
@@ -159,14 +205,24 @@ describe('finishing sign-in', () => {
   it('reports cancelling at Google as cancelled', async () => {
     const h = harness();
     await h.auth.startSignIn();
-    await expect(h.auth.completeSignIn(new URLSearchParams('error=access_denied&state=x'))).rejects.toBeInstanceOf(SignInError);
+    await expect(h.auth.completeSignIn(new URLSearchParams('error=access_denied&state=x'))).rejects.toBeInstanceOf(
+      SignInError,
+    );
   });
 
   it('reports a refused exchange and no network differently', async () => {
     const refused = harness([json({ error: 'invalid_grant' }, 400)]);
-    await expect(refused.auth.completeSignIn((await startAndReturn(refused)).params)).rejects.toMatchObject({ reason: 'rejected' });
-    const offline = harness([() => { throw new TypeError('Failed to fetch'); }]);
-    await expect(offline.auth.completeSignIn((await startAndReturn(offline)).params)).rejects.toMatchObject({ reason: 'offline' });
+    await expect(refused.auth.completeSignIn((await startAndReturn(refused)).params)).rejects.toMatchObject({
+      reason: 'rejected',
+    });
+    const offline = harness([
+      () => {
+        throw new TypeError('Failed to fetch');
+      },
+    ]);
+    await expect(offline.auth.completeSignIn((await startAndReturn(offline)).params)).rejects.toMatchObject({
+      reason: 'offline',
+    });
   });
 });
 
@@ -219,7 +275,12 @@ describe('staying signed in', () => {
   });
 
   it('keeps the session when offline, so it works again once back online', async () => {
-    const h = await signedIn([() => { throw new TypeError('Failed to fetch'); }, json(session(2))]);
+    const h = await signedIn([
+      () => {
+        throw new TypeError('Failed to fetch');
+      },
+      json(session(2)),
+    ]);
     h.tick(3600);
     expect(await h.auth.getAccessToken()).toBeNull();
     expect(h.auth.hasSession()).toBe(true);
@@ -236,7 +297,9 @@ describe('staying signed in', () => {
 
   it('signing out while a refresh is on its way stays signed out', async () => {
     let answer: (r: Response) => void = () => {};
-    const slow = new Promise<Response>(r => { answer = r; });
+    const slow = new Promise<Response>(r => {
+      answer = r;
+    });
     // The harness resolves whatever a response maker returns, so a promise holds the refresh open.
     const h = await signedIn([() => slow as unknown as Response, () => new Response(null, { status: 204 })]);
     h.tick(3600);
@@ -261,7 +324,9 @@ describe('staying signed in', () => {
 
   it('a refusal for an old session doesn’t sign out the new one', async () => {
     let answer: (r: Response) => void = () => {};
-    const slow = new Promise<Response>(r => { answer = r; });
+    const slow = new Promise<Response>(r => {
+      answer = r;
+    });
     const h = await signedIn([() => slow as unknown as Response, () => new Response(null, { status: 204 })]);
     h.tick(3600);
     const refresh = h.auth.getAccessToken();

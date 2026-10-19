@@ -10,7 +10,9 @@ export function MessageScreen({ title, detail }: { title: string; detail?: strin
     <main className="page message-screen">
       <h1 className="text-title2">{title}</h1>
       {detail && <p className="text-body secondary">{detail}</p>}
-      <LinkButton to="/" className="message-action">Go to home</LinkButton>
+      <LinkButton to="/" className="message-action">
+        Go to home
+      </LinkButton>
     </main>
   );
 }
@@ -25,9 +27,25 @@ export function splitMessage(message: string): { title: string; detail?: string 
  * Something couldn't load: what happened, and "Try again" when trying again
  * can help. As a whole screen, or in place inside one (a list on a page).
  */
-export function LoadFailed({ error, onRetry, inline = false }: { error: ApiError; onRetry: () => void; inline?: boolean }) {
+export function LoadFailed({
+  error,
+  onRetry,
+  inline = false,
+}: {
+  error: ApiError;
+  onRetry: () => void;
+  inline?: boolean;
+}) {
   const { title, detail } = splitMessage(error.message);
-  const retry = canRetry(error) && <Button variant={inline ? 'secondary' : 'primary'} className={inline ? undefined : 'message-action'} onClick={onRetry}>Try again</Button>;
+  const retry = canRetry(error) && (
+    <Button
+      variant={inline ? 'secondary' : 'primary'}
+      className={inline ? undefined : 'message-action'}
+      onClick={onRetry}
+    >
+      Try again
+    </Button>
+  );
   if (inline) {
     return (
       <div className="load-failed" role="alert">
@@ -43,7 +61,11 @@ export function LoadFailed({ error, onRetry, inline = false }: { error: ApiError
     <main className="page message-screen" role="alert">
       <h1 className="text-title2">{title}</h1>
       {detail && <p className="text-body secondary">{detail}</p>}
-      {retry || <LinkButton to="/" className="message-action">Go to home</LinkButton>}
+      {retry || (
+        <LinkButton to="/" className="message-action">
+          Go to home
+        </LinkButton>
+      )}
     </main>
   );
 }

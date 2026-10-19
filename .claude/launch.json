@@ -1,9 +1,31 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "web-dev", "runtimeExecutable": "node", "runtimeArgs": ["scripts/node24.mjs", "npm", "run", "dev:web"], "port": 5173 },
-    { "name": "web-preview", "runtimeExecutable": "node", "runtimeArgs": ["scripts/node24.mjs", "npm", "--workspace", "apps/web", "run", "preview"], "port": 4173 },
-    { "name": "api", "runtimeExecutable": "node", "runtimeArgs": ["scripts/node24.mjs", "npm", "run", "dev:api:local"], "port": 3000, "autoPort": false },
-    { "name": "auth", "runtimeExecutable": "node", "runtimeArgs": ["scripts/node24.mjs", "npm", "run", "dev:auth"], "port": 54321, "autoPort": false }
+    {
+      "name": "web-dev",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/node24.mjs", "npm", "run", "dev:web"],
+      "port": 5173
+    },
+    {
+      "name": "web-preview",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/node24.mjs", "npm", "--workspace", "apps/web", "run", "preview"],
+      "port": 4173
+    },
+    {
+      "name": "api",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/node24.mjs", "npm", "run", "dev:api:local"],
+      "port": 3000,
+      "autoPort": false
+    },
+    {
+      "name": "auth",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/node24.mjs", "npm", "run", "dev:auth"],
+      "port": 54321,
+      "autoPort": false
+    }
   ]
 }

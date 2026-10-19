@@ -4,7 +4,10 @@
 // hidden or the canvas is scrolled away, and a single still frame for
 // people who ask for less motion.
 
-export interface Palette { ink: string; accent: string }
+export interface Palette {
+  ink: string;
+  accent: string;
+}
 export interface Frame {
   ctx: CanvasRenderingContext2D;
   width: number;
@@ -64,11 +67,17 @@ export function runCanvas(canvas: HTMLCanvasElement, scene: CanvasScene): () => 
     scene.resize(width, height);
     draw();
   };
-  const recolor = () => { colors = readColors(); draw(); };
+  const recolor = () => {
+    colors = readColors();
+    draw();
+  };
 
   const sizeWatch = new ResizeObserver(resize);
   sizeWatch.observe(canvas);
-  const sight = new IntersectionObserver(entries => { visible = entries.some(e => e.isIntersecting); run(); });
+  const sight = new IntersectionObserver(entries => {
+    visible = entries.some(e => e.isIntersecting);
+    run();
+  });
   sight.observe(canvas);
   scheme.addEventListener('change', recolor);
   still.addEventListener('change', run);
@@ -89,5 +98,8 @@ export function runCanvas(canvas: HTMLCanvasElement, scene: CanvasScene): () => 
 function readColors(): Palette {
   const style = getComputedStyle(document.documentElement);
   // Fallbacks only for a page without the stylesheet: the spec's light values.
-  return { ink: style.getPropertyValue('--label').trim() || 'oklch(0.165 0.012 255)', accent: style.getPropertyValue('--accent').trim() || 'oklch(0.55 0.195 252)' };
+  return {
+    ink: style.getPropertyValue('--label').trim() || 'oklch(0.165 0.012 255)',
+    accent: style.getPropertyValue('--accent').trim() || 'oklch(0.55 0.195 252)',
+  };
 }

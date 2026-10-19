@@ -8,16 +8,39 @@ import { api } from '../session.tsx';
 import { Button } from './Button.tsx';
 import { Dialog } from './Dialog.tsx';
 
-const check = <svg viewBox="0 0 14 11" aria-hidden="true" focusable="false"><path d="M1.5 5.5l3.5 3.5 7.5-7.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+const check = (
+  <svg viewBox="0 0 14 11" aria-hidden="true" focusable="false">
+    <path
+      d="M1.5 5.5l3.5 3.5 7.5-7.5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
 
-export function AnswerLabels({ answer, picked, correct }: { answer: Answer; picked: boolean; correct: boolean | null }) {
+export function AnswerLabels({
+  answer,
+  picked,
+  correct,
+}: {
+  answer: Answer;
+  picked: boolean;
+  correct: boolean | null;
+}) {
   if (!picked && !answer.helpful) return null;
   return (
     <p className="answer-labels text-footnote">
       {picked && (
         <span className="label-picked">
           {check}
-          {correct === true ? 'Helped the asker · turned out right' : correct === false ? 'Helped the asker · turned out wrong' : 'Helped the asker'}
+          {correct === true
+            ? 'Helped the asker · turned out right'
+            : correct === false
+              ? 'Helped the asker · turned out wrong'
+              : 'Helped the asker'}
         </span>
       )}
       {!picked && answer.helpful && <span className="secondary">Useful to the asker</span>}
@@ -65,27 +88,51 @@ export function AnswerActions({ questionId, answer, selection, onChanged }: Prop
     return true;
   }
 
-  const pick = (why?: ChangeReason) => run(() => api(`/questions/${questionId}/selection`, {
-    method: 'PUT', signedIn: true, body: { answerId: answer.id, ...(why ? { reason: why } : {}) },
-  }));
-  const verdict = (correct: boolean) => run(() => api(`/answers/${answer.id}/verdict`, { method: 'PUT', signedIn: true, body: { correct } }));
-  const rate = (stars: number) => run(() => api(`/answers/${answer.id}/rating`, { method: 'PUT', signedIn: true, body: { stars } }));
+  const pick = (why?: ChangeReason) =>
+    run(() =>
+      api(`/questions/${questionId}/selection`, {
+        method: 'PUT',
+        signedIn: true,
+        body: { answerId: answer.id, ...(why ? { reason: why } : {}) },
+      }),
+    );
+  const verdict = (correct: boolean) =>
+    run(() => api(`/answers/${answer.id}/verdict`, { method: 'PUT', signedIn: true, body: { correct } }));
+  const rate = (stars: number) =>
+    run(() => api(`/answers/${answer.id}/rating`, { method: 'PUT', signedIn: true, body: { stars } }));
 
   return (
     <div className="answer-actions">
       {canPick && (
-        <Button variant="secondary" className="btn-compact" disabled={busy} onClick={() => { if (isChange) setChoosingReason(true); else void pick(); }}>
+        <Button
+          variant="secondary"
+          className="btn-compact"
+          disabled={busy}
+          onClick={() => {
+            if (isChange) setChoosingReason(true);
+            else void pick();
+          }}
+        >
           {isChange ? 'This helped more' : 'This helped me'}
         </Button>
       )}
       {!answer.helpful && !picked && (
-        <button type="button" className="btn btn-plain" disabled={busy} onClick={() => { void run(() => api(`/answers/${answer.id}/helpful`, { method: 'POST', signedIn: true })); }}>
+        <button
+          type="button"
+          className="btn btn-plain"
+          disabled={busy}
+          onClick={() => {
+            void run(() => api(`/answers/${answer.id}/helpful`, { method: 'POST', signedIn: true }));
+          }}
+        >
           Also useful
         </button>
       )}
       {picked && (
         <div className="verdict">
-          <span className="text-subhead" id={`stars-${answer.id}`}>How good was it?</span>
+          <span className="text-subhead" id={`stars-${answer.id}`}>
+            How good was it?
+          </span>
           <div className="stars" role="radiogroup" aria-labelledby={`stars-${answer.id}`}>
             {[1, 2, 3, 4, 5].map(n => (
               <button
@@ -96,18 +143,42 @@ export function AnswerActions({ questionId, answer, selection, onChanged }: Prop
                 aria-label={n === 1 ? '1 star' : `${String(n)} stars`}
                 className={selection.stars !== null && n <= selection.stars ? 'is-lit' : undefined}
                 disabled={busy}
-                onClick={() => { void rate(n); }}
-              >★</button>
+                onClick={() => {
+                  void rate(n);
+                }}
+              >
+                ★
+              </button>
             ))}
           </div>
         </div>
       )}
       {picked && (
         <div className="verdict">
-          <span className="text-subhead" id={`verdict-${answer.id}`}>Did it turn out right?</span>
+          <span className="text-subhead" id={`verdict-${answer.id}`}>
+            Did it turn out right?
+          </span>
           <div className="segmented" role="group" aria-labelledby={`verdict-${answer.id}`}>
-            <button type="button" aria-pressed={selection.correct === true} disabled={busy} onClick={() => { void verdict(true); }}>Yes</button>
-            <button type="button" aria-pressed={selection.correct === false} disabled={busy} onClick={() => { void verdict(false); }}>No</button>
+            <button
+              type="button"
+              aria-pressed={selection.correct === true}
+              disabled={busy}
+              onClick={() => {
+                void verdict(true);
+              }}
+            >
+              Yes
+            </button>
+            <button
+              type="button"
+              aria-pressed={selection.correct === false}
+              disabled={busy}
+              onClick={() => {
+                void verdict(false);
+              }}
+            >
+              No
+            </button>
           </div>
         </div>
       )}
@@ -116,33 +187,81 @@ export function AnswerActions({ questionId, answer, selection, onChanged }: Prop
           {selection.changesLeft === 0 ? 'You can’t change this pick again.' : 'You can change your pick 1 more time.'}
         </p>
       )}
-      {error && !choosingReason && <p className="form-note tone-bad" role="alert">{error}</p>}
+      {error && !choosingReason && (
+        <p className="form-note tone-bad" role="alert">
+          {error}
+        </p>
+      )}
 
       <Dialog
         open={choosingReason}
-        onClose={() => { if (!busy) { setChoosingReason(false); setReason(null); } }}
+        onClose={() => {
+          if (!busy) {
+            setChoosingReason(false);
+            setReason(null);
+          }
+        }}
         title="Why are you changing your pick?"
         actions={
           <>
-            <button type="button" className="btn btn-plain" disabled={busy} onClick={() => { setChoosingReason(false); setReason(null); }}>Cancel</button>
-            <Button disabled={busy || reason === null} onClick={() => {
-              if (!reason) return;
-              void pick(reason).then(ok => { if (ok) { setChoosingReason(false); setReason(null); } });
-            }}>Change pick</Button>
+            <button
+              type="button"
+              className="btn btn-plain"
+              disabled={busy}
+              onClick={() => {
+                setChoosingReason(false);
+                setReason(null);
+              }}
+            >
+              Cancel
+            </button>
+            <Button
+              disabled={busy || reason === null}
+              onClick={() => {
+                if (!reason) return;
+                void pick(reason).then(ok => {
+                  if (ok) {
+                    setChoosingReason(false);
+                    setReason(null);
+                  }
+                });
+              }}
+            >
+              Change pick
+            </Button>
           </>
         }
       >
-        <p>The points move to this answer. {selection?.changesLeft === 1 ? 'This is your last change for this question.' : 'You can change your pick 2 more times for this question.'}</p>
+        <p>
+          The points move to this answer.{' '}
+          {selection?.changesLeft === 1
+            ? 'This is your last change for this question.'
+            : 'You can change your pick 2 more times for this question.'}
+        </p>
         <fieldset className="reasons" aria-describedby={reasonsId}>
-          <legend id={reasonsId} className="visually-hidden">Reason</legend>
+          <legend id={reasonsId} className="visually-hidden">
+            Reason
+          </legend>
           {CHANGE_REASONS.map(r => (
             <label key={r.value} className="reason">
-              <input type="radio" name={`reason-${answer.id}`} value={r.value} checked={reason === r.value} onChange={() => { setReason(r.value); }} />
+              <input
+                type="radio"
+                name={`reason-${answer.id}`}
+                value={r.value}
+                checked={reason === r.value}
+                onChange={() => {
+                  setReason(r.value);
+                }}
+              />
               <span>{r.label}</span>
             </label>
           ))}
         </fieldset>
-        {error && <p className="form-note tone-bad" role="alert">{error}</p>}
+        {error && (
+          <p className="form-note tone-bad" role="alert">
+            {error}
+          </p>
+        )}
       </Dialog>
     </div>
   );

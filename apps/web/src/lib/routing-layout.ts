@@ -7,8 +7,16 @@ const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 /** Drawn at most: beyond this the cluster is just denser, not more legible. */
 export const MAX_DRAWN = 150;
 
-export interface Point { x: number; y: number }
-export interface RoutingLayout { asker: Point; centre: Point; radius: number; people: Point[] }
+export interface Point {
+  x: number;
+  y: number;
+}
+export interface RoutingLayout {
+  asker: Point;
+  centre: Point;
+  radius: number;
+  people: Point[];
+}
 
 export function routingLayout(count: number, width: number, height: number): RoutingLayout {
   const asker = { x: width * 0.16, y: height * 0.5 };
@@ -30,7 +38,8 @@ export function routingLayout(count: number, width: number, height: number): Rou
  */
 export function along(from: Point, to: Point, k: number, bend: number): Point {
   const mid = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
-  const dx = to.x - from.x, dy = to.y - from.y;
+  const dx = to.x - from.x,
+    dy = to.y - from.y;
   const control = { x: mid.x - dy * bend, y: mid.y + dx * bend };
   const u = 1 - k;
   return {

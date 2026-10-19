@@ -9,7 +9,16 @@
 // so the order is what the spec's would be.
 import { wilsonLowerBound, type Skill } from './reputation.ts';
 
-export const ALPHA = { proximity: 0.24, reputation: 0.18, country: 0.15, trust: 0.12, helpful: 0.1, selection: 0.08, responsiveness: 0.06, activity: 0.04 } as const;
+export const ALPHA = {
+  proximity: 0.24,
+  reputation: 0.18,
+  country: 0.15,
+  trust: 0.12,
+  helpful: 0.1,
+  selection: 0.08,
+  responsiveness: 0.06,
+  activity: 0.04,
+} as const;
 export const BETA_COLD = 0.12;
 /** The newcomer bonus lasts until someone has had this many questions in the field. */
 export const COLD_UNTIL = 5;
@@ -55,8 +64,9 @@ export function factors(c: Candidate): Factors {
     helpful: wilsonLowerBound(c.helped, c.answers),
     selection: (c.picks + 1) / (c.answers + 4),
     // No record counts as halfway: one reply in two tries.
-    responsiveness: timeTerm * (c.answered + 1) / (c.asked + 2),
-    activity: c.daysSinceActive === null ? 0 : Math.exp((-Math.LN2 * Math.max(0, c.daysSinceActive)) / ACTIVE_HALF_LIFE_DAYS),
+    responsiveness: (timeTerm * (c.answered + 1)) / (c.asked + 2),
+    activity:
+      c.daysSinceActive === null ? 0 : Math.exp((-Math.LN2 * Math.max(0, c.daysSinceActive)) / ACTIVE_HALF_LIFE_DAYS),
   };
 }
 
@@ -80,7 +90,11 @@ export function loadDampener(usedToday: number, limit: number): number {
  * people new to the field and crowd the experts out. The spec's own wave
  * plan, "4 exploit + 1 cold-start explore", keeps the two apart.
  */
-export function psi(c: Candidate, field: { routes: number; dailyLimit: number }, options: { explore?: boolean } = {}): number {
+export function psi(
+  c: Candidate,
+  field: { routes: number; dailyLimit: number },
+  options: { explore?: boolean } = {},
+): number {
   if (c.usedToday >= field.dailyLimit) return 0;
   const f = factors(c);
   const sum = (Object.keys(ALPHA) as Array<keyof typeof ALPHA>).reduce((s, k) => s + ALPHA[k] * f[k], 0);
@@ -96,7 +110,13 @@ export function psi(c: Candidate, field: { routes: number; dailyLimit: number },
  * nothing. Scaled so the most trusted is 1; all 0 until a trusted person
  * has picked anyone.
  */
-export function pageRank(people: readonly string[], picks: ReadonlyArray<readonly [string, string]>, trusted: readonly string[], damping = 0.85, rounds = 50): Map<string, number> {
+export function pageRank(
+  people: readonly string[],
+  picks: ReadonlyArray<readonly [string, string]>,
+  trusted: readonly string[],
+  damping = 0.85,
+  rounds = 50,
+): Map<string, number> {
   const known = new Set(people);
   const seeds = trusted.filter(t => known.has(t));
   const out = new Map<string, string[]>(people.map(p => [p, []]));

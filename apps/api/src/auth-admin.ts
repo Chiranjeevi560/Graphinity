@@ -11,7 +11,11 @@ export class AuthAdminError extends Error {
   override name = 'AuthAdminError';
 }
 
-export function createSupabaseAdmin(options: { supabaseUrl: string; secretKey: string; fetch?: typeof fetch }): AuthAdmin {
+export function createSupabaseAdmin(options: {
+  supabaseUrl: string;
+  secretKey: string;
+  fetch?: typeof fetch;
+}): AuthAdmin {
   const doFetch = options.fetch ?? fetch;
   const headers: Record<string, string> = { apikey: options.secretKey, 'content-type': 'application/json' };
   // Legacy service_role keys are JWTs and also go in Authorization; new

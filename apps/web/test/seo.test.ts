@@ -7,7 +7,8 @@ const ORIGIN = 'https://graphinity.pages.dev';
 describe('robots.txt and sitemap', () => {
   it('keeps personal screens out of crawling and points at the sitemap', () => {
     const robots = robotsTxt(ORIGIN);
-    for (const p of ['/auth/', '/welcome', '/me', '/goodbye', '/ask', '/review']) expect(robots).toContain(`Disallow: ${p}\n`);
+    for (const p of ['/auth/', '/welcome', '/me', '/goodbye', '/ask', '/review'])
+      expect(robots).toContain(`Disallow: ${p}\n`);
     expect(robots).not.toMatch(/^Disallow: \/$/m);
     expect(robots).toContain(`Sitemap: ${ORIGIN}/sitemap.xml`);
   });
@@ -44,7 +45,13 @@ describe('setting the tags as people move between screens', () => {
       title: '',
       querySelector: (selector: string) => {
         const attrs = tags[selector];
-        return attrs ? { setAttribute: (k: string, v: string) => { attrs[k] = v; } } : null;
+        return attrs
+          ? {
+              setAttribute: (k: string, v: string) => {
+                attrs[k] = v;
+              },
+            }
+          : null;
       },
     };
     vi.stubGlobal('document', doc);

@@ -40,10 +40,22 @@ export interface Reasons {
 }
 
 interface PoolRow {
-  id: string; same_country: boolean; picked_in_country: boolean; field_points: number; newcomer: boolean;
-  asked: number; answered: number; trust_total: number; trust_correct: number;
-  answers: number; picks: number; helped: number; median_reply: number | null;
-  days_since_active: number | null; routes_in_field: number; used_today: number;
+  id: string;
+  same_country: boolean;
+  picked_in_country: boolean;
+  field_points: number;
+  newcomer: boolean;
+  asked: number;
+  answered: number;
+  trust_total: number;
+  trust_correct: number;
+  answers: number;
+  picks: number;
+  helped: number;
+  median_reply: number | null;
+  days_since_active: number | null;
+  routes_in_field: number;
+  used_today: number;
 }
 
 /**
@@ -53,10 +65,16 @@ interface PoolRow {
  * The SQL gathers what each person did in this field; the score is worked
  * out here, where each part is tested on its own.
  */
-async function candidates(q: Queryable, questionId: string, limit: number, newcomersOnly: boolean): Promise<Array<{ id: string } & Reasons>> {
+async function candidates(
+  q: Queryable,
+  questionId: string,
+  limit: number,
+  newcomersOnly: boolean,
+): Promise<Array<{ id: string } & Reasons>> {
   if (limit <= 0) return [];
-  const pool = (await q.query<PoolRow>(
-    `WITH target AS (SELECT id, asker_id, field, country FROM app.questions WHERE id = $1)
+  const pool = (
+    await q.query<PoolRow>(
+      `WITH target AS (SELECT id, asker_id, field, country FROM app.questions WHERE id = $1)
      SELECT p.id,
             coalesce(p.country = t.country, false) AS same_country,
             EXISTS (SELECT 1 FROM app.selections s JOIN app.answers a ON a.id = s.answer_id JOIN app.questions sq ON sq.id = s.question_id
@@ -116,48 +134,72 @@ async function candidates(q: Queryable, questionId: string, limit: number, newco
        -- Already at today's limit: the database would skip them, wasting the place.
        AND (SELECT count(*) FROM app.routes r
             WHERE r.profile_id = p.id AND r.routed_at > clock_timestamp() - interval '1 day') < ${String(DAILY_LIMIT)}`,
-    [questionId, newcomersOnly])).rows;
+      [questionId, newcomersOnly],
+    )
+  ).rows;
   if (pool.length === 0) return [];
   const people = pool.map(r => r.id);
 
-  const field = (await q.query<{ field: string; routes: number }>(
-    `SELECT t.field, (SELECT count(*) FROM app.routes r JOIN app.questions rq ON rq.id = r.question_id WHERE rq.field = t.field)::int AS routes
-     FROM app.questions t WHERE t.id = $1`, [questionId])).rows[0];
+  const field = (
+    await q.query<{ field: string; routes: number }>(
+      `SELECT t.field, (SELECT count(*) FROM app.routes r JOIN app.questions rq ON rq.id = r.question_id WHERE rq.field = t.field)::int AS routes
+     FROM app.questions t WHERE t.id = $1`,
+      [questionId],
+    )
+  ).rows[0];
   if (!field) return [];
-  const proximity = new Map((await q.query<{ profile_id: string; proximity: number }>(
-    'SELECT profile_id, proximity FROM app.experience_proximity($1, $2::uuid[])', [questionId, people])).rows.map(r => [r.profile_id, r.proximity]));
+  const proximity = new Map(
+    (
+      await q.query<{ profile_id: string; proximity: number }>(
+        'SELECT profile_id, proximity FROM app.experience_proximity($1, $2::uuid[])',
+        [questionId, people],
+      )
+    ).rows.map(r => [r.profile_id, r.proximity]),
+  );
   const games = await judgements(q, people, field.field);
   // Who picked whose answers in this field, and who is trusted to start from.
-  const picks = (await q.query<{ asker: string; answerer: string }>(
-    `SELECT sq.asker_id AS asker, a.answerer_id AS answerer
+  const picks = (
+    await q.query<{ asker: string; answerer: string }>(
+      `SELECT sq.asker_id AS asker, a.answerer_id AS answerer
      FROM app.selections s JOIN app.answers a ON a.id = s.answer_id JOIN app.questions sq ON sq.id = s.question_id
-     WHERE sq.field = $1`, [field.field])).rows;
+     WHERE sq.field = $1`,
+      [field.field],
+    )
+  ).rows;
   const moderators = (await q.query<{ id: string }>('SELECT profile_id AS id FROM app.moderators')).rows.map(r => r.id);
   const everyone = [...new Set([...people, ...moderators, ...picks.flatMap(p => [p.asker, p.answerer])])];
-  const trust = pageRank(everyone, picks.map(p => [p.asker, p.answerer] as const), moderators);
+  const trust = pageRank(
+    everyone,
+    picks.map(p => [p.asker, p.answerer] as const),
+    moderators,
+  );
 
   const scored = pool.map(r => ({
     row: r,
-    score: psi({
-      proximity: proximity.get(r.id) ?? null,
-      skill: replay(games.get(r.id)?.get(field.field) ?? []),
-      resident: r.same_country,
-      pickedInCountry: r.picked_in_country,
-      trust: trust.get(r.id) ?? 0,
-      helped: r.helped,
-      answers: r.answers,
-      picks: r.picks,
-      medianReplySeconds: r.median_reply,
-      asked: r.asked,
-      answered: r.answered,
-      daysSinceActive: r.days_since_active,
-      routesInField: r.routes_in_field,
-      usedToday: r.used_today,
-    }, { routes: field.routes, dailyLimit: DAILY_LIMIT }, { explore: newcomersOnly }),
+    score: psi(
+      {
+        proximity: proximity.get(r.id) ?? null,
+        skill: replay(games.get(r.id)?.get(field.field) ?? []),
+        resident: r.same_country,
+        pickedInCountry: r.picked_in_country,
+        trust: trust.get(r.id) ?? 0,
+        helped: r.helped,
+        answers: r.answers,
+        picks: r.picks,
+        medianReplySeconds: r.median_reply,
+        asked: r.asked,
+        answered: r.answered,
+        daysSinceActive: r.days_since_active,
+        routesInField: r.routes_in_field,
+        usedToday: r.used_today,
+      },
+      { routes: field.routes, dailyLimit: DAILY_LIMIT },
+      { explore: newcomersOnly },
+    ),
   }));
   // Best first; equal scores in a stable order, so the same facts give the same wave.
   scored.sort((a, b) => b.score - a.score || (a.row.id < b.row.id ? -1 : 1));
-  const pct = (part: number, whole: number) => whole > 0 ? Math.round(100 * part / whole) : null;
+  const pct = (part: number, whole: number) => (whole > 0 ? Math.round((100 * part) / whole) : null);
   return scored.slice(0, limit).map(({ row: r }) => ({
     id: r.id,
     sameCountry: r.same_country,
@@ -182,7 +224,8 @@ export async function routeWave(q: Queryable, questionId: string, wave: number, 
     const res = await q.query(
       `INSERT INTO app.routes (question_id, profile_id, wave, same_country, field_points, trust_pct, answered_pct, newcomer)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING`,
-      [questionId, p.id, wave, p.sameCountry, p.fieldPoints, p.trustPct, p.answeredPct, p.newcomer]);
+      [questionId, p.id, wave, p.sameCountry, p.fieldPoints, p.trustPct, p.answeredPct, p.newcomer],
+    );
     if (res.rowCount) asked.push(p.id);
   }
   return asked;
@@ -195,9 +238,19 @@ export async function routeWave(q: Queryable, questionId: string, wave: number, 
  * while it has fewer than 3 answers. Returns what was routed, for the
  * caller to notify.
  */
-export async function routeDueQuestions(db: Database, log?: { warn(obj: object, msg: string): void }): Promise<Array<{ questionId: string; askerId: string; asked: string[] }>> {
+export async function routeDueQuestions(
+  db: Database,
+  log?: { warn(obj: object, msg: string): void },
+): Promise<Array<{ questionId: string; askerId: string; asked: string[] }>> {
   const due = await db.asSystem(async q => {
-    const { rows } = await q.query<{ id: string; asker_id: string; wave: number | null; age_minutes: number; engaged: number; answers: number }>(
+    const { rows } = await q.query<{
+      id: string;
+      asker_id: string;
+      wave: number | null;
+      age_minutes: number;
+      engaged: number;
+      answers: number;
+    }>(
       `SELECT q.id::text AS id, q.asker_id, max(r.wave) AS wave,
               extract(epoch FROM clock_timestamp() - q.created_at) / 60 AS age_minutes,
               count(r.profile_id) FILTER (WHERE r.seen_at IS NOT NULL
@@ -205,7 +258,8 @@ export async function routeDueQuestions(db: Database, log?: { warn(obj: object, 
               (SELECT count(*) FROM app.answers a WHERE a.question_id = q.id)::int AS answers
        FROM app.questions q LEFT JOIN app.routes r ON r.question_id = q.id
        WHERE q.created_at > now() - interval '${ROUTING_WINDOW}'
-       GROUP BY q.id`);
+       GROUP BY q.id`,
+    );
     const waves: Array<{ questionId: string; askerId: string; wave: number; size: number }> = [];
     for (const row of rows) {
       const next = row.wave === null ? WAVES[0] : WAVES.find(w => w.wave === (row.wave ?? 0) + 1);
@@ -221,7 +275,11 @@ export async function routeDueQuestions(db: Database, log?: { warn(obj: object, 
   const routed: Array<{ questionId: string; askerId: string; asked: string[] }> = [];
   for (const w of due) {
     try {
-      routed.push({ questionId: w.questionId, askerId: w.askerId, asked: await db.asSystem(q => routeWave(q, w.questionId, w.wave, w.size)) });
+      routed.push({
+        questionId: w.questionId,
+        askerId: w.askerId,
+        asked: await db.asSystem(q => routeWave(q, w.questionId, w.wave, w.size)),
+      });
     } catch (err) {
       log?.warn({ kind: errorKind(err) }, 'routing a question failed');
     }
@@ -233,7 +291,10 @@ export async function routeDueQuestions(db: Database, log?: { warn(obj: object, 
  * Tells each person asked that a question is waiting for them, and the asker
  * that their question went out (their open page shows it travel).
  */
-export function announceRouting(events: Pick<Events, 'publish'>, results: Array<{ questionId: string; askerId: string; asked: string[] }>): void {
+export function announceRouting(
+  events: Pick<Events, 'publish'>,
+  results: Array<{ questionId: string; askerId: string; asked: string[] }>,
+): void {
   for (const { questionId, askerId, asked } of results) {
     for (const person of asked) events.publish(person, { type: 'routed', questionId });
     if (asked.length) events.publish(askerId, { type: 'sent', questionId });

@@ -11,17 +11,40 @@
   border-radius: var(--sq-radius, 0); /* until measured */
   box-shadow: var(--sq-shadow, none);
 }
-.sq-edge, .sq-ring {
+.sq-edge,
+.sq-ring {
   position: absolute;
   overflow: visible;
   pointer-events: none;
 }
-.sq-edge { inset: 0; width: 100%; height: 100%; }
-.sq-edge path { fill: none; stroke: var(--separator); stroke-width: var(--hairline); }
-.sq-ring { left: -3px; top: -3px; width: calc(100% + 6px); height: calc(100% + 6px); opacity: 0; }
-.sq-ring path { fill: none; stroke: var(--accent); stroke-width: 2px; }
-.sq-host:focus-visible { outline: none; }
-.sq-host:focus-visible > .sq-ring { opacity: 1; }
+.sq-edge {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.sq-edge path {
+  fill: none;
+  stroke: var(--separator);
+  stroke-width: var(--hairline);
+}
+.sq-ring {
+  left: -3px;
+  top: -3px;
+  width: calc(100% + 6px);
+  height: calc(100% + 6px);
+  opacity: 0;
+}
+.sq-ring path {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2px;
+}
+.sq-host:focus-visible {
+  outline: none;
+}
+.sq-host:focus-visible > .sq-ring {
+  opacity: 1;
+}
 
 /* Buttons */
 .btn {
@@ -40,21 +63,39 @@
   user-select: none;
   touch-action: manipulation;
   /* Release springs back; the press itself is near-instant (below). */
-  transition: transform var(--spring-snappy-duration) var(--spring-snappy), opacity 150ms ease;
+  transition:
+    transform var(--spring-snappy-duration) var(--spring-snappy),
+    opacity 150ms ease;
 }
 .btn:active:not(:disabled) {
   transform: scale(0.97);
   transition-duration: var(--press-duration);
   transition-timing-function: ease-out;
 }
-.btn-primary { --sq-bg: var(--accent); color: var(--on-accent); }
-.btn-secondary { --sq-bg: var(--fill-tertiary); color: var(--accent-text); }
-.btn:disabled { cursor: default; --sq-bg: var(--fill-tertiary); color: var(--label-tertiary); }
-@media (hover: hover) {
-  .btn-primary:hover:not(:disabled) .sq-fill { filter: brightness(1.08); }
-  .btn-secondary:hover:not(:disabled) { --sq-bg: var(--fill-secondary); }
+.btn-primary {
+  --sq-bg: var(--accent);
+  color: var(--on-accent);
 }
-.btn-label { position: relative; }
+.btn-secondary {
+  --sq-bg: var(--fill-tertiary);
+  color: var(--accent-text);
+}
+.btn:disabled {
+  cursor: default;
+  --sq-bg: var(--fill-tertiary);
+  color: var(--label-tertiary);
+}
+@media (hover: hover) {
+  .btn-primary:hover:not(:disabled) .sq-fill {
+    filter: brightness(1.08);
+  }
+  .btn-secondary:hover:not(:disabled) {
+    --sq-bg: var(--fill-secondary);
+  }
+}
+.btn-label {
+  position: relative;
+}
 
 /* Cards */
 .card {
@@ -91,18 +132,31 @@
   font-weight: 600;
   letter-spacing: var(--text-body-tracking);
 }
-.wordmark:hover { text-decoration: none; }
-.wordmark svg { width: 1.375rem; height: 1.375rem; color: var(--brand); }
+.wordmark:hover {
+  text-decoration: none;
+}
+.wordmark svg {
+  width: 1.375rem;
+  height: 1.375rem;
+  color: var(--brand);
+}
 
 /* Route changes cross-fade in; content never slides under a reduced-motion setting. */
 .route {
   animation: route-in var(--spring-fluid-duration) var(--spring-fluid) both;
 }
 @keyframes route-in {
-  from { opacity: 0; transform: translateY(0.5rem); }
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
 }
 @media (prefers-reduced-motion: reduce) {
-  @keyframes route-in { from { opacity: 0; } }
+  @keyframes route-in {
+    from {
+      opacity: 0;
+    }
+  }
 }
 
 /* Live note: bottom centre, above the home indicator, out of the way. */
@@ -127,8 +181,17 @@
   font-weight: 600;
   text-decoration: none;
 }
-.live-banner:hover { text-decoration: none; }
-@media (prefers-reduced-motion: no-preference) {
-  .live-banner { animation: live-in var(--spring-fluid-duration) var(--spring-fluid); }
+.live-banner:hover {
+  text-decoration: none;
 }
-@keyframes live-in { from { opacity: 0; transform: translateY(0.75rem); } }
+@media (prefers-reduced-motion: no-preference) {
+  .live-banner {
+    animation: live-in var(--spring-fluid-duration) var(--spring-fluid);
+  }
+}
+@keyframes live-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.75rem);
+  }
+}

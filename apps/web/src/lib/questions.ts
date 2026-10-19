@@ -11,7 +11,10 @@ export interface QuestionSummary {
 }
 
 export type Medal = 'verified' | 'bronze' | 'silver' | 'gold';
-export interface Amount { minor: number; currency: string }
+export interface Amount {
+  minor: number;
+  currency: string;
+}
 
 export interface Answer {
   id: string;
@@ -42,14 +45,21 @@ export interface Consensus {
   clusters: Array<{ currency: string; lowMinor: number; highMinor: number; share: number; answers: number }>;
 }
 
-export const MEDAL_NAMES: Record<Medal, string> = { verified: 'Verified', bronze: 'Bronze', silver: 'Silver', gold: 'Gold' };
+export const MEDAL_NAMES: Record<Medal, string> = {
+  verified: 'Verified',
+  bronze: 'Bronze',
+  silver: 'Silver',
+  gold: 'Gold',
+};
 
 /** "₹1,40,000", "$1,200.50": the currency's own way of writing amounts, whole units when whole. */
 export function formatAmount(minor: number, currency: string): string {
   const value = minor / 100;
   try {
     return new Intl.NumberFormat(currency === 'INR' ? 'en-IN' : 'en', {
-      style: 'currency', currency, currencyDisplay: 'narrowSymbol',
+      style: 'currency',
+      currency,
+      currencyDisplay: 'narrowSymbol',
       maximumFractionDigits: Number.isInteger(value) ? 0 : 2,
     }).format(value);
   } catch {
@@ -59,7 +69,9 @@ export function formatAmount(minor: number, currency: string): string {
 
 /** A range when the group spans one, a single amount when it doesn't. */
 export function formatRange(lowMinor: number, highMinor: number, currency: string): string {
-  return lowMinor === highMinor ? formatAmount(lowMinor, currency) : `${formatAmount(lowMinor, currency)}–${formatAmount(highMinor, currency)}`;
+  return lowMinor === highMinor
+    ? formatAmount(lowMinor, currency)
+    : `${formatAmount(lowMinor, currency)}–${formatAmount(highMinor, currency)}`;
 }
 
 /** Spec §11.4 confidence in words: ≥ 0.7 is where it stops sending more people. */
@@ -82,8 +94,12 @@ export const ANSWER = { min: 20, max: 10_000 };
 
 /** "How do I import a watch?" → "how-do-i-import-a-watch". Readable addresses; only the id matters. */
 export function slugify(title: string): string {
-  const slug = title.toLowerCase().normalize('NFKD').replace(/\p{M}+/gu, '')
-    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  const slug = title
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/\p{M}+/gu, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
   if (slug.length <= 80) return slug;
   const cut = slug.slice(0, 80);
   return cut.slice(0, Math.max(cut.lastIndexOf('-'), 40)).replace(/-+$/, '');

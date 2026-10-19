@@ -48,7 +48,9 @@ export function securityHeaders(options: HeaderOptions): Record<string, string> 
 
 /** The Cloudflare Pages `_headers` file. */
 export function pagesHeadersFile(options: HeaderOptions): string {
-  const all = Object.entries(securityHeaders(options)).map(([k, v]) => `  ${k}: ${v}`).join('\n');
+  const all = Object.entries(securityHeaders(options))
+    .map(([k, v]) => `  ${k}: ${v}`)
+    .join('\n');
   return [
     '/*',
     all,
@@ -72,9 +74,11 @@ export function pagesHeadersFile(options: HeaderOptions): string {
 /** Throws if the built HTML contains a script without a src. */
 export function assertNoInlineScripts(html: string): void {
   const inline = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)].filter(
-    ([, attrs, body]) => !/\bsrc\s*=/.test(attrs ?? '') && (body ?? '').trim() !== ''
+    ([, attrs, body]) =>
+      !/\bsrc\s*=/.test(attrs ?? '') &&
+      (body ?? '').trim() !== '' &&
       // Structured data for search engines is never run, so CSP doesn't apply.
-      && !/^\s*type="application\/ld\+json"\s*$/.test(attrs ?? ''),
+      !/^\s*type="application\/ld\+json"\s*$/.test(attrs ?? ''),
   );
   if (inline.length) {
     throw new Error(`index.html has ${inline.length} inline script(s); the Content-Security-Policy would block them.`);

@@ -20,13 +20,29 @@ function fakeDb(overrides: Partial<Database> = {}): Database {
 
 function logCollector() {
   const lines: string[] = [];
-  return { lines, stream: { write: (l: string) => { lines.push(l); } } };
+  return {
+    lines,
+    stream: {
+      write: (l: string) => {
+        lines.push(l);
+      },
+    },
+  };
 }
 
-async function server(opts: { db?: Database; limits?: Partial<Limits>; hops?: number; logs?: ReturnType<typeof logCollector> } = {}) {
+async function server(
+  opts: { db?: Database; limits?: Partial<Limits>; hops?: number; logs?: ReturnType<typeof logCollector> } = {},
+) {
   const t = 0;
   const app = await buildServer({
-    config: { production: true, environment: 'staging', release: 'a1b2c3d4'.repeat(5), webOrigin: ORIGIN, trustProxyHops: opts.hops ?? 0, ipHashKey: Buffer.alloc(32, 1) },
+    config: {
+      production: true,
+      environment: 'staging',
+      release: 'a1b2c3d4'.repeat(5),
+      webOrigin: ORIGIN,
+      trustProxyHops: opts.hops ?? 0,
+      ipHashKey: Buffer.alloc(32, 1),
+    },
     db: opts.db ?? fakeDb(),
     clock: { now: () => t },
     // No signed-in routes are exercised here; profile.integration.test.ts covers them.
@@ -44,11 +60,18 @@ describe('health', () => {
     const res = await app.inject('/health');
     expect(res.statusCode).toBe(200);
     // Which environment and commit is answering: the pipeline waits for its own.
-    expect(res.json()).toEqual({ status: 'ok', schemaVersion: 7, environment: 'staging', release: 'a1b2c3d4'.repeat(5) });
+    expect(res.json()).toEqual({
+      status: 'ok',
+      schemaVersion: 7,
+      environment: 'staging',
+      release: 'a1b2c3d4'.repeat(5),
+    });
   });
 
   it('reports 503 without details when the database fails', async () => {
-    const app = await server({ db: fakeDb({ ping: () => Promise.reject(new Error('password authentication failed for user x')) }) });
+    const app = await server({
+      db: fakeDb({ ping: () => Promise.reject(new Error('password authentication failed for user x')) }),
+    });
     const res = await app.inject('/health');
     expect(res.statusCode).toBe(503);
     expect(res.body).not.toContain('password');
@@ -97,7 +120,9 @@ describe('errors', () => {
   it('500 hides the error message from both the visitor and the log', async () => {
     const logs = logCollector();
     const app = await server({ logs });
-    app.get('/boom', () => { throw new Error('duplicate key (email)=(someone@example.com)'); });
+    app.get('/boom', () => {
+      throw new Error('duplicate key (email)=(someone@example.com)');
+    });
     const res = await app.inject('/boom');
     expect(res.statusCode).toBe(500);
     expect(res.body).not.toContain('someone@example.com');
@@ -122,7 +147,8 @@ describe('rate limits', () => {
   it('lets the website read a "too many requests" answer, so people see the real reason', async () => {
     const app = await server({ limits: tight });
     const ask = (origin: string) => app.inject({ url: '/health', headers: { origin } });
-    await ask(ORIGIN); await ask(ORIGIN);
+    await ask(ORIGIN);
+    await ask(ORIGIN);
     const limited = await ask(ORIGIN);
     expect(limited.statusCode).toBe(429);
     expect(limited.headers['access-control-allow-origin']).toBe(ORIGIN);
@@ -152,7 +178,7 @@ describe('rate limits', () => {
     expect((await app.inject({ url: '/health', headers: { 'x-forwarded-for': '203.0.113.10' } })).statusCode).toBe(200);
   });
 
-  it('a visitor already over their own limit cannot use up everyone else\'s allowance', async () => {
+  it("a visitor already over their own limit cannot use up everyone else's allowance", async () => {
     // Real production limits (global burst 400, larger than one visitor's). Clock frozen, so nothing refills.
     const app = await server({ hops: 1, limits: defaultLimits });
     const from = (ip: string) => app.inject({ url: '/health', headers: { 'x-forwarded-for': ip } });
@@ -168,10 +194,14 @@ describe('rate limits', () => {
     const app = await server({ limits: tight, hops: 1 });
     const codes = [];
     for (let i = 1; i <= 3; i++) {
-      codes.push((await app.inject({ url: '/health', headers: { 'x-forwarded-for': `2001:db8:abcd:12::${i}` } })).statusCode);
+      codes.push(
+        (await app.inject({ url: '/health', headers: { 'x-forwarded-for': `2001:db8:abcd:12::${i}` } })).statusCode,
+      );
     }
     expect(codes).toEqual([200, 200, 429]);
-    expect((await app.inject({ url: '/health', headers: { 'x-forwarded-for': '2001:db8:abcd:99::1' } })).statusCode).toBe(200);
+    expect(
+      (await app.inject({ url: '/health', headers: { 'x-forwarded-for': '2001:db8:abcd:99::1' } })).statusCode,
+    ).toBe(200);
   });
 
   it('a global limit protects the server even when every request comes from a new address', async () => {
@@ -188,8 +218,15 @@ describe('body size', () => {
   it('refuses bodies over the anonymous limit before the route runs', async () => {
     const app = await server();
     let ran = false;
-    app.post('/echo', () => { ran = true; return {}; });
-    const res = await app.inject({ method: 'POST', url: '/echo', payload: { text: 'x'.repeat(defaultLimits.anonymousBodyBytes) } });
+    app.post('/echo', () => {
+      ran = true;
+      return {};
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/echo',
+      payload: { text: 'x'.repeat(defaultLimits.anonymousBodyBytes) },
+    });
     expect(res.statusCode).toBe(413);
     expect(res.json<Body>().error).toBe('too_large');
     expect(ran).toBe(false);
@@ -199,10 +236,12 @@ describe('body size', () => {
 describe('CORS', () => {
   it('allows only the website origin', async () => {
     const app = await server();
-    const preflight = (origin: string) => app.inject({
-      method: 'OPTIONS', url: '/health',
-      headers: { origin, 'access-control-request-method': 'GET' },
-    });
+    const preflight = (origin: string) =>
+      app.inject({
+        method: 'OPTIONS',
+        url: '/health',
+        headers: { origin, 'access-control-request-method': 'GET' },
+      });
     const good = await preflight(ORIGIN);
     const bad = await preflight('https://evil.example');
     expect(good.headers['access-control-allow-origin']).toBe(ORIGIN);
@@ -217,12 +256,23 @@ describe('logging', () => {
     const app = await server({ logs, hops: 1 });
     await app.inject({
       url: '/health?email=someone@example.com',
-      headers: { 'x-forwarded-for': '203.0.113.77', 'user-agent': 'SecretBrowser/1.0', authorization: 'Bearer tok_abc' },
+      headers: {
+        'x-forwarded-for': '203.0.113.77',
+        'user-agent': 'SecretBrowser/1.0',
+        authorization: 'Bearer tok_abc',
+      },
     });
     const text = logs.lines.join('');
     expect(text).toContain('"route":"/health"');
     expect(text).toContain('"status":200');
-    for (const leak of ['203.0.113.77', 'SecretBrowser', 'someone@example.com', 'tok_abc', 'remoteAddress', '"hostname"']) {
+    for (const leak of [
+      '203.0.113.77',
+      'SecretBrowser',
+      'someone@example.com',
+      'tok_abc',
+      'remoteAddress',
+      '"hostname"',
+    ]) {
       expect(text).not.toContain(leak);
     }
   });

@@ -7,7 +7,10 @@ import { useLoad } from '../use-load.ts';
 import { Button } from './Button.tsx';
 import { LoadFailed } from './Message.tsx';
 
-interface Page { questions: QuestionSummary[]; next: string | null }
+interface Page {
+  questions: QuestionSummary[];
+  next: string | null;
+}
 
 /** Newest questions, a page at a time. Reading needs no account. */
 export function QuestionList() {
@@ -30,7 +33,12 @@ export function QuestionList() {
   }
 
   if (error) return <LoadFailed error={error} onRetry={retry} inline />;
-  if (!data) return <p className="text-body secondary status" role="status">Loading questions…</p>;
+  if (!data)
+    return (
+      <p className="text-body secondary status" role="status">
+        Loading questions…
+      </p>
+    );
   const { questions, next } = data;
   if (questions.length === 0) return <p className="text-body secondary">No questions yet. Be the first to ask.</p>;
 
@@ -51,9 +59,20 @@ export function QuestionList() {
           </li>
         ))}
       </ul>
-      {moreError && <p className="form-note tone-bad" role="alert">{moreError}</p>}
+      {moreError && (
+        <p className="form-note tone-bad" role="alert">
+          {moreError}
+        </p>
+      )}
       {next && (
-        <Button variant="secondary" className="btn-block" disabled={loadingMore} onClick={() => { void loadMore(next); }}>
+        <Button
+          variant="secondary"
+          className="btn-block"
+          disabled={loadingMore}
+          onClick={() => {
+            void loadMore(next);
+          }}
+        >
           {loadingMore ? 'Loading…' : 'Show more'}
         </Button>
       )}

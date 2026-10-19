@@ -1,7 +1,10 @@
 // Random values and hashing for sign-in, from the browser's own crypto.
 
 const toBase64Url = (bytes: Uint8Array) =>
-  btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
 
 /** Cryptographically random, URL-safe. 32 bytes → 43 characters. */
 export function randomToken(bytes = 32): string {

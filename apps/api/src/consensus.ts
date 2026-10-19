@@ -6,11 +6,41 @@
 // paid ₹1,40,000) is never buried. Pure: no database, no AI.
 
 export type Currency = 'INR' | 'USD' | 'EUR' | 'GBP' | 'AED' | 'JPY';
-export interface Amount { minor: number; currency: Currency }
+export interface Amount {
+  minor: number;
+  currency: Currency;
+}
 
 const SYMBOL: Record<string, Currency> = { '₹': 'INR', $: 'USD', '€': 'EUR', '£': 'GBP', '¥': 'JPY' };
-const WORD: Record<string, Currency> = { rs: 'INR', 'rs.': 'INR', inr: 'INR', rupees: 'INR', usd: 'USD', dollars: 'USD', eur: 'EUR', euros: 'EUR', gbp: 'GBP', pounds: 'GBP', aed: 'AED', dirhams: 'AED', jpy: 'JPY', yen: 'JPY' };
-const SCALE: Record<string, number> = { k: 1e3, thousand: 1e3, lakh: 1e5, lakhs: 1e5, lac: 1e5, l: 1e5, crore: 1e7, crores: 1e7, cr: 1e7, m: 1e6, million: 1e6 };
+const WORD: Record<string, Currency> = {
+  rs: 'INR',
+  'rs.': 'INR',
+  inr: 'INR',
+  rupees: 'INR',
+  usd: 'USD',
+  dollars: 'USD',
+  eur: 'EUR',
+  euros: 'EUR',
+  gbp: 'GBP',
+  pounds: 'GBP',
+  aed: 'AED',
+  dirhams: 'AED',
+  jpy: 'JPY',
+  yen: 'JPY',
+};
+const SCALE: Record<string, number> = {
+  k: 1e3,
+  thousand: 1e3,
+  lakh: 1e5,
+  lakhs: 1e5,
+  lac: 1e5,
+  l: 1e5,
+  crore: 1e7,
+  crores: 1e7,
+  cr: 1e7,
+  m: 1e6,
+  million: 1e6,
+};
 /** Words that mark the amount the answer is about, not a price mentioned on the way. */
 const PAID = /\b(?:paid|pay|paying|duty|duties|charged|charge|cost|costs|total|fee|fees|spent|came to|tax|customs)\b/gi;
 /** How far (in characters) such a word may be from its amount. */
@@ -20,19 +50,23 @@ const NEAR = 40;
 // currency before it (symbol or word) or after it (word).
 const AMOUNT = new RegExp(
   String.raw`(?:(?<pre>[₹$€£¥])\s?|\b(?<preword>rs\.?|inr|usd|eur|gbp|aed|jpy)\s?)?` +
-  String.raw`(?<num>\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|\d+(?:\.\d+)?)` +
-  String.raw`\s?(?<scale>k|thousand|lakhs?|lac|l|crores?|cr|m|million)?\b` +
-  String.raw`(?:\s?(?<post>rs\.?|inr|rupees|usd|dollars|eur|euros|gbp|pounds|aed|dirhams|jpy|yen)\b)?`,
-  'giu');
+    String.raw`(?<num>\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|\d+(?:\.\d+)?)` +
+    String.raw`\s?(?<scale>k|thousand|lakhs?|lac|l|crores?|cr|m|million)?\b` +
+    String.raw`(?:\s?(?<post>rs\.?|inr|rupees|usd|dollars|eur|euros|gbp|pounds|aed|dirhams|jpy|yen)\b)?`,
+  'giu',
+);
 
 /** Every amount with a currency in the text, with where it was found. */
 export function amountsIn(text: string): Array<Amount & { at: number }> {
   const found: Array<Amount & { at: number }> = [];
   for (const m of text.normalize('NFC').matchAll(AMOUNT)) {
     const g = m.groups ?? {};
-    const currency = (g.pre && SYMBOL[g.pre]) ?? (g.preword && WORD[g.preword.toLowerCase()]) ?? (g.post && WORD[g.post.toLowerCase()]);
+    const currency =
+      (g.pre && SYMBOL[g.pre]) ??
+      (g.preword && WORD[g.preword.toLowerCase()]) ??
+      (g.post && WORD[g.post.toLowerCase()]);
     if (!currency || !g.num) continue;
-    const value = Number(g.num.replace(/,/g, '')) * (g.scale ? SCALE[g.scale.toLowerCase()] ?? 1 : 1);
+    const value = Number(g.num.replace(/,/g, '')) * (g.scale ? (SCALE[g.scale.toLowerCase()] ?? 1) : 1);
     if (!Number.isFinite(value) || value <= 0) continue;
     // Integer minor units (paise, cents), as spec §22.3 #4 asks: no float drift.
     found.push({ minor: Math.round(value * 100), currency, at: m.index });
@@ -101,8 +135,16 @@ export function consensus(claims: readonly Claim[]): Consensus {
     const sorted = [...list].sort((a, b) => a.amount.minor - b.amount.minor);
     let current: Claim[] = [];
     const close = () => {
-      const first = current[0], last = current[current.length - 1];
-      if (first && last) groups.push({ answerIds: current.map(c => c.answerId), currency, lowMinor: first.amount.minor, highMinor: last.amount.minor, mass: 0 });
+      const first = current[0],
+        last = current[current.length - 1];
+      if (first && last)
+        groups.push({
+          answerIds: current.map(c => c.answerId),
+          currency,
+          lowMinor: first.amount.minor,
+          highMinor: last.amount.minor,
+          mass: 0,
+        });
       current = [];
     };
     for (const c of sorted) {
@@ -121,7 +163,9 @@ export function consensus(claims: readonly Claim[]): Consensus {
   groups.sort((a, b) => b.mass - a.mass || b.answerIds.length - a.answerIds.length || a.lowMinor - b.lowMinor);
 
   // Spec §11.4: H = −Σ M ln M / ln(max(groups, 2)); confidence = 1 − H.
-  const entropy = -groups.reduce((sum, g) => sum + (g.mass > 0 ? g.mass * Math.log(g.mass) : 0), 0) / Math.log(Math.max(groups.length, 2));
+  const entropy =
+    -groups.reduce((sum, g) => sum + (g.mass > 0 ? g.mass * Math.log(g.mass) : 0), 0) /
+    Math.log(Math.max(groups.length, 2));
   const confidence = groups.length === 0 ? 0 : clamp01(1 - entropy);
 
   const minorityPinned = groups.slice(1).flatMap(g => {
