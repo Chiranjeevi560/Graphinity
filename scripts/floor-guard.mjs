@@ -71,17 +71,20 @@ for (const { file: f, text } of added) {
 // allowed when a commit in the range says why: "Assertions-changed: <reason>".
 const assertionReasons = [...(git(['log', `${mergeBase}..HEAD`, '--format=%B']) ?? '').matchAll(/^Assertions-changed:\s*(\S.{9,})$/gm)];
 
-// An assertion call removed from a test file, unless the same line was added
-// back in that file (moved, or the test was reorganised). Imports don't count.
-const addedIn = new Map();
-for (const { file: f, text } of added) {
-  if (!addedIn.has(f)) addedIn.set(f, new Set());
-  addedIn.get(f).add(text.trim());
-}
+// An assertion call removed from a test file, unless the same code was added
+// back in that file (moved, reorganised, or re-wrapped by the formatter).
+// Layout doesn't count: whitespace and the trailing commas a formatter adds
+// are ignored, and the code may now span several lines. Any other change to
+// the assertion (a value, a matcher) still counts as removed. Imports don't.
+const code = s => s.replace(/\s+/g, '').replace(/,(?=[)\]}])/g, '');
+// Joined before normalising, so a comma at the end of one line meets the bracket on the next.
+const addedText = new Map();
+for (const { file: f, text } of added) addedText.set(f, `${addedText.get(f) ?? ''}\n${text}`);
+const addedCode = new Map([...addedText].map(([f, t]) => [f, code(t)]));
 for (const { file: f, text } of removed) {
   if (!/\.(test|spec)\.ts$/.test(f) || /^\s*import\b/.test(text)) continue;
   if (!/\b(expect|assert)(\.\w+)*\(/.test(text)) continue;
-  if (addedIn.get(f)?.has(text.trim())) continue;
+  if (addedCode.get(f)?.includes(code(text))) continue;
   if (assertionReasons.length > 0) continue;
   flag('assertion-removed', f, text);
 }
