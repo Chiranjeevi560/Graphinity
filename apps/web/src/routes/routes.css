@@ -164,7 +164,7 @@
   margin-inline: calc(-1 * var(--space-3));
   padding-inline: var(--space-3);
   border-radius: var(--radius-card);
-  background: color-mix(in srgb, var(--green-text) 8%, var(--surface));
+  background: linear-gradient(var(--green-tint), var(--green-tint)) var(--surface);
 }
 .answer.is-picked + .answer { border-top: 0; }
 .btn-compact { min-width: 0; }
@@ -177,7 +177,7 @@
   border: 0; border-radius: calc(var(--radius-control) - 0.125rem);
   background: transparent; color: var(--label); font: inherit; cursor: pointer;
 }
-.segmented button[aria-pressed="true"] { background: var(--surface-raised); font-weight: 600; box-shadow: 0 1px 3px rgb(0 0 0 / 0.12); }
+.segmented button[aria-pressed="true"] { background: var(--surface-raised); font-weight: 600; box-shadow: var(--shadow-control); }
 
 /* "Report", quietly at the end of a detail line, with a full tap height. */
 .report-inline {
@@ -218,10 +218,10 @@
 .consensus-legend li { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 var(--space-2); }
 .consensus-key { width: 0.625rem; height: 0.625rem; border-radius: 0.1875rem; flex: none; align-self: center; }
 .consensus-amount { font-weight: 600; font-variant-numeric: tabular-nums; }
-.is-consensus { background: var(--green-text); }
+.is-consensus { background: var(--status-consensus); }
 .is-second { background: var(--accent); }
-.is-variance { background: var(--medal-gold); }
-.minority-badge { margin: 0; color: var(--medal-gold); font-weight: 600; }
+.is-variance { background: var(--status-variance); }
+.minority-badge { margin: 0; color: var(--status-variance-text); font-weight: 600; }
 
 /* "Asked and answered already": offered first, never forced (spec §7.2 Screen 2). */
 .match-card { --sq-bg: var(--fill-tertiary); display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4); }

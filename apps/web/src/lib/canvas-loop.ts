@@ -88,5 +88,6 @@ export function runCanvas(canvas: HTMLCanvasElement, scene: CanvasScene): () => 
 /** The theme's colours, read from the design tokens. */
 function readColors(): Palette {
   const style = getComputedStyle(document.documentElement);
-  return { ink: style.getPropertyValue('--label').trim() || '#000', accent: style.getPropertyValue('--accent').trim() || '#5856d6' };
+  // Fallbacks only for a page without the stylesheet: the spec's light values.
+  return { ink: style.getPropertyValue('--label').trim() || 'oklch(0.165 0.012 255)', accent: style.getPropertyValue('--accent').trim() || 'oklch(0.55 0.195 252)' };
 }

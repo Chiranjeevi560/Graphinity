@@ -74,15 +74,10 @@
 .checkbox input:focus-visible + .checkbox-box { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 0.5rem; }
 
 /* Google's branding colours for its button. */
-.btn-google { --sq-bg: #ffffff; color: #1f1f1f; font-weight: 500; }
-.btn-google .sq-edge path { stroke: #747775; stroke-width: 1px; }
+.btn-google { --sq-bg: var(--google-surface); color: var(--google-label); font-weight: 500; }
+.btn-google .sq-edge path { stroke: var(--google-edge); stroke-width: 1px; }
 .google-g { position: relative; width: 1.125rem; height: 1.125rem; flex: none; }
-@media (prefers-color-scheme: dark) {
-  .btn-google { --sq-bg: #131314; color: #e3e3e3; }
-  .btn-google .sq-edge path { stroke: #8e918f; }
-}
-.btn-google:disabled { --sq-bg: #ffffff; color: #1f1f1f; opacity: 0.6; }
-@media (prefers-color-scheme: dark) { .btn-google:disabled { --sq-bg: #131314; color: #e3e3e3; } }
+.btn-google:disabled { --sq-bg: var(--google-surface); color: var(--google-label); opacity: 0.6; }
 
 /* Dialog */
 .dialog {
@@ -91,8 +86,7 @@
   max-height: calc(100dvh - 2 * var(--gutter));
   overflow: visible;
 }
-.dialog::backdrop { background: rgb(0 0 0 / 0.25); }
-@media (prefers-color-scheme: dark) { .dialog::backdrop { background: rgb(0 0 0 / 0.5); } }
+.dialog::backdrop { background: var(--scrim); }
 .dialog[open] { animation: dialog-in var(--spring-smooth-duration) var(--spring-smooth); }
 .dialog[open]::backdrop { animation: fade-in 200ms ease; }
 @keyframes dialog-in { from { opacity: 0; transform: scale(0.94); } }
