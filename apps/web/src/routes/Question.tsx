@@ -10,11 +10,49 @@ import { onLive } from '../lib/live.ts';
 import { applyMeta } from '../lib/meta.ts';
 import { ANSWER, charCount, questionPath, timeAgo, type Answer, type QuestionSummary, type Selection } from '../lib/questions.ts';
 import { AnswerActions, AnswerLabels } from '../components/AnswerActions.tsx';
+import { RoutingGraph } from '../components/RoutingGraph.tsx';
+import { SquircleLayers } from '../components/Squircle.tsx';
+import { routingLine } from '../lib/graph-words.ts';
+import { takeJustAsked } from '../lib/just-asked.ts';
 import { Link } from '../lib/router.ts';
 import { api, useSession } from '../session.tsx';
 import { useLoad } from '../use-load.ts';
 
-interface Page { question: QuestionSummary & { body: string; hidden: boolean }; answers: Array<Answer & { hidden: boolean }>; selection: Selection | null }
+interface WhyYou { sameCountry: boolean | null; fieldPoints: number | null; trustPct: number | null; answeredPct: number | null; newcomer: boolean | null }
+interface Page {
+  question: QuestionSummary & { body: string; hidden: boolean };
+  answers: Array<Answer & { hidden: boolean }>;
+  selection: Selection | null;
+  /** The asker only, once it went out. */
+  routing?: { waves: number; asked: number | null; inCountry: number | null };
+  /** Someone it was put to only. */
+  whyYou?: WhyYou;
+}
+
+/** Routing that hasn't happened this long after asking means nobody could be asked. */
+const SEND_GRACE_MS = 90_000;
+
+/** "Why you got this", in the words of what the score saw. */
+function whyLines(why: WhyYou, page: Page): string[] {
+  const lines = [`You know ${page.question.field.name}`];
+  if (why.sameCountry && page.question.country) lines.push(`You live in ${page.question.country.name}`);
+  if (why.fieldPoints) lines.push(`${String(why.fieldPoints)} points in ${page.question.field.name}`);
+  if (why.answeredPct !== null) lines.push(`You answer ${String(why.answeredPct)}% of what’s sent to you`);
+  if (why.trustPct !== null) lines.push(`${String(why.trustPct)}% of your picked answers here turned out right`);
+  if (why.newcomer) lines.push('You’re new: some places in every wave are kept for new members');
+  return lines;
+}
+
+/** Where the asker's question went, or why it hasn't gone anywhere. */
+function routingCaption(page: Page, now: number): string {
+  const { question, routing, answers } = page;
+  if (routing) {
+    const line = routingLine(routing, question.field.name, question.country?.name ?? null);
+    return answers.length > 0 ? `${line} · ${answers.length === 1 ? '1 answer' : `${String(answers.length)} answers`} so far` : line;
+  }
+  if (now - Date.parse(question.createdAt) < SEND_GRACE_MS) return `Finding people who know ${question.field.name}…`;
+  return `Nobody who knows ${question.field.name} could be asked yet. It stays open here for anyone to answer.`;
+}
 
 /**
  * The address carries the title's current wording: fix it quietly if an old
@@ -29,7 +67,9 @@ function present(page: Page) {
 export default function Question({ id }: { id: string }) {
   const { state } = useSession();
   const { data: page, error, retry, setData: setPage } = useLoad<Page>(`/questions/${id}`, 'if-possible');
-  const [now] = useState(Date.now);
+  const [now, setNow] = useState(Date.now);
+  // Asked from this tab moments ago: its first wave is shown leaving.
+  const [fresh] = useState(() => takeJustAsked(id));
 
   // Fix the address and the tab title once the question is here.
   useEffect(() => { if (page) present(page); }, [page]);
@@ -38,12 +78,22 @@ export default function Question({ id }: { id: string }) {
     setPage(await api<Page>(`/questions/${id}`, { signedIn: 'if-possible' }));
   }
 
-  // A new answer to this question appears without reloading the page.
+  // A new answer, or the question going out to more people, appears
+  // without reloading the page.
   useEffect(() => onLive(e => {
-    if (e.type === 'answered' && e.questionId === id) {
-      api<Page>(`/questions/${id}`, { signedIn: 'if-possible' }).then(setPage).catch(() => { /* next visit shows it */ });
+    if ((e.type === 'answered' || e.type === 'sent') && e.questionId === id) {
+      api<Page>(`/questions/${id}`, { signedIn: 'if-possible' }).then(page => { setNow(Date.now()); setPage(page); }).catch(() => { /* next visit shows it */ });
     }
   }), [id, setPage]);
+
+  // While it's being sent, check back once the grace is over, so "Finding
+  // people…" never stays up when nobody could be asked.
+  const waiting = page !== null && !page.routing && now - Date.parse(page.question.createdAt) < SEND_GRACE_MS;
+  useEffect(() => {
+    if (!waiting) return;
+    const timer = setTimeout(() => { void reload().then(() => { setNow(Date.now()); }, () => { setNow(Date.now()); }); }, SEND_GRACE_MS / 3);
+    return () => { clearTimeout(timer); };
+  });
 
   // Only a question the server says isn't there is "gone"; anything else can be tried again.
   if (error?.status === 404) return <MessageScreen {...splitMessage(error.message)} />;
@@ -70,6 +120,19 @@ export default function Question({ id }: { id: string }) {
         {question.body && <p className="text-body post-body">{question.body}</p>}
         {question.hidden && <p className="text-subhead hidden-note" role="note">Hidden while moderators review reports about it. Only you can see it now.</p>}
       </article>
+
+      {asked && (
+        <RoutingGraph asked={page.routing ? page.routing.asked : undefined} answers={answers.length} fresh={fresh} caption={routingCaption(page, now)} />
+      )}
+      {page.whyYou && (
+        <section className="why-you sq-host" aria-labelledby="why-heading">
+          <SquircleLayers radius={1.25} />
+          <h2 id="why-heading" className="text-headline">Why you got this</h2>
+          <ul className="text-subhead secondary">
+            {whyLines(page.whyYou, page).map(line => <li key={line}>{line}</li>)}
+          </ul>
+        </section>
+      )}
 
       <section className="answers" aria-labelledby="answers-heading">
         <h2 id="answers-heading" className="text-title3">

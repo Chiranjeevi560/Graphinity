@@ -13,6 +13,9 @@ import './routes/routes.css';
 // The time guard stops a reload loop if the new version is broken too; the
 // error then reaches the error boundary, which explains what to do.
 window.addEventListener('vite:preloadError', event => {
+  // Offline, a reload can only fail (to the browser's own error page). The
+  // screen that needed the file says so instead, and tries again online.
+  if (!navigator.onLine) return;
   const key = 'graphinity:reloaded-at';
   // Without storage the guard can't remember reloading, so a broken deploy
   // would reload forever: show the error screen instead.

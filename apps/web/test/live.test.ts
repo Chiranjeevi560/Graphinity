@@ -5,10 +5,10 @@ import { announce, onLive, parseEvents, startLive, type LiveEvent } from '../src
 describe('reading live events', () => {
   it('reads whole messages and keeps a half-received one for later', () => {
     const got: LiveEvent[] = [];
-    const rest = parseEvents(': connected\n\nevent: answered\ndata: {"questionId":"42"}\n\nevent: routed\ndata: {"questi', e => got.push(e));
-    expect(got).toEqual([{ type: 'answered', questionId: '42' }]);
+    const rest = parseEvents(': connected\n\nevent: answered\ndata: {"questionId":"42"}\n\nevent: sent\ndata: {"questionId":"9"}\n\nevent: routed\ndata: {"questi', e => got.push(e));
+    expect(got).toEqual([{ type: 'answered', questionId: '42' }, { type: 'sent', questionId: '9' }]);
     expect(parseEvents(`${rest}onId":"7"}\n\n`, e => got.push(e))).toBe('');
-    expect(got).toEqual([{ type: 'answered', questionId: '42' }, { type: 'routed', questionId: '7' }]);
+    expect(got).toEqual([{ type: 'answered', questionId: '42' }, { type: 'sent', questionId: '9' }, { type: 'routed', questionId: '7' }]);
   });
 
   it('ignores unknown events, pings, broken data and ids that aren’t ids', () => {

@@ -32,14 +32,14 @@ Checked by `node scripts/floor-guard.mjs` on everything changed since `origin/ma
 | Floor | Clean | See above | `node scripts/floor-guard.mjs` | every edit |
 | Unit and integration tests | All pass; integration tests run on real Postgres as the restricted role | Tests that skip on missing setup prove nothing | `npm test` | task end, CI |
 | Coverage, server | Lines ≥ 90.36%, branches ≥ 86.15% (today) | Ratchet: hold today's line; the run fails 0.5 points below it | `npm run test:coverage` (thresholds in `apps/api/vitest.config.ts`) | task end, CI |
-| Coverage, website (unit) | Lines ≥ 36.44% (today) | Ratchet; the run fails 0.5 points below it. Screens are covered by browser tests instead | `npm run test:coverage` (thresholds in `apps/web/vitest.config.ts`) | task end, CI |
+| Coverage, website (unit) | Lines ≥ 47.77% (today) | Ratchet; the run fails 0.5 points below it. Screens are covered by browser tests instead | `npm run test:coverage` (thresholds in `apps/web/vitest.config.ts`) | task end, CI |
 | Accessibility | Zero serious or critical axe findings (WCAG 2.2 AA) on every screen, light and dark | WCAG AA is the legal and moral minimum. External judge | `npm run test:e2e` | task end, CI |
 | Layout | No sideways scrolling at 320, 375, 430, 1280 px on any screen | Owner's rule | `npm run test:e2e` | task end, CI |
 | Tap targets | ≥ 44 px (inline text links exempt, per WCAG 2.5.8) | Apple's minimum | `npm run test:e2e` | task end, CI |
 | Browser errors | Zero console errors or CSP violations (expected 404s aside) | A CSP violation means something was blocked | `npm run test:e2e` | task end, CI |
 | Engines | Chromium and WebKit locally; plus Firefox in CI | Firefox won't start on macOS 27 (see Known limits) | `npm run test:e2e`, CI | task end, CI |
 | Page speed | Lighthouse mobile: performance ≥ 95, accessibility 100, best practices 100, SEO 100, LCP ≤ 2500 ms, CLS ≤ 0.1, TBT ≤ 200 ms | LCP/CLS are Google's "good" thresholds; 95 holds today's 99 with room for noise | `npm run check:perf` | task end, CI |
-| Bundle size (brotli) | Main script ≤ 61.81 kB, styles ≤ 4.84 kB, all scripts ≤ 87.76 kB | Ratchet: today + 0.5%. Growth must be a decision | `npm run check:size` | task end, CI |
+| Bundle size (brotli) | Main script ≤ 61.80 kB, styles ≤ 4.97 kB, all scripts ≤ 92.99 kB | Ratchet: today + 0.5%. Growth must be a decision | `npm run check:size` | task end, CI |
 | Secrets | No findings in git history or uncommitted changes (values always redacted) | External judge | `npm run check:secrets` | task end, CI |
 | Dependencies | Nothing known-vulnerable at high or above | External database (OSV) | `npm run check:deps` | task end, CI |
 | Code security | No Semgrep findings at ERROR (p/default, p/owasp-top-ten, p/typescript, p/react) | External rules | CI only (`semgrep`) | CI |

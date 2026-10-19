@@ -26,9 +26,9 @@ Reduced motion: the same graph, still. A text summary is always there for screen
 
 ## Routing that learns
 
-A question goes only to people who list its field, in waves (10, then 30 after 15 minutes, then
-100 after an hour, while unanswered), within a daily limit per person, with 20% of each wave kept
-for newcomers. Within the field, each person gets a score:
+A question goes only to people who list its field, in waves of 5, 5 and 5 at 0, 20 and 60 minutes
+(Bible §11.2: wave 2 only if fewer than 3 have opened it or answered, wave 3 only while it has fewer
+than 3 answers), at most 3 a day per person, with one place in each wave kept for a newcomer. Within the field, each person gets a score:
 
 | Part | Weight | Learns from |
 |---|---|---|
@@ -43,6 +43,17 @@ per field: points in customs say nothing about programming. Every pick, helpful 
 and ignored question changes the next routing; nothing needs retraining.
 
 Each route stores why it was made, at that moment, for "Why you got this".
+
+## How it's built
+
+- `apps/web/src/lib/graph-layout.ts` and `routing-layout.ts`: where everything sits and moves, pure
+  maths with tests. `lib/canvas-loop.ts`: what every graph's canvas needs, once (sharp on any screen,
+  theme colours, 30 frames a second at most, none when hidden or scrolled away, still for reduced
+  motion). `components/LivingGraph.tsx` and `RoutingGraph.tsx` only draw.
+- The home graph's code downloads after the page's text, and the page works without it.
+- Only what really happens while a page is open is animated: a question asked from this tab, a wave
+  going out (`sent` event), an answer arriving (`answered` event). A later visit shows the settled
+  picture, not a replay.
 
 ## Bent or left for later, and why
 

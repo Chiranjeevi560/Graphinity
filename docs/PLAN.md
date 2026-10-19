@@ -55,7 +55,7 @@ Render or Supabase.** Limits checked on the services' own pages on 2026-10-17 ar
 - **Matching**: Postgres full-text search with prefix matching (finds words still being typed),
   ranked by relevance. Trigram typo tolerance was left out on purpose: on Supabase it needs grants
   in the `extensions` schema we couldn't verify; add it if matching misses misspelled questions.
-- **Routing**: waves (10 people, then 30 after 15 minutes, then wider), ranked by expertise,
+- **Routing**: staged waves of 5, 5 and 5 at 0, 20 and 60 minutes, ranked by expertise,
   responsiveness and country, with a daily notification budget per person and reserved slots
   for newcomers.
 - **Points**: an append-only ledger. Reversals are new rows, never edits.
@@ -74,8 +74,9 @@ Render or Supabase.** Limits checked on the services' own pages on 2026-10-17 ar
    phone is checked at deploy, step 8).
 6. ✅ Reporting, auto-hide, owner review page, limits, blocking, shared-network flags (built and
    tested locally; moderators are added by the owner in the SQL editor, SETUP-ACCOUNTS.md Part G).
-7. ◐ The living graph (docs/GRAPH.md): routing score that learns from picks, helpful marks,
-   verdicts and ignored questions, per field; reasons kept per route; `/graph`; the asker's routing
-   counts and "why you got this". Screens in progress.
+7. ✅ The living graph (docs/GRAPH.md): routing score that learns from picks, helpful marks,
+   verdicts and ignored questions, per field; reasons kept per route; `/graph`; the home graph, the
+   asker watching their question travel and answers return, "why you got this" (built and tested
+   locally; semantic search and answer consensus left for the owner's decision, see GRAPH.md).
 8. Launch prep: privacy policy, terms, hostile review, phone checks, accounts, deploy (server
    first, then website), verify live.

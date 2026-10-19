@@ -6,6 +6,6 @@ export default defineConfig({
     include: ['test/**/*.test.ts'],
     // The coverage ratchet in CONSTRAINTS.md: today's number less its 0.5
     // point tolerance. Applies whenever coverage is measured (test:coverage).
-    coverage: { thresholds: { lines: 35.94 } },
+    coverage: { thresholds: { lines: 47.27 } },
   },
 });

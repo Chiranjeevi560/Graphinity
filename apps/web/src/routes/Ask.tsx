@@ -4,6 +4,7 @@ import { SelectField, TextArea, TextField } from '../components/Form.tsx';
 import { LoadFailed } from '../components/Message.tsx';
 import { ApiError } from '../lib/api.ts';
 import { charCount, DETAILS_MAX, questionPath, TITLE } from '../lib/questions.ts';
+import { markJustAsked } from '../lib/just-asked.ts';
 import { Link, navigate } from '../lib/router.ts';
 import { api, type Profile } from '../session.tsx';
 import { useMeta } from './profile-form.ts';
@@ -73,6 +74,7 @@ export default function Ask({ profile }: { profile: Profile }) {
         body: { title, details, field, country: country || null },
       });
       draft = null;
+      markJustAsked(res.question.id);
       navigate(questionPath({ id: res.question.id, title }), { replace: true });
     } catch (err) {
       const text = err instanceof ApiError ? err.message : 'Your question couldn’t be posted. Try again in a minute.';

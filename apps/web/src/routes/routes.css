@@ -183,3 +183,18 @@
   border: 0; background: none; font: inherit; color: var(--label-secondary); cursor: pointer;
 }
 .report-sent { color: var(--label-secondary); }
+
+/* The living graph: on the page itself, edge to edge on a phone, no card. */
+.living-graph { margin: var(--space-2) calc(-1 * var(--gutter)) var(--space-4); }
+.living-graph-canvas { display: block; width: 100%; height: 16rem; }
+.living-graph figcaption, .living-graph > p { padding: 0 var(--gutter); text-wrap: balance; }
+@media (min-width: 40rem) {
+  .living-graph-canvas { height: 22rem; }
+}
+
+/* The asker's question travelling, and why someone got it. */
+.routing-graph { margin: 0 0 var(--space-6); display: flex; flex-direction: column; gap: var(--space-2); }
+.routing-graph-canvas { display: block; width: 100%; height: 10rem; }
+.routing-graph figcaption { text-wrap: balance; }
+.why-you { --sq-bg: var(--fill-tertiary); margin: 0 0 var(--space-6); padding: var(--space-4); }
+.why-you ul { margin: var(--space-2) 0 0; padding-left: 1.1em; display: grid; gap: var(--space-1); }

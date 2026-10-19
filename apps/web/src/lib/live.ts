@@ -4,7 +4,7 @@
 // sign-in token expires; the next one starts with a fresh token.
 import type { Auth } from './auth.ts';
 
-export interface LiveEvent { type: 'routed' | 'answered'; questionId: string }
+export interface LiveEvent { type: 'routed' | 'answered' | 'sent'; questionId: string }
 
 /** Turns server-sent event text into events; returns what's left unparsed. */
 export function parseEvents(buffer: string, emit: (e: LiveEvent) => void): string {
@@ -17,7 +17,7 @@ export function parseEvents(buffer: string, emit: (e: LiveEvent) => void): strin
       if (line.startsWith('event: ')) type = line.slice(7);
       else if (line.startsWith('data: ')) data += line.slice(6);
     }
-    if (type !== 'routed' && type !== 'answered') continue;
+    if (type !== 'routed' && type !== 'answered' && type !== 'sent') continue;
     try {
       const { questionId } = JSON.parse(data) as { questionId?: unknown };
       if (typeof questionId === 'string' && /^[1-9][0-9]{0,15}$/.test(questionId)) emit({ type, questionId });

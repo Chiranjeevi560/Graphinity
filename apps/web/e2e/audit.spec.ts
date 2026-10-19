@@ -67,6 +67,9 @@ async function settle(page: Page) {
 
 async function audit(page: Page, screen: string) {
   const report: ScreenReport = { screen, axe: [], overflow: [], smallTargets: [] };
+  // From the top, as the screen first appears: part-way down, anything near
+  // the top is under the sticky header, which says nothing about the screen.
+  await page.evaluate(() => { window.scrollTo(0, 0); });
   for (const scheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme: scheme });
     await settle(page);
@@ -372,6 +375,18 @@ test('picking an answer moves points, and the profile shows them', async ({ page
   await page.getByRole('button', { name: 'Post question' }).click();
   await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
   const questionUrl = new URL(page.url()).pathname;
+  // The asker watches it go out, and reads where it went in words.
+  await expect(page.locator('.routing-graph figcaption')).toContainText(/(Sent to .+|Finding people|Nobody) who know Imports & Customs|could be asked yet/);
+  const routing = page.locator('.routing-graph-canvas');
+  const look = () => routing.evaluate((c: HTMLCanvasElement) => {
+    const d = (c.getContext('2d') as CanvasRenderingContext2D).getImageData(0, 0, c.width, c.height).data;
+    let h = 0;
+    for (let i = 3; i < d.length; i += 16) h = (h * 31 + (d[i] ?? 0)) | 0;
+    return h;
+  });
+  const before = await look();
+  await page.waitForTimeout(300);
+  expect(await look()).not.toBe(before);
   await signOut(page);
 
   // Two newcomers answer.
@@ -468,6 +483,8 @@ test('a new answer reaches the asker live, without reloading', async ({ browser,
     // Without reloading, the asker hears about it and can go straight there.
     const banner = asker.getByRole('link', { name: 'New answer to your question' });
     await expect(banner).toBeVisible({ timeout: 10_000 });
+    // Focused, as a keyboard user reaching it would: it stays while they read.
+    await banner.focus();
     await audit(asker, 'live banner');
     await banner.click();
     await expect(asker.getByText('the N1 leaves every 30 minutes')).toBeVisible();
@@ -604,4 +621,30 @@ test('when Graphinity can’t be reached, every page says so truthfully and reco
 
   // The failures above were caused on purpose; anything else still counts.
   consoleErrors.push(...consoleErrors.splice(errorsBefore).filter(e => !/Failed to load resource|ERR_CONNECTION_REFUSED|ERR_INTERNET_DISCONNECTED/.test(e)));
+});
+
+test('the home graph is alive, and holds still for people who turn motion off', async ({ page }) => {
+  const canvas = page.locator('canvas.living-graph-canvas');
+  // A fingerprint of what's drawn, to tell a moving picture from a still one.
+  const drawn = () => canvas.evaluate((c: HTMLCanvasElement) => {
+    const d = (c.getContext('2d') as CanvasRenderingContext2D).getImageData(0, 0, c.width, c.height).data;
+    let h = 0, ink = 0;
+    for (let i = 3; i < d.length; i += 4) { if (d[i] !== 0) ink++; h = (h * 31 + (d[i] ?? 0)) | 0; }
+    return { h, ink };
+  });
+
+  await page.goto('/');
+  await expect(canvas).toBeVisible();
+  await expect(page.locator('.living-graph figcaption')).toContainText(/people? across/);
+  await expect.poll(async () => (await drawn()).ink).toBeGreaterThan(0);
+  const first = await drawn();
+  await page.waitForTimeout(800);
+  expect((await drawn()).h).not.toBe(first.h);
+
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.reload();
+  await expect.poll(async () => (await drawn()).ink).toBeGreaterThan(0);
+  const still = await drawn();
+  await page.waitForTimeout(800);
+  expect((await drawn()).h).toBe(still.h);
 });
