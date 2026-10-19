@@ -37,6 +37,11 @@ describe('matching while typing', () => {
     expect(prefixQuery('Importing a watch to Dub')).toBe('importing:* | watch:* | to:* | dub:*');
   });
 
+  it('can ask for all of the words instead of any of them', () => {
+    expect(prefixQuery('Importing a watch to Dub', 'all')).toBe('importing:* & watch:* & to:* & dub:*');
+    expect(prefixQuery('visa & work:* | (permit)', 'all')).toBe('visa:* & work:* & permit:*');
+  });
+
   it('lets nothing through that could change the query', () => {
     expect(prefixQuery("a & b | !c :* <-> 'x' (y)")).toBeNull();
     expect(prefixQuery('visa & work:* | (permit)')).toBe('visa:* | work:* | permit:*');

@@ -132,9 +132,12 @@ unanswered pages go to search engines). Cached for an hour.
 `{ title, details?, field? }` → `{ verdict, questions: [{ id, title, answerCount, similarity }] }`, used
 while someone writes a question (docs/SPEC.md §11.1, §12.1). Questions are ranked by meaning
 (embeddings, cosine) and by words (full text), fused by Reciprocal Rank Fusion (k 60, weights 0.65 and
-0.35), within `field` when given; up to 5. `verdict`: `duplicate` when one is at least 0.88 similar in
-meaning and has an answer from the last 180 days; `related` from 0.72 (or any word match when meaning is
-unavailable); `clear` otherwise, with no questions. `similarity` is `null` for a match by words alone.
+0.35), within `field` when given. `verdict`: `duplicate` when one is at least 0.88 similar in meaning
+and has an answer from the last 180 days; `related` from 0.72, or when a question holds every word typed
+(the last may be half-typed: exact codes and names mean little to the model), or on any word match when
+meaning is unavailable; `clear` otherwise, with no questions. Up to 5 are returned: a recent duplicate
+first, then those holding every word, then the rest in fused order. `similarity` is `null` for a match
+by words alone.
 Titles under 10 characters aren't searched. Hidden questions never appear. Without Cloudflare (out of the
 free allowance, offline, not configured) it still answers, by words only, and never says `duplicate`.
 

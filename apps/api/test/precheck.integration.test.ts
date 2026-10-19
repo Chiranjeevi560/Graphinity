@@ -53,6 +53,25 @@ describe('has it been asked already?', () => {
     expect(res.questions[0]?.similarity).toBeGreaterThanOrEqual(0.88);
   });
 
+  it('finds a question from half-typed words that mean little by themselves', async () => {
+    const q = await ask('Is the BOE-II form needed for a courier parcel valued under 5000?');
+    await answer(q);
+    const res = await precheck('courier parcel BOE-I');
+    expect(res.verdict).toBe('related');
+    expect(res.questions.map(x => x.id)).toContain(q);
+    // Sharing one common word isn't enough to be shown.
+    expect((await precheck('courier pigeons in medieval castles')).questions.map(x => x.id)).not.toContain(q);
+  });
+
+  it('keeps the question being typed in view among many close in meaning', async () => {
+    // Twelve phrased almost as typed; the one meant is worded quite differently.
+    for (let i = 0; i < 12; i++) await ask(`Vintage camera case qq${String(i)}0912 at customs?`);
+    const q = await ask('Customs held my Leica under case zz4471 at Dubai airport: was the duty on a vintage camera fair?');
+    const res = await precheck('vintage camera case zz44');
+    expect(res.verdict).toBe('related');
+    expect(res.questions[0]?.id).toBe(q);
+  });
+
   it('only shows it alongside when it has no answer yet', async () => {
     const q = await ask('Do you need an appointment to renew a residence card in Osaka?');
     const res = await precheck('Do you need an appointment to renew a residence card in Osaka?');

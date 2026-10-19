@@ -43,11 +43,12 @@ export function textProblem(text: string, min: number, max: number): TextProblem
 }
 
 /**
- * A full-text query matching any word, including words still being typed
- * ("impor" finds "import"). Only letters and digits get through, so nothing
- * typed can change the query's meaning. Null when there is nothing to match.
+ * A full-text query matching any word (or, with 'all', every word),
+ * including words still being typed ("impor" finds "import"). Only letters
+ * and digits get through, so nothing typed can change the query's meaning.
+ * Null when there is nothing to match.
  */
-export function prefixQuery(raw: string): string | null {
+export function prefixQuery(raw: string, match: 'any' | 'all' = 'any'): string | null {
   const words = [...new Set(raw.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [])].filter(w => codePoints(w).length >= 2).slice(0, 12);
-  return words.length ? words.map(w => `${w}:*`).join(' | ') : null;
+  return words.length ? words.map(w => `${w}:*`).join(match === 'all' ? ' & ' : ' | ') : null;
 }

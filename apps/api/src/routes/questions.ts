@@ -9,7 +9,7 @@ import { fail, pgCode, pgConstraint, signedIn } from './common.ts';
 import { blockedMessage, isBlocked } from './moderation.ts';
 import { consensus, reportedAmount, type Amount, type Claim } from '../consensus.ts';
 import { vectorLiteral, type Embedder } from '../embeddings.ts';
-import { fuse, verdict } from '../precheck.ts';
+import { fuse, shortlist, verdict } from '../precheck.ts';
 import { contactDetails, solicitationMessage } from '../solicitation.ts';
 import { answerRank, specificity, wilsonLowerBound } from '../reputation.ts';
 import { MAX_CHANGES, standing } from './points.ts';
@@ -165,16 +165,18 @@ export function registerQuestionRoutes(app: FastifyInstance, { db, events, embed
     if (textProblem(title, 10, Number.MAX_SAFE_INTEGER) === 'too_short') return { verdict: 'clear', questions: [] };
     const vector = await embed(questionText(title, cleanBody(body.details ?? '')));
     const words = prefixQuery(title);
+    const everyWord = prefixQuery(title, 'all');
     const field = body.field ?? null;
     const found = await db.withUser(null, async q => {
       const byMeaning = vector && embedder ? (await q.query<{ id: string; similarity: number }>(
         'SELECT id::text AS id, similarity FROM app.nearest_questions($1, $2, $3, $4)',
         [vectorLiteral(vector), embedder.model, field, PRECHECK_POOL])).rows : [];
-      const byWords = words ? (await q.query<{ id: string }>(
-        `SELECT q.id::text AS id FROM app.questions q, to_tsquery('english', $1) query
+      const byWords = words ? (await q.query<{ id: string; every_word: boolean }>(
+        `SELECT q.id::text AS id, q.search @@ to_tsquery('english', $3) AS every_word
+         FROM app.questions q, to_tsquery('english', $1) query
          WHERE q.search @@ query AND ($2::text IS NULL OR q.field = $2)
-         ORDER BY ts_rank_cd(q.search, query) DESC, q.id DESC LIMIT ${String(PRECHECK_POOL)}`, [words, field])).rows : [];
-      const ids = fuse(byMeaning.map(r => r.id), byWords.map(r => r.id)).slice(0, SIMILAR_COUNT);
+         ORDER BY ts_rank_cd(q.search, query) DESC, q.id DESC LIMIT ${String(PRECHECK_POOL)}`, [words, field, everyWord])).rows : [];
+      const ids = fuse(byMeaning.map(r => r.id), byWords.map(r => r.id));
       // Row-level security leaves out anything a visitor may not see.
       const details = ids.length ? (await q.query<{ id: string; title: string; answer_count: number; last_answered_at: Date | null }>(
         `SELECT q.id::text AS id, q.title,
@@ -182,16 +184,19 @@ export function registerQuestionRoutes(app: FastifyInstance, { db, events, embed
                 (SELECT max(a.created_at) FROM app.answers a WHERE a.question_id = q.id) AS last_answered_at
          FROM app.questions q WHERE q.id = ANY($1::bigint[])`, [ids])).rows : [];
       const similarity = new Map(byMeaning.map(r => [r.id, r.similarity]));
+      const allWords = new Set(byWords.filter(r => r.every_word).map(r => r.id));
       const byId = new Map(details.map(d => [d.id, d]));
       return ids.flatMap(id => {
         const d = byId.get(id);
-        return d ? [{ ...d, similarity: similarity.get(id) ?? null }] : [];
+        return d ? [{ ...d, similarity: similarity.get(id) ?? null, everyWord: allWords.has(id) }] : [];
       });
     });
-    const decision = verdict(found.map(f => ({ similarity: f.similarity, lastAnsweredAt: f.last_answered_at })), new Date(), vector !== null);
+    const now = new Date();
+    const candidates = found.map(f => ({ ...f, lastAnsweredAt: f.last_answered_at }));
+    const decision = verdict(candidates, now, vector !== null);
     return {
       verdict: decision,
-      questions: decision === 'clear' ? [] : found.map(f => ({
+      questions: decision === 'clear' ? [] : shortlist(candidates, now, SIMILAR_COUNT).map(f => ({
         id: f.id, title: f.title, answerCount: f.answer_count,
         similarity: f.similarity === null ? null : Math.round(f.similarity * 100) / 100,
       })),
