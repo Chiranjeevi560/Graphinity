@@ -5,31 +5,63 @@
 // code checks each rule first only to explain refusals in plain words.
 import type { FastifyInstance } from 'fastify';
 import type { Database, Queryable } from '../db.ts';
+import { displayedReputation, medalFor, replay, wilsonLowerBound } from '../reputation.ts';
 import { fail, pgCode, signedIn } from './common.ts';
 
 export const MAX_CHANGES = 2;
 export const CHANGE_REASONS = ['turned_out_wrong', 'better_answer_later', 'picked_by_mistake'] as const;
-/** Points in one field for each medal. Highest first. */
-export const MEDALS = [
-  { medal: 'gold', min: 200 },
-  { medal: 'silver', min: 50 },
-  { medal: 'bronze', min: 10 },
-] as const;
+/** A picked answer rated this many stars or fewer counts against its author. */
+export const LOW_RATING = 2;
+/** Gold needs the top 1% of people active in the field (and country) in this window. */
+const ACTIVE_WINDOW = '90 days';
 /** Trust is shown once this many different askers have said how it turned out. */
 export const TRUST_MIN_ASKERS = 3;
 
 const idSchema = { type: 'string', pattern: '^[1-9][0-9]{0,15}$' };
 const idParams = { type: 'object', properties: { id: idSchema }, required: ['id'] };
 
-/** Points per field, medals and trust: what anyone may see about a person's standing. */
+/**
+ * A person's standing, field by field, as docs/GRAPHINITY_BIBLE.md §11.3
+ * defines it, plus points and trust: what anyone may see.
+ *
+ * Reputation is TrueSkill replayed from every judgement on their answers in
+ * that field, in time order: a pick or a helpful mark that still stands
+ * (the ledger already applies the pair cap and take-backs) is a win, unless
+ * the pick was rated 2 stars or less; an asker saying it turned out right is
+ * a win, wrong a loss. Recomputed from the record each time, so a changed
+ * pick can never leave stale credit behind.
+ */
 export async function standing(q: Queryable, profileId: string) {
-  const points = (await q.query<{ slug: string; name: string; points: number }>(
-    `SELECT l.field AS slug, f.name, sum(l.amount)::int AS points
+  const points = (await q.query<{ slug: string; name: string; points: number; accepted: number; answers: number; helped: number; country: string | null }>(
+    `SELECT l.field AS slug, f.name, sum(l.amount)::int AS points,
+            count(*) FILTER (WHERE l.reason = 'selected' AND l.amount > 0
+              AND NOT EXISTS (SELECT 1 FROM app.points_ledger x WHERE x.reverses = l.id))::int AS accepted,
+            (SELECT count(*) FROM app.answers a JOIN app.questions aq ON aq.id = a.question_id
+             WHERE a.answerer_id = $1 AND aq.field = l.field)::int AS answers,
+            (SELECT count(DISTINCT h.answer_id) FROM app.points_ledger h
+             WHERE h.recipient_id = $1 AND h.field = l.field AND h.amount > 0 AND h.reason IN ('selected', 'helpful')
+               AND NOT EXISTS (SELECT 1 FROM app.points_ledger x WHERE x.reverses = h.id))::int AS helped,
+            (SELECT p.country FROM app.profiles p WHERE p.id = $1) AS country
      FROM app.points_ledger l JOIN app.fields f ON f.slug = l.field
      WHERE l.recipient_id = $1
      GROUP BY l.field, f.name, f.position
      HAVING sum(l.amount) > 0
      ORDER BY sum(l.amount) DESC, f.position`, [profileId])).rows;
+  // Every judgement on their answers, oldest first, per field.
+  const judgements = (await q.query<{ field: string; won: boolean }>(
+    `SELECT field, won FROM (
+       SELECT l.field, l.created_at AS at, l.id AS tie,
+              NOT (l.reason = 'selected' AND coalesce((SELECT r.stars FROM app.ratings r WHERE r.answer_id = l.answer_id), 5) <= $2) AS won
+       FROM app.points_ledger l
+       WHERE l.recipient_id = $1 AND l.reason IN ('selected', 'helpful') AND l.amount > 0
+         AND NOT EXISTS (SELECT 1 FROM app.points_ledger x WHERE x.reverses = l.id)
+       UNION ALL
+       SELECT jq.field, v.at, v.answer_id, v.correct
+       FROM app.verdicts v JOIN app.answers a ON a.id = v.answer_id JOIN app.questions jq ON jq.id = a.question_id
+       WHERE a.answerer_id = $1
+     ) e ORDER BY at, tie`, [profileId, LOW_RATING])).rows;
+  const outcomes = new Map<string, boolean[]>();
+  for (const j of judgements) outcomes.set(j.field, [...(outcomes.get(j.field) ?? []), j.won]);
   // Each asker counts once: their latest word on this person's picked answers.
   const trust = (await q.query<{ correct: number; total: number }>(
     `SELECT count(*) FILTER (WHERE correct)::int AS correct, count(*)::int AS total
@@ -41,14 +73,46 @@ export async function standing(q: Queryable, profileId: string) {
        WHERE a.answerer_id = $1
        ORDER BY q.asker_id, v.at DESC
      ) latest`, [profileId])).rows[0];
-  return {
-    points: points.map(p => ({
+  const fields = await Promise.all(points.map(async p => {
+    const reputation = displayedReputation(replay(outcomes.get(p.slug) ?? []));
+    const wilson = wilsonLowerBound(p.helped, p.answers);
+    // Gold needs the top 1% of people active in this field and country:
+    // asked only when every other bar is already met, which is rare.
+    const topPercent = p.accepted >= 75 && reputation >= 85 && await isTopPercent(q, profileId, p.slug, p.country, p.accepted);
+    return {
       field: { slug: p.slug, name: p.name },
       points: p.points,
-      medal: MEDALS.find(m => p.points >= m.min)?.medal ?? null,
-    })),
+      medal: medalFor({ accepted: p.accepted, reputation, wilson, topPercent }),
+      // Bible §11.3: 0 to 100, one decimal; how many picks; Wilson of helped/answered.
+      reputation: Math.round(reputation * 10) / 10,
+      accepted: p.accepted,
+      wilson: Math.round(wilson * 100) / 100,
+    };
+  }));
+  return {
+    points: fields,
     trust: trust && trust.total >= TRUST_MIN_ASKERS ? { correct: trust.correct, askers: trust.total } : null,
   };
+}
+
+/** In the top 1% of people active in the field and country, by accepted answers. */
+async function isTopPercent(q: Queryable, profileId: string, field: string, country: string | null, accepted: number): Promise<boolean> {
+  const row = (await q.query<{ active: number; ahead: number }>(
+    `WITH active AS (
+       SELECT a.answerer_id AS id FROM app.answers a
+       JOIN app.questions aq ON aq.id = a.question_id
+       JOIN app.profiles p ON p.id = a.answerer_id
+       WHERE aq.field = $1 AND p.country IS NOT DISTINCT FROM $2 AND a.created_at > now() - interval '${ACTIVE_WINDOW}'
+       GROUP BY a.answerer_id
+     ), scores AS (
+       SELECT active.id, (SELECT count(*) FROM app.points_ledger l
+         WHERE l.recipient_id = active.id AND l.field = $1 AND l.reason = 'selected' AND l.amount > 0
+           AND NOT EXISTS (SELECT 1 FROM app.points_ledger x WHERE x.reverses = l.id)) AS accepted
+       FROM active
+     )
+     SELECT count(*)::int AS active, count(*) FILTER (WHERE accepted > $3 AND id <> $4)::int AS ahead FROM scores`,
+    [field, country, accepted, profileId])).rows[0];
+  return row !== undefined && row.active > 0 && row.ahead < Math.max(1, row.active * 0.01);
 }
 
 export function registerPointRoutes(app: FastifyInstance, { db }: { db: Database }) {
@@ -160,5 +224,34 @@ export function registerPointRoutes(app: FastifyInstance, { db }: { db: Database
     if (outcome === 'not_yours') return fail(reply, 403, 'not_your_question', 'Only the person who asked can say how it turned out.');
     if (outcome === 'not_picked') return fail(reply, 409, 'not_picked', 'Pick this answer first, then say how it turned out.');
     return { verdict: { correct } };
+  });
+
+  // Bible §7.2 Screen 4: one tap after picking, how good the answer was.
+  app.put('/answers/:id/rating', {
+    config: { auth: 'required', write: true },
+    schema: {
+      params: idParams,
+      body: { type: 'object', additionalProperties: false, required: ['stars'], properties: { stars: { type: 'integer', minimum: 1, maximum: 5 } } },
+    },
+  }, async (req, reply) => {
+    const user = signedIn(req);
+    const { id } = req.params as { id: string };
+    const { stars } = req.body as { stars: number };
+    const outcome = await db.withUser(user.id, async q => {
+      const row = (await q.query<{ asker_id: string; picked: boolean }>(
+        `SELECT q.asker_id, EXISTS (SELECT 1 FROM app.selections s WHERE s.answer_id = a.id) AS picked
+         FROM app.answers a JOIN app.questions q ON q.id = a.question_id WHERE a.id = $1`, [id])).rows[0];
+      if (!row) return 'missing' as const;
+      if (row.asker_id !== user.id) return 'not_yours' as const;
+      if (!row.picked) return 'not_picked' as const;
+      await q.query(
+        'INSERT INTO app.ratings (answer_id, stars) VALUES ($1, $2) ON CONFLICT (answer_id) DO UPDATE SET stars = EXCLUDED.stars',
+        [id, stars]);
+      return 'ok' as const;
+    });
+    if (outcome === 'missing') return fail(reply, 404, 'not_found', 'This answer doesn’t exist. It may have been deleted.');
+    if (outcome === 'not_yours') return fail(reply, 403, 'not_your_question', 'Only the person who asked can rate the answer they picked.');
+    if (outcome === 'not_picked') return fail(reply, 409, 'not_picked', 'Pick this answer first, then rate it.');
+    return { rating: { stars } };
   });
 }

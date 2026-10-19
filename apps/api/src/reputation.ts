@@ -4,8 +4,7 @@
 //
 // TrueSkill (Herbrich, Minka and Graepel, 2007) keeps a belief about each
 // person's skill in one field as a normal distribution N(μ, σ²). Each time
-// an asker judges one of their answers, it is a game against a standard
-// opponent: a pick, a helpful mark or "turned out right" is a win; "turned
+// an asker judges one of their answers, it is a game (see OPPONENT_GAP): a pick, a helpful mark or "turned out right" is a win; "turned
 // out wrong", or a pick rated 2 stars or less, is a loss. Wins raise μ,
 // every game shrinks σ, and the shown score is the cautious μ − 3σ, so a
 // lucky newcomer can't outrank someone with a long record.
@@ -16,6 +15,17 @@ export const SIGMA0 = 25 / 3;
 /** Standard TrueSkill choices: performance noise β = σ₀/2, drift τ = σ₀/100. */
 const BETA = SIGMA0 / 2;
 const TAU = SIGMA0 / 100;
+/**
+ * Each judgement is a game against yourself, 8 skill points weaker (about
+ * one σ₀). The Bible fixes the medal bars (§11.3) but not the opponent, so
+ * this was calibrated to them: against a fixed newcomer, 200 perfect
+ * judgements reach only 84 and Gold's 85 is unreachable; against an equal,
+ * 30 reach 100 and volume alone maxes the score. With the gap, perfect
+ * records reach 24 / 50 / 77 / 99 after 3 / 10 / 30 / 75 judgements (the
+ * Verified / Bronze / Silver / Gold counts), while 90% right over 75 gives
+ * 60, 75% right 28, and 50% right 0. Tested in reputation.test.ts.
+ */
+export const OPPONENT_GAP = 8;
 
 export interface Skill { mu: number; sigma: number }
 
@@ -26,8 +36,7 @@ export function displayedReputation({ mu, sigma }: Skill): number {
 
 /** One judged answer: did the asker's judgement count as a win for its author? */
 export function playGame(skill: Skill, won: boolean): Skill {
-  // The opponent is the field's standard: a newcomer's belief, unchanged by the game.
-  const opponent = { mu: MU0, sigma: SIGMA0 };
+  const opponent = { mu: skill.mu - OPPONENT_GAP, sigma: SIGMA0 };
   const sigma2 = skill.sigma ** 2 + TAU ** 2;
   const c = Math.sqrt(2 * BETA ** 2 + sigma2 + opponent.sigma ** 2);
   const t = ((won ? 1 : -1) * (skill.mu - opponent.mu)) / c;

@@ -113,6 +113,8 @@
 .medal { font-weight: 600; }
 .medal-gold { color: var(--medal-gold); }
 .medal-silver { color: var(--medal-silver); }
+/* Verified: the first tier, in the accent colour (contrast-tested as --accent-text). */
+.medal-verified { color: var(--accent-text); }
 .medal-bronze { color: var(--medal-bronze); }
 
 /* Inbox: questions put to you. */

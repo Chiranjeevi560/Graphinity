@@ -28,7 +28,7 @@ Base URL: `http://localhost:3000` locally; the Render URL in production.
 | 404 | `not_found` / `no_profile` | Nothing there / set up your profile first |
 | 409 | `handle_taken` / `profile_exists` / `handle_change_too_soon` | The last one includes `availableAt` (ISO time) |
 | 409 | `already_answered` / `own_question` | One answer per person per question; never on your own |
-| 400 / 403 / 409 | `not_an_answer` / `reason_required` / `not_your_question` / `no_changes_left` / `not_picked` | Picking, marking and verdicts (see below) |
+| 400 / 403 / 409 | `not_an_answer` / `reason_required` / `not_your_question` / `no_changes_left` / `not_picked` | Picking, marking, verdicts and ratings (see below) |
 | 413 | `too_large` | Body over the limit (4 KB; 48 KB when asking or answering while signed in) |
 | 415 | `unsupported` | Wrong content type |
 | 429 | `rate_limited` | Too many requests. `Retry-After` gives the seconds to wait |
@@ -177,19 +177,32 @@ nothing. Marks can't be taken back.
 
 `{ correct }` → `{ verdict: { correct } }`. Only for the current pick (409 `not_picked` otherwise).
 
+### `PUT /answers/:id/rating` (asker only, counts as a write)
+
+`{ stars }` (a whole number, 1 to 5) → `{ rating: { stars } }`. Only for the current pick (409
+`not_picked` otherwise); sending again replaces it. A pick rated 2 stars or less counts against its
+author's reputation instead of for it.
+
 ### Standing
 
 `GET /profiles/:handle` and `GET /me` also return:
 
 ```json
 "standing": {
-  "points": [{ "field": { "slug": "imports-customs", "name": "Imports & Customs" }, "points": 15, "medal": "bronze" }],
+  "points": [{ "field": { "slug": "imports-customs", "name": "Imports & Customs" }, "points": 15,
+              "medal": "verified", "reputation": 34.6, "accepted": 3, "wilson": 0.44 }],
   "trust": { "correct": 4, "askers": 5 }
 }
 ```
 
-Medals per field: bronze at 10 points, silver at 50, gold at 200. `trust` counts each asker once (their
-latest verdict) and is `null` until 3 different askers have said. Who gave whom points is never shown.
+Per field, as docs/GRAPHINITY_BIBLE.md §11.3 defines it: `reputation` (0 to 100) is TrueSkill's cautious
+μ − 3σ × 2, replayed from every judgement on the person's answers in that field (a standing pick or
+helpful mark is a win unless the pick was rated 2 stars or less; "turned out right" a win, "wrong" a
+loss); `accepted` counts picks that still stand; `wilson` is the Wilson lower bound of answers picked or
+marked helpful over answers given. `medal`: `verified` (3 accepted, reputation 25), `bronze` (10, 45,
+Wilson 0.65), `silver` (30, 68, 0.78), `gold` (75, 85, and the top 1% by accepted answers among people
+active in the field and country in 90 days), else `null`. `points` stays as the ledger total. `trust`
+counts each asker once (their latest verdict) and is `null` until 3 different askers have said. Who gave whom points is never shown.
 
 The pair cap: one asker can give one person points 3 times in 30 days. After that, picks and marks
 still work, but no points move for them.

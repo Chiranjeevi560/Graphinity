@@ -99,7 +99,7 @@ list them too, or stash them first.
 
 - Edit `db/schema.sql`. It must stay safe to run twice and additive only: add, never rename or
   drop in the same release as the code that stops using something.
-- Bump the version in the `INSERT INTO app.schema_meta` line (now 12).
+- Bump the version in the `INSERT INTO app.schema_meta` line (now 13).
 - Every new table needs `ENABLE` and `FORCE ROW LEVEL SECURITY`, explicit grants to `app_api`,
   and policies. The integration test fails if RLS is missing.
 

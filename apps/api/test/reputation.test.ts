@@ -23,6 +23,20 @@ describe('reputation in one field (TrueSkill, Bible §11.3)', () => {
     expect(proven).toBeLessThanOrEqual(100);
   });
 
+  it('makes every medal bar reachable by a perfect record, and keeps mediocre records low', () => {
+    const perfect = (n: number) => displayedReputation(replay(Array.from({ length: n }, () => true)));
+    const rate = (p: number, n: number) => {
+      let acc = 0;
+      return displayedReputation(replay(Array.from({ length: n }, () => { acc += p; if (acc >= 1) { acc -= 1; return true; } return false; })));
+    };
+    expect(perfect(10)).toBeGreaterThanOrEqual(45); // Bronze bar at Bronze's 10 picks
+    expect(perfect(30)).toBeGreaterThanOrEqual(68); // Silver at 30
+    expect(perfect(75)).toBeGreaterThanOrEqual(85); // Gold at 75
+    expect(rate(0.9, 75)).toBeGreaterThan(rate(0.75, 75));
+    expect(rate(0.75, 75)).toBeLessThan(45);
+    expect(rate(0.5, 75)).toBe(0);
+  });
+
   it('gives the same answer for the same history, so it can be recomputed any time', () => {
     const history = [true, true, false, true];
     expect(replay(history)).toEqual(replay(history));

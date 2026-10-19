@@ -42,7 +42,8 @@ Status: ✅ built and tested · ◐ in progress · ○ planned · ⤳ bent (reas
 | §11.1 Semantic dedup (≥ 0.88 intercept, 0.72 related) | Workers AI embeddings + pgvector, thresholds as written; cross-encoder rerank if the free tier allows | ○ |
 | §11.2 Staged waves 5-5-5 at 0/20/60 min, 3 a day | Built and tested (wave 3's "consensus below 0.70" is "fewer than 3 answers" until consensus is stored) | ✅ |
 | §11.2 11-factor routing + greedy diversity + UCB1 + load dampener | A 5-factor learning score is live (docs/GRAPH.md); replace with the 11 factors, each fed by real data as it exists | ◐ |
-| §11.3 TrueSkill per field, medals | Maths built and tested (`apps/api/src/reputation.ts`); next: stored per field and shown | ◐ |
+| §11.3 TrueSkill per field, medals | Built: replayed per field from every judgement on the server, Bible tiers replace the old points medals; the opponent gap (8) was calibrated so every bar is reachable (see reputation.ts); next: shown on profiles and answers | ◐ |
+| §7.2 Screen 4 five-star rating | Built on the server (`PUT /answers/:id/rating`, database-enforced asker-only); screen next | ◐ |
 | §11.4 Consensus (1D DBSCAN, entropy, minority pinning) | Maths built and tested (`apps/api/src/consensus.ts`, reads ₹/Rs/lakh/k/$ amounts deterministically); next: stored and drawn as the bar | ◐ |
 | §11.5 Answer rank Ω with Wilson | Maths built and tested; next: orders answers on the question page | ◐ |
 | §10.2 Edge weight evolution | Equation built and tested (clip [0.01, 0.999]); next: stored per person and field | ◐ |

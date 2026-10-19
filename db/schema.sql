@@ -1484,8 +1484,46 @@ $$;
 REVOKE ALL ON FUNCTION app.routing_summary(bigint) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app.routing_summary(bigint) TO app_api;
 
+-- ---------------------------------------------------------------------------
+-- The asker's 1-5 star rating of the answer they picked (docs/GRAPHINITY_BIBLE.md
+-- §7.2 Screen 4, §10.2): one tap after picking. It feeds the author's
+-- reputation in the field: a pick rated 2 stars or less counts against the
+-- answer instead of for it. Like verdicts: one per answer, only the asker,
+-- only their current pick; the time is the database's.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS app.ratings (
+  answer_id  bigint PRIMARY KEY REFERENCES app.answers (id) ON DELETE CASCADE,
+  stars      smallint NOT NULL CHECK (stars BETWEEN 1 AND 5),
+  at         timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE app.ratings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.ratings FORCE ROW LEVEL SECURITY;
+GRANT SELECT ON app.ratings TO app_api;
+GRANT INSERT (answer_id, stars), UPDATE (stars) ON app.ratings TO app_api;
+DROP POLICY IF EXISTS ratings_read ON app.ratings;
+CREATE POLICY ratings_read ON app.ratings FOR SELECT TO app_api USING (true);
+DROP POLICY IF EXISTS ratings_insert_asker ON app.ratings;
+CREATE POLICY ratings_insert_asker ON app.ratings FOR INSERT TO app_api
+  WITH CHECK (EXISTS (
+    SELECT 1 FROM app.selections s JOIN app.questions q ON q.id = s.question_id
+    WHERE s.answer_id = ratings.answer_id AND q.asker_id = app.current_user_id()
+  ));
+DROP POLICY IF EXISTS ratings_update_asker ON app.ratings;
+CREATE POLICY ratings_update_asker ON app.ratings FOR UPDATE TO app_api
+  USING (EXISTS (
+    SELECT 1 FROM app.selections s JOIN app.questions q ON q.id = s.question_id
+    WHERE s.answer_id = ratings.answer_id AND q.asker_id = app.current_user_id()
+  ))
+  WITH CHECK (EXISTS (
+    SELECT 1 FROM app.selections s JOIN app.questions q ON q.id = s.question_id
+    WHERE s.answer_id = ratings.answer_id AND q.asker_id = app.current_user_id()
+  ));
+DROP TRIGGER IF EXISTS ratings_stamp ON app.ratings;
+CREATE TRIGGER ratings_stamp BEFORE INSERT OR UPDATE ON app.ratings
+  FOR EACH ROW EXECUTE FUNCTION app.stamp_verdict();
+
 -- Bump on every change to this file.
-INSERT INTO app.schema_meta (id, version) VALUES (true, 12)
+INSERT INTO app.schema_meta (id, version) VALUES (true, 13)
   ON CONFLICT (id) DO UPDATE SET version = EXCLUDED.version, applied_at = now();
 
 COMMIT;

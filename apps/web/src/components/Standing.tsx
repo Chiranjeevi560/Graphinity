@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react';
 import { api } from '../session.tsx';
 
 export interface StandingData {
-  points: Array<{ field: { slug: string; name: string }; points: number; medal: 'gold' | 'silver' | 'bronze' | null }>;
+  /** Per field (Bible §11.3): reputation 0-100, picks that stand, Wilson of helped/answered. */
+  points: Array<{ field: { slug: string; name: string }; points: number; medal: 'gold' | 'silver' | 'bronze' | 'verified' | null; reputation: number; accepted: number; wilson: number }>;
   trust: { correct: number; askers: number } | null;
 }
 
-const medalNames = { gold: 'Gold', silver: 'Silver', bronze: 'Bronze' } as const;
+const medalNames = { gold: 'Gold', silver: 'Silver', bronze: 'Bronze', verified: 'Verified' } as const;
 
 /** Points per field, medals and trust. Nothing at all until there is something to show. */
 export function Standing({ standing }: { standing: StandingData }) {

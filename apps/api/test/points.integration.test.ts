@@ -33,7 +33,7 @@ async function answer(questionId: string, token: string): Promise<string> {
 const pick = (token: string, q: string, a: string, reason?: string) =>
   h.call('PUT', `/questions/${q}/selection`, token, { answerId: a, ...(reason ? { reason } : {}) });
 
-interface Standing { points: Array<{ field: { slug: string }; points: number; medal: string | null }>; trust: { correct: number; askers: number } | null }
+interface Standing { points: Array<{ field: { slug: string }; points: number; medal: string | null; reputation: number; accepted: number; wilson: number }>; trust: { correct: number; askers: number } | null }
 async function standingOf(handle: string): Promise<Standing> {
   return (await h.call('GET', `/profiles/${handle}`)).json<{ standing: Standing }>().standing;
 }
@@ -46,7 +46,11 @@ describe('picking the answer that helped', () => {
     const res = await pick(asker.token, q, a);
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ selection: { answerId: a, changesLeft: 2 } });
-    expect((await standingOf(author.handle)).points).toEqual([{ field: { slug: 'imports-customs', name: 'Imports & Customs' }, points: 5, medal: null }]);
+    const [field] = (await standingOf(author.handle)).points;
+    expect((await standingOf(author.handle)).points).toEqual([{ field: { slug: 'imports-customs', name: 'Imports & Customs' }, points: 5, medal: null, reputation: field?.reputation, accepted: 1, wilson: 0.21 }]);
+    // One accepted answer: above zero, far from any medal bar.
+    expect(field?.reputation).toBeGreaterThan(0);
+    expect(field?.reputation).toBeLessThan(25);
     // Picking the same answer again changes nothing.
     expect((await pick(asker.token, q, a)).json()).toEqual({ selection: { answerId: a, changesLeft: 2 } });
     expect((await standingOf(author.handle)).points[0]?.points).toBe(5);
@@ -132,15 +136,82 @@ describe('saying how it turned out', () => {
   });
 });
 
+describe('rating the picked answer', () => {
+  it('takes 1 to 5 stars, only from the asker, only on the current pick', async () => {
+    const asker = await member(), author = await member(), other = await member();
+    const q = await ask(asker.token);
+    const [a, b] = [await answer(q, author.token), await answer(q, other.token)];
+    const rate = (token: string, id: string, stars: unknown) => h.call('PUT', `/answers/${id}/rating`, token, { stars });
+    expect((await rate(asker.token, a, 5)).json<Body>()).toMatchObject({ error: 'not_picked' });
+    await pick(asker.token, q, a);
+    expect((await rate(author.token, a, 5)).json<Body>()).toMatchObject({ error: 'not_your_question' });
+    expect((await rate(asker.token, b, 5)).json<Body>()).toMatchObject({ error: 'not_picked' });
+    for (const bad of [0, 6, 4.5, '5']) expect((await rate(asker.token, a, bad)).statusCode, String(bad)).toBe(400);
+    expect((await rate(asker.token, a, 4)).json()).toEqual({ rating: { stars: 4 } });
+    // Changing their mind replaces it.
+    expect((await rate(asker.token, a, 2)).json()).toEqual({ rating: { stars: 2 } });
+    const { rows } = await h.t.owner.query('SELECT stars FROM app.ratings WHERE answer_id = $1', [a]);
+    expect(rows).toEqual([{ stars: 2 }]);
+  });
+
+  it('is refused by the database itself from anyone but the asker', async () => {
+    const asker = await member(), author = await member();
+    const q = await ask(asker.token);
+    const a = await answer(q, author.token);
+    await pick(asker.token, q, a);
+    await expect(h.t.database.withUser(author.id, db =>
+      db.query('INSERT INTO app.ratings (answer_id, stars) VALUES ($1, 5)', [a]))).rejects.toMatchObject({ code: '42501' });
+  });
+});
+
 describe('standing on a profile', () => {
-  it('earns a bronze medal at 10 points in a field', async () => {
+  it('shows the Bible’s reputation per field, and Verified after 3 accepted answers that held up', async () => {
     const author = await member();
-    for (let i = 0; i < 2; i++) {
+    const accepted = async (n: number) => {
+      for (let i = 0; i < n; i++) {
+        const asker = await member();
+        const q = await ask(asker.token);
+        const a = await answer(q, author.token);
+        await pick(asker.token, q, a);
+        await h.call('PUT', `/answers/${a}/verdict`, asker.token, { correct: true });
+      }
+    };
+    await accepted(2);
+    const two = must((await standingOf(author.handle)).points[0]);
+    expect(two).toMatchObject({ points: 10, accepted: 2, medal: null });
+    expect(two.reputation).toBeGreaterThan(0);
+    await accepted(1);
+    const three = must((await standingOf(author.handle)).points[0]);
+    expect(three).toMatchObject({ accepted: 3, medal: 'verified', wilson: 0.44 });
+    expect(three.reputation).toBeGreaterThanOrEqual(25);
+    expect(three.reputation).toBeGreaterThan(two.reputation);
+  });
+
+  it('lowers reputation when an asker says a picked answer turned out wrong', async () => {
+    const right = await member(), wrong = await member();
+    for (const [author, correct] of [[right, true], [wrong, false]] as const) {
       const asker = await member();
       const q = await ask(asker.token);
-      await pick(asker.token, q, await answer(q, author.token));
+      const a = await answer(q, author.token);
+      await pick(asker.token, q, a);
+      await h.call('PUT', `/answers/${a}/verdict`, asker.token, { correct });
     }
-    expect((await standingOf(author.handle)).points).toEqual([expect.objectContaining({ points: 10, medal: 'bronze' })]);
+    const of = async (p: { handle: string }) => must((await standingOf(p.handle)).points[0]).reputation;
+    expect(await of(right)).toBeGreaterThan(await of(wrong));
+  });
+
+  it('counts a pick the asker rated 2 stars or less against the answer', async () => {
+    const liked = await member(), disliked = await member();
+    for (const [author, stars] of [[liked, 5], [disliked, 1]] as const) {
+      const asker = await member();
+      const q = await ask(asker.token);
+      const a = await answer(q, author.token);
+      await pick(asker.token, q, a);
+      expect((await h.call('PUT', `/answers/${a}/rating`, asker.token, { stars })).json()).toEqual({ rating: { stars } });
+    }
+    const of = async (p: { handle: string }) => must((await standingOf(p.handle)).points[0]).reputation;
+    expect(await of(liked)).toBeGreaterThan(await of(disliked));
+    expect(await of(disliked)).toBe(0);
   });
 
   it('shows trust only once three different askers have said, each counted once', async () => {
