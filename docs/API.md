@@ -27,6 +27,7 @@ Base URL: `http://localhost:3000` locally; the Render URL in production.
 | 403 | `no_profile` | Asking or answering before setting up a profile |
 | 404 | `not_found` / `no_profile` | Nothing there / set up your profile first |
 | 409 | `handle_taken` / `profile_exists` / `handle_change_too_soon` | The last one includes `availableAt` (ISO time) |
+| 400 | `contact_details` | An answer holding a phone number, email address or invitation to message elsewhere (Bible §21.2). Amounts, codes and dates are fine |
 | 409 | `already_answered` / `own_question` | One answer per person per question; never on your own |
 | 400 / 403 / 409 | `not_an_answer` / `reason_required` / `not_your_question` / `no_changes_left` / `not_picked` | Picking, marking, verdicts and ratings (see below) |
 | 413 | `too_large` | Body over the limit (4 KB; 48 KB when asking or answering while signed in) |

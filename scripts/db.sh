@@ -64,7 +64,7 @@ start() {
 apply() {
   # pgvector isn't a "trusted" extension: an administrator turns it on, as
   # Supabase's dashboard does there. Build it once: docs/RUNBOOK.md.
-  psql_owner -d "$DB" -c "CREATE SCHEMA IF NOT EXISTS extensions" -c "CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions" >/dev/null
+  psql_owner -d "$DB" -c "SET client_min_messages = warning" -c "CREATE SCHEMA IF NOT EXISTS extensions" -c "CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions" >/dev/null
   psql_owner -d "$DB" -f "$ROOT/db/schema.sql"
   echo "Applied db/schema.sql (version $(psql_owner -d "$DB" -tAc 'SELECT version FROM app.schema_meta'))"
 }

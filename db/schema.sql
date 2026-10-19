@@ -1569,8 +1569,34 @@ $$;
 REVOKE ALL ON FUNCTION app.nearest_questions(text, text, text, integer) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app.nearest_questions(text, text, text, integer) TO app_api;
 
+-- ---------------------------------------------------------------------------
+-- Answers are reports, not leads for middlemen (docs/GRAPHINITY_BIBLE.md
+-- §21.2): no phone numbers, email addresses or invitations to message
+-- elsewhere. The API refuses them first (src/solicitation.ts); this repeats
+-- it with the same patterns. NOT VALID: checked on every new or changed
+-- answer, without failing the upgrade over anything already stored.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION app.has_contact_details(t text) RETURNS boolean
+  LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
+  SET search_path = pg_catalog
+AS $$
+  SELECT normalize(t, NFKC) ~ '(\+\s?)?\(?\d([\s()-]{0,2}\d){9,}'
+      OR normalize(t, NFKC) ~ '[[:alnum:]._%+-]+@[[:alnum:].-]+\.[[:alpha:]]{2,}'
+      OR normalize(t, NFKC) ~* '\m(wa\.me|t\.me|telegram\.me|chat\.whatsapp\.com|signal\.me)/'
+      OR normalize(t, NFKC) ~* '\m(dm|message|msg|ping|text|contact|whatsapp|telegram|call)\s+(me|us)\M'
+      OR normalize(t, NFKC) ~* '\m(whatsapp|telegram|signal)\s+(me|us|on|at|number|no)\M'
+$$;
+REVOKE ALL ON FUNCTION app.has_contact_details(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app.has_contact_details(text) TO app_api;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'answers_no_contact_details' AND conrelid = 'app.answers'::regclass) THEN
+    ALTER TABLE app.answers ADD CONSTRAINT answers_no_contact_details CHECK (NOT app.has_contact_details(body)) NOT VALID;
+  END IF;
+END $$;
+
 -- Bump on every change to this file.
-INSERT INTO app.schema_meta (id, version) VALUES (true, 14)
+INSERT INTO app.schema_meta (id, version) VALUES (true, 15)
   ON CONFLICT (id) DO UPDATE SET version = EXCLUDED.version, applied_at = now();
 
 COMMIT;

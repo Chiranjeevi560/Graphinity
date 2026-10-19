@@ -10,6 +10,7 @@ import { blockedMessage, isBlocked } from './moderation.ts';
 import { consensus, reportedAmount, type Amount, type Claim } from '../consensus.ts';
 import { vectorLiteral, type Embedder } from '../embeddings.ts';
 import { fuse, verdict } from '../precheck.ts';
+import { contactDetails, solicitationMessage } from '../solicitation.ts';
 import { answerRank, specificity, wilsonLowerBound } from '../reputation.ts';
 import { MAX_CHANGES, standing } from './points.ts';
 
@@ -409,6 +410,8 @@ export function registerQuestionRoutes(app: FastifyInstance, { db, events, embed
     const text = cleanBody((req.body as { body: string }).body);
     const problem = textProblem(text, LIMITS.answer.min, LIMITS.answer.max);
     if (problem) return refuseText(reply, 'answer', problem);
+    // Bible §21.2: reports, not leads for middlemen.
+    if (contactDetails(text)) return fail(reply, 400, 'contact_details', solicitationMessage);
     let outcome: { kind: 'missing' } | { kind: 'own' } | { kind: 'blocked' } | { kind: 'ok'; id: string; askerId: string };
     try {
       outcome = await db.withUser(user.id, async q => {

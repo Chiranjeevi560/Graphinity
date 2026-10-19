@@ -187,6 +187,27 @@ describe('answering', () => {
   });
 });
 
+describe('contact details in answers (Bible §21.2)', () => {
+  it('are refused with a plain reason, while real reports with numbers go through', async () => {
+    const asker = await member(), helper = await member();
+    const id = await ask(asker.token);
+    const post = (body: string) => h.call('POST', `/questions/${id}/answers`, helper.token, { body });
+    const refused = await post('Guaranteed clearance, WhatsApp me on +91 98765 43210 today.');
+    expect(refused.statusCode).toBe(400);
+    expect(refused.json<Body>().error).toBe('contact_details');
+    expect(refused.json<Body>().message).toContain('Share what happened here');
+    expect((await post('Paid ₹1,40,000 under HS 9101.21.00; the officer called me twice.')).statusCode).toBe(201);
+  });
+
+  it('are refused by the database too, even if the API forgot', async () => {
+    const asker = await member(), helper = await member();
+    const id = await ask(asker.token);
+    await expect(h.t.database.withUser(helper.id, q =>
+      q.query('INSERT INTO app.answers (question_id, answerer_id, body) VALUES ($1, $2, $3)', [id, helper.id, 'Email me at agent@example.com for help with this.']),
+    )).rejects.toMatchObject({ code: '23514' });
+  });
+});
+
 describe('the database itself', () => {
   it('refuses an answer to your own question even if the API forgot to check', async () => {
     const asker = await member();
