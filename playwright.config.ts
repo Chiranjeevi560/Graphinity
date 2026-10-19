@@ -21,7 +21,13 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: 0,
-  reporter: [['list'], ['json', { outputFile: 'test-results/results.json' }]],
+  // In CI, each failure also becomes an annotation on the run and its pull request, readable by
+  // anyone reviewing, without downloading the report.
+  reporter: [
+    ['list'],
+    ['json', { outputFile: 'test-results/results.json' }],
+    ...(process.env.CI ? [['github'] as const] : []),
+  ],
   timeout: 120_000,
   use: {
     baseURL: 'http://localhost:4173',
