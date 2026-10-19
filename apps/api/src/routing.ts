@@ -8,6 +8,9 @@
 import type { Database, Queryable } from './db.ts';
 import type { Events } from './events.ts';
 import { errorKind } from './jobs.ts';
+import { replay } from './reputation.ts';
+import { judgements } from './routes/points.ts';
+import { pageRank, psi } from './routing-score.ts';
 
 /** Minutes after asking. */
 export const WAVES = [
@@ -26,10 +29,6 @@ export const NEWCOMER_SHARE = 0.2;
 /** Questions older than this are no longer routed further. */
 const ROUTING_WINDOW = '1 day';
 
-/** How much each part counts in a person's score (docs/GRAPH.md). They add up to 1. */
-export const WEIGHTS = { expertise: 0.35, country: 0.2, responsiveness: 0.2, trust: 0.15, chance: 0.1 };
-export type Weights = typeof WEIGHTS;
-
 /** Why someone was asked, as it stood then: shown to them alone. */
 export interface Reasons {
   sameCountry: boolean;
@@ -40,72 +39,126 @@ export interface Reasons {
   newcomer: boolean;
 }
 
+interface PoolRow {
+  id: string; same_country: boolean; picked_in_country: boolean; field_points: number; newcomer: boolean;
+  asked: number; answered: number; trust_total: number; trust_correct: number;
+  answers: number; picks: number; helped: number; median_reply: number | null;
+  days_since_active: number | null; routes_in_field: number; used_today: number;
+}
+
 /**
- * People for one wave, best first. Only people who list the question's
- * field; never the asker, anyone already asked, anyone who already answered,
- * or anyone at today's limit. Each gets a score that learns from what they
- * did: points in this field (on a log scale against the best candidate),
- * the same country, how often they answered what was put to them in the
- * last 60 days, how often askers said their picked answers in this field
- * turned out right, and a little chance. No data counts as halfway (one
- * success in two tries), so newcomers aren't buried.
+ * People for one wave, best first, by the spec's score Ψ (routing-score.ts).
+ * Only people who list the question's field; never the asker, anyone
+ * already asked, anyone who already answered, or anyone at today's limit.
+ * The SQL gathers what each person did in this field; the score is worked
+ * out here, where each part is tested on its own.
  */
-async function candidates(q: Queryable, questionId: string, limit: number, newcomersOnly: boolean, weights: Weights): Promise<Array<{ id: string } & Reasons>> {
+async function candidates(q: Queryable, questionId: string, limit: number, newcomersOnly: boolean): Promise<Array<{ id: string } & Reasons>> {
   if (limit <= 0) return [];
-  const { rows } = await q.query<{ id: string; same_country: boolean; field_points: number; newcomer: boolean; asked: number; answered: number; trust_total: number; trust_correct: number }>(
-    `WITH target AS (SELECT id, asker_id, field, country FROM app.questions WHERE id = $1),
-     pool AS (
-       SELECT p.id,
-              coalesce(p.country = t.country, false) AS same_country,
-              p.created_at > now() - interval '14 days' AS newcomer,
-              coalesce((SELECT sum(l.amount) FROM app.points_ledger l WHERE l.recipient_id = p.id AND l.field = t.field), 0)::int AS field_points,
-              asked.n AS asked, asked.answered,
-              trust.total AS trust_total, trust.correct AS trust_correct
-       FROM app.profiles p
-       JOIN target t ON true
-       JOIN app.profile_fields pf ON pf.profile_id = p.id AND pf.field = t.field
-       -- Questions put to them in the last 60 days, and how many they
-       -- answered. One sent in the last day counts only once answered: they
-       -- still have time. A removed answer doesn't count as answering (row-level
-       -- security hides it from this job, as from everyone but its author).
-       CROSS JOIN LATERAL (
-         SELECT count(*)::int AS n, count(*) FILTER (WHERE did.answered)::int AS answered
-         FROM app.routes r
-         CROSS JOIN LATERAL (SELECT EXISTS (
-           SELECT 1 FROM app.answers a WHERE a.question_id = r.question_id AND a.answerer_id = p.id) AS answered) did
-         WHERE r.profile_id = p.id AND r.routed_at > now() - interval '60 days'
-           AND (r.routed_at < now() - interval '1 day' OR did.answered)
-       ) asked
-       -- Each asker counts once, with their latest word: as on profiles, but only this field.
-       CROSS JOIN LATERAL (
-         SELECT count(*)::int AS total, count(*) FILTER (WHERE latest.correct)::int AS correct
-         FROM (SELECT DISTINCT ON (fq.asker_id) v.correct
-               FROM app.verdicts v
-               JOIN app.answers a ON a.id = v.answer_id
-               JOIN app.questions fq ON fq.id = a.question_id
-               WHERE a.answerer_id = p.id AND fq.field = t.field
-               ORDER BY fq.asker_id, v.at DESC) latest
-       ) trust
-       WHERE p.id <> t.asker_id
-         AND NOT EXISTS (SELECT 1 FROM app.routes r WHERE r.question_id = t.id AND r.profile_id = p.id)
-         AND NOT EXISTS (SELECT 1 FROM app.answers a WHERE a.question_id = t.id AND a.answerer_id = p.id)
-         AND (NOT $3::boolean OR p.created_at > now() - interval '14 days')
-         -- Already at today's limit: the database would skip them, wasting the place.
-         AND (SELECT count(*) FROM app.routes r
-              WHERE r.profile_id = p.id AND r.routed_at > clock_timestamp() - interval '1 day') < ${String(DAILY_LIMIT)}
-     )
-     SELECT id, same_country, field_points, newcomer, asked, answered, trust_total, trust_correct
-     FROM pool
-     ORDER BY
-       $4::float8 * coalesce(ln(1 + field_points) / nullif(ln(1 + max(field_points) OVER ()), 0), 0)
-       + $5::float8 * same_country::int
-       + $6::float8 * (answered + 1)::float8 / (asked + 2)
-       + $7::float8 * (trust_correct + 1)::float8 / (trust_total + 2)
-       + $8::float8 * random() DESC
-     LIMIT $2`,
-    [questionId, limit, newcomersOnly, weights.expertise, weights.country, weights.responsiveness, weights.trust, weights.chance]);
+  const pool = (await q.query<PoolRow>(
+    `WITH target AS (SELECT id, asker_id, field, country FROM app.questions WHERE id = $1)
+     SELECT p.id,
+            coalesce(p.country = t.country, false) AS same_country,
+            EXISTS (SELECT 1 FROM app.selections s JOIN app.answers a ON a.id = s.answer_id JOIN app.questions sq ON sq.id = s.question_id
+                    WHERE a.answerer_id = p.id AND sq.field = t.field AND sq.country = t.country) AS picked_in_country,
+            p.created_at > now() - interval '14 days' AS newcomer,
+            coalesce((SELECT sum(l.amount) FROM app.points_ledger l WHERE l.recipient_id = p.id AND l.field = t.field), 0)::int AS field_points,
+            asked.n AS asked, asked.answered,
+            trust.total AS trust_total, trust.correct AS trust_correct,
+            (SELECT count(*) FROM app.answers a JOIN app.questions aq ON aq.id = a.question_id
+             WHERE a.answerer_id = p.id AND aq.field = t.field)::int AS answers,
+            (SELECT count(*) FROM app.selections s JOIN app.answers a ON a.id = s.answer_id JOIN app.questions sq ON sq.id = s.question_id
+             WHERE a.answerer_id = p.id AND sq.field = t.field)::int AS picks,
+            (SELECT count(DISTINCT h.answer_id) FROM app.points_ledger h
+             WHERE h.recipient_id = p.id AND h.field = t.field AND h.amount > 0 AND h.reason IN ('selected', 'helpful')
+               AND NOT EXISTS (SELECT 1 FROM app.points_ledger x WHERE x.reverses = h.id))::int AS helped,
+            -- How long they took to answer what was put to them, middle value.
+            (SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM a.created_at - r.routed_at))
+             FROM app.routes r JOIN app.answers a ON a.question_id = r.question_id AND a.answerer_id = r.profile_id
+             WHERE r.profile_id = p.id)::float8 AS median_reply,
+            (extract(epoch FROM now() - greatest(
+              (SELECT max(a.created_at) FROM app.answers a WHERE a.answerer_id = p.id),
+              (SELECT max(aq.created_at) FROM app.questions aq WHERE aq.asker_id = p.id),
+              (SELECT max(r.seen_at) FROM app.routes r WHERE r.profile_id = p.id))) / 86400)::float8 AS days_since_active,
+            (SELECT count(*) FROM app.routes r JOIN app.questions rq ON rq.id = r.question_id
+             WHERE r.profile_id = p.id AND rq.field = t.field)::int AS routes_in_field,
+            (SELECT count(*) FROM app.routes r
+             WHERE r.profile_id = p.id AND r.routed_at > clock_timestamp() - interval '1 day')::int AS used_today
+     FROM app.profiles p
+     JOIN target t ON true
+     JOIN app.profile_fields pf ON pf.profile_id = p.id AND pf.field = t.field
+     -- Questions put to them in the last 60 days, and how many they
+     -- answered. One sent in the last day counts only once answered: they
+     -- still have time. A removed answer doesn't count as answering (row-level
+     -- security hides it from this job, as from everyone but its author).
+     CROSS JOIN LATERAL (
+       SELECT count(*)::int AS n, count(*) FILTER (WHERE did.answered)::int AS answered
+       FROM app.routes r
+       CROSS JOIN LATERAL (SELECT EXISTS (
+         SELECT 1 FROM app.answers a WHERE a.question_id = r.question_id AND a.answerer_id = p.id) AS answered) did
+       WHERE r.profile_id = p.id AND r.routed_at > now() - interval '60 days'
+         AND (r.routed_at < now() - interval '1 day' OR did.answered)
+     ) asked
+     -- Each asker counts once, with their latest word: as on profiles, but only this field.
+     CROSS JOIN LATERAL (
+       SELECT count(*)::int AS total, count(*) FILTER (WHERE latest.correct)::int AS correct
+       FROM (SELECT DISTINCT ON (fq.asker_id) v.correct
+             FROM app.verdicts v
+             JOIN app.answers a ON a.id = v.answer_id
+             JOIN app.questions fq ON fq.id = a.question_id
+             WHERE a.answerer_id = p.id AND fq.field = t.field
+             ORDER BY fq.asker_id, v.at DESC) latest
+     ) trust
+     WHERE p.id <> t.asker_id
+       AND NOT EXISTS (SELECT 1 FROM app.routes r WHERE r.question_id = t.id AND r.profile_id = p.id)
+       AND NOT EXISTS (SELECT 1 FROM app.answers a WHERE a.question_id = t.id AND a.answerer_id = p.id)
+       AND (NOT $2::boolean OR p.created_at > now() - interval '14 days')
+       -- Already at today's limit: the database would skip them, wasting the place.
+       AND (SELECT count(*) FROM app.routes r
+            WHERE r.profile_id = p.id AND r.routed_at > clock_timestamp() - interval '1 day') < ${String(DAILY_LIMIT)}`,
+    [questionId, newcomersOnly])).rows;
+  if (pool.length === 0) return [];
+  const people = pool.map(r => r.id);
+
+  const field = (await q.query<{ field: string; routes: number }>(
+    `SELECT t.field, (SELECT count(*) FROM app.routes r JOIN app.questions rq ON rq.id = r.question_id WHERE rq.field = t.field)::int AS routes
+     FROM app.questions t WHERE t.id = $1`, [questionId])).rows[0];
+  if (!field) return [];
+  const proximity = new Map((await q.query<{ profile_id: string; proximity: number }>(
+    'SELECT profile_id, proximity FROM app.experience_proximity($1, $2::uuid[])', [questionId, people])).rows.map(r => [r.profile_id, r.proximity]));
+  const games = await judgements(q, people, field.field);
+  // Who picked whose answers in this field, and who is trusted to start from.
+  const picks = (await q.query<{ asker: string; answerer: string }>(
+    `SELECT sq.asker_id AS asker, a.answerer_id AS answerer
+     FROM app.selections s JOIN app.answers a ON a.id = s.answer_id JOIN app.questions sq ON sq.id = s.question_id
+     WHERE sq.field = $1`, [field.field])).rows;
+  const moderators = (await q.query<{ id: string }>('SELECT profile_id AS id FROM app.moderators')).rows.map(r => r.id);
+  const everyone = [...new Set([...people, ...moderators, ...picks.flatMap(p => [p.asker, p.answerer])])];
+  const trust = pageRank(everyone, picks.map(p => [p.asker, p.answerer] as const), moderators);
+
+  const scored = pool.map(r => ({
+    row: r,
+    score: psi({
+      proximity: proximity.get(r.id) ?? null,
+      skill: replay(games.get(r.id)?.get(field.field) ?? []),
+      resident: r.same_country,
+      pickedInCountry: r.picked_in_country,
+      trust: trust.get(r.id) ?? 0,
+      helped: r.helped,
+      answers: r.answers,
+      picks: r.picks,
+      medianReplySeconds: r.median_reply,
+      asked: r.asked,
+      answered: r.answered,
+      daysSinceActive: r.days_since_active,
+      routesInField: r.routes_in_field,
+      usedToday: r.used_today,
+    }, { routes: field.routes, dailyLimit: DAILY_LIMIT }, { explore: newcomersOnly }),
+  }));
+  // Best first; equal scores in a stable order, so the same facts give the same wave.
+  scored.sort((a, b) => b.score - a.score || (a.row.id < b.row.id ? -1 : 1));
   const pct = (part: number, whole: number) => whole > 0 ? Math.round(100 * part / whole) : null;
-  return rows.map(r => ({
+  return scored.slice(0, limit).map(({ row: r }) => ({
     id: r.id,
     sameCountry: r.same_country,
     fieldPoints: r.field_points,
@@ -117,12 +170,12 @@ async function candidates(q: Queryable, questionId: string, limit: number, newco
 
 /**
  * Routes one wave of a question. Returns the people actually asked (the
- * daily budget may skip some). Tests pass weights without chance, to check
- * the order the score gives.
+ * daily budget may skip some). One place in five goes to a newcomer, the
+ * spec's "4 exploit + 1 explore".
  */
-export async function routeWave(q: Queryable, questionId: string, wave: number, size: number, weights: Weights = WEIGHTS): Promise<string[]> {
-  const newcomers = await candidates(q, questionId, Math.ceil(size * NEWCOMER_SHARE), true, weights);
-  const rest = await candidates(q, questionId, size, false, weights);
+export async function routeWave(q: Queryable, questionId: string, wave: number, size: number): Promise<string[]> {
+  const newcomers = await candidates(q, questionId, Math.ceil(size * NEWCOMER_SHARE), true);
+  const rest = await candidates(q, questionId, size, false);
   const people = [...new Map([...newcomers, ...rest].map(p => [p.id, p])).values()].slice(0, size);
   const asked: string[] = [];
   for (const p of people) {

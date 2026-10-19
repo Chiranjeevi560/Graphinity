@@ -35,18 +35,27 @@ asker's routing line is a polite live region, so each wave and answer is read ou
 
 A question goes only to people who list its field, in waves of 5, 5 and 5 at 0, 20 and 60 minutes
 (spec §11.2: wave 2 only if fewer than 3 have opened it or answered, wave 3 only while it has fewer
-than 3 answers), at most 3 a day per person, with one place in each wave kept for a newcomer. Within the field, each person gets a score:
+than 3 answers), at most 3 a day per person, with one place in each wave kept for a newcomer (the
+spec's "4 exploit + 1 explore"). Within the field, each person gets the spec's score Ψ
+(`apps/api/src/routing-score.ts`):
 
 | Part | Weight | Learns from |
 |---|---|---|
-| Expertise in this field | 35% | Points earned in this field (picked +5, helpful +2), on a log scale against the best candidate |
-| Same country as the question | 20% | Their profile |
-| Responsiveness | 20% | Of the questions put to them in the last 60 days, how many they answered (ignoring lowers it; they get a day before one counts; a removed answer doesn't count) |
-| Trust in this field | 15% | Askers saying a picked answer in this field turned out right (each asker once) |
-| Chance | 10% | So the same people aren't always first, and new strengths are found |
+| φ1 Close in meaning | 24% | The closest, by meaning, of the questions they answered before (removed answers don't count) |
+| φ2 Field reputation | 18% | sigmoid((μ − 3σ − 25) / 8.33) of their TrueSkill in this field: picks, helpful marks, low ratings, verdicts |
+| φ3 Country | 15% | 0.8 if they live there; 0.5 if one of their answers was picked on a question about there. No city data, so no 1.0 |
+| φ4 Graph trust | 12% | PageRank along who picked whose answers in this field, starting only from moderators (TrustRank), so a ring picking each other gains nothing. Zero for everyone until a moderator has picked someone; moderators themselves get none |
+| φ5 Helpful rate | 10% | Wilson lower bound of their answers here marked helpful or picked |
+| φ6 Pick rate | 8% | (picks + 1) / (answers + 4) |
+| φ7 Responsiveness | 6% | e^(−median reply / 4 h) × answered / asked (both smoothed; they get a day before one counts as ignored) |
+| φ8 Recent activity | 4% | Halves every two weeks since they last asked, answered or opened a question. No time-of-day part: we don't collect timezones |
 
-New people start in the middle (no data means 50%, not 0), so they aren't buried. Reputation is
-per field: points in customs say nothing about programming. Every pick, helpful mark, verdict
+Then: the newcomer bonus, β 0.12 × √(2 ln N / (n + 1)) while someone has had fewer than 5 questions
+in the field, counted only in the newcomer place (it grows with the field and, in the main places,
+would outrank proven people); and the load dampener ((3 − used today) / 3)^1.5, so a person nearing
+the day's limit is asked less. φ9 (diversity) is left out: it needs person-to-person weights we
+don't have, and leaving it out lowers every score equally. No chance term: the same facts give the
+same wave. Reputation is per field: points in customs say nothing about programming. Every pick, helpful mark, verdict
 and ignored question changes the next routing; nothing needs retraining.
 
 Each route stores why it was made, at that moment, for "Why you got this".

@@ -1595,8 +1595,38 @@ BEGIN
   END IF;
 END $$;
 
+-- ---------------------------------------------------------------------------
+-- Routing (docs/SPEC.md §11.2, φ1): how close a new question is in meaning
+-- to what each candidate has answered before. Definer, so the API role
+-- needn't reach the extensions schema; it leaves out hidden and removed
+-- posts itself (row-level security doesn't apply here), and answers only
+-- the routing job: it says something about what a person has answered.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION app.experience_proximity(target bigint, people uuid[])
+  RETURNS TABLE (profile_id uuid, proximity double precision)
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = pg_catalog, extensions, pg_temp
+AS $$
+  SELECT a.answerer_id, max(1 - (aq.embedding <=> t.embedding))
+  FROM app.questions t
+  JOIN app.answers a ON a.answerer_id = ANY (people)
+  JOIN app.questions aq ON aq.id = a.question_id
+  WHERE app.is_system() AND t.id = target AND t.embedding IS NOT NULL
+    AND aq.id <> t.id AND aq.embedding IS NOT NULL AND aq.embedding_model = t.embedding_model
+    AND NOT app.is_answer_hidden(a.id) AND NOT app.is_question_hidden(aq.id)
+  GROUP BY a.answerer_id
+$$;
+REVOKE ALL ON FUNCTION app.experience_proximity(bigint, uuid[]) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app.experience_proximity(bigint, uuid[]) TO app_api;
+
+-- Graph trust (φ4) starts from moderators, so the routing job must see who
+-- they are. Read-only, and only for the job: to everyone else the list
+-- stays private, as before (moderators_self).
+DROP POLICY IF EXISTS moderators_system ON app.moderators;
+CREATE POLICY moderators_system ON app.moderators FOR SELECT TO app_api USING (app.is_system());
+
 -- Bump on every change to this file.
-INSERT INTO app.schema_meta (id, version) VALUES (true, 15)
+INSERT INTO app.schema_meta (id, version) VALUES (true, 16)
   ON CONFLICT (id) DO UPDATE SET version = EXCLUDED.version, applied_at = now();
 
 COMMIT;

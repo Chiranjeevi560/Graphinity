@@ -31,6 +31,35 @@ const idParams = { type: 'object', properties: { id: idSchema }, required: ['id'
  * a win, wrong a loss. Recomputed from the record each time, so a changed
  * pick can never leave stale credit behind.
  */
+/**
+ * Every judgement on these people's answers, oldest first, per person and
+ * field (in one field, when given): the games TrueSkill replays (spec §11.3).
+ * A pick wins unless the asker rated it low; a helpful mark wins; a verdict
+ * wins when it turned out right.
+ */
+export async function judgements(q: Queryable, people: readonly string[], field: string | null): Promise<Map<string, Map<string, boolean[]>>> {
+  const rows = (await q.query<{ person: string; field: string; won: boolean }>(
+    `SELECT person, field, won FROM (
+       SELECT l.recipient_id AS person, l.field, l.created_at AS at, l.id AS tie,
+              NOT (l.reason = 'selected' AND coalesce((SELECT r.stars FROM app.ratings r WHERE r.answer_id = l.answer_id), 5) <= $2) AS won
+       FROM app.points_ledger l
+       WHERE l.recipient_id = ANY ($1::uuid[]) AND l.reason IN ('selected', 'helpful') AND l.amount > 0
+         AND ($3::text IS NULL OR l.field = $3)
+         AND NOT EXISTS (SELECT 1 FROM app.points_ledger x WHERE x.reverses = l.id)
+       UNION ALL
+       SELECT a.answerer_id, jq.field, v.at, v.answer_id, v.correct
+       FROM app.verdicts v JOIN app.answers a ON a.id = v.answer_id JOIN app.questions jq ON jq.id = a.question_id
+       WHERE a.answerer_id = ANY ($1::uuid[]) AND ($3::text IS NULL OR jq.field = $3)
+     ) e ORDER BY at, tie`, [people, LOW_RATING, field])).rows;
+  const out = new Map<string, Map<string, boolean[]>>();
+  for (const r of rows) {
+    const byField = out.get(r.person) ?? new Map<string, boolean[]>();
+    byField.set(r.field, [...(byField.get(r.field) ?? []), r.won]);
+    out.set(r.person, byField);
+  }
+  return out;
+}
+
 export async function standing(q: Queryable, profileId: string) {
   const points = (await q.query<{ slug: string; name: string; points: number; accepted: number; answers: number; helped: number; country: string | null }>(
     `SELECT l.field AS slug, f.name, sum(l.amount)::int AS points,
@@ -47,21 +76,7 @@ export async function standing(q: Queryable, profileId: string) {
      GROUP BY l.field, f.name, f.position
      HAVING sum(l.amount) > 0
      ORDER BY sum(l.amount) DESC, f.position`, [profileId])).rows;
-  // Every judgement on their answers, oldest first, per field.
-  const judgements = (await q.query<{ field: string; won: boolean }>(
-    `SELECT field, won FROM (
-       SELECT l.field, l.created_at AS at, l.id AS tie,
-              NOT (l.reason = 'selected' AND coalesce((SELECT r.stars FROM app.ratings r WHERE r.answer_id = l.answer_id), 5) <= $2) AS won
-       FROM app.points_ledger l
-       WHERE l.recipient_id = $1 AND l.reason IN ('selected', 'helpful') AND l.amount > 0
-         AND NOT EXISTS (SELECT 1 FROM app.points_ledger x WHERE x.reverses = l.id)
-       UNION ALL
-       SELECT jq.field, v.at, v.answer_id, v.correct
-       FROM app.verdicts v JOIN app.answers a ON a.id = v.answer_id JOIN app.questions jq ON jq.id = a.question_id
-       WHERE a.answerer_id = $1
-     ) e ORDER BY at, tie`, [profileId, LOW_RATING])).rows;
-  const outcomes = new Map<string, boolean[]>();
-  for (const j of judgements) outcomes.set(j.field, [...(outcomes.get(j.field) ?? []), j.won]);
+  const outcomes = (await judgements(q, [profileId], null)).get(profileId) ?? new Map<string, boolean[]>();
   // Each asker counts once: their latest word on this person's picked answers.
   const trust = (await q.query<{ correct: number; total: number }>(
     `SELECT count(*) FILTER (WHERE correct)::int AS correct, count(*)::int AS total

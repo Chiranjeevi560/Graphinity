@@ -1,7 +1,8 @@
 // Who a question is put to, in which wave, and who can see it.
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { PersonEvent } from '../src/events.ts';
-import { routeDueQuestions, routeWave, WEIGHTS } from '../src/routing.ts';
+import { DIMS, vectorLiteral } from '../src/embeddings.ts';
+import { routeDueQuestions, routeWave } from '../src/routing.ts';
 import { startApp, type TestApp } from './helpers/app.ts';
 import { must } from './helpers/must.ts';
 
@@ -210,11 +211,10 @@ describe('events', () => {
 });
 
 describe('the score learns from what people did', () => {
-  // Without chance, so the order is the score's alone. Everyone joined long
-  // ago, so the newcomer places don't apply.
-  const noChance = { ...WEIGHTS, chance: 0 };
+  // The score has no chance in it, so the order is the score's alone.
+  // Everyone joined long ago, so the newcomer places don't apply.
   const firstPick = async (questionId: string) =>
-    (await h.t.database.asSystem(q => routeWave(q, questionId, 1, 1, noChance)))[0];
+    (await h.t.database.asSystem(q => routeWave(q, questionId, 1, 1)))[0];
 
   /** Points as picks leave them: from a real asker, for a real question. */
   async function points(person: { id: string }, field: string, amount: number) {
@@ -237,18 +237,20 @@ describe('the score learns from what people did', () => {
     expect(await firstPick(await ask(asker.token, field))).toBe(carExpert.id);
   });
 
-  it('ranks people who ignore what is put to them below people with no record', async () => {
+  it('ranks people who ignore what is put to them below people with the same record who don’t', async () => {
     const field = 'phones-gadgets';
     const asker = await member({ fields: ['travel'], joinedDaysAgo: 30 });
     const ignorer = await member({ fields: [field], joinedDaysAgo: 30 });
     const fresh = await member({ fields: [field], joinedDaysAgo: 30 });
-    // The ignorer has a small edge (one answer an asker said turned out right)...
-    const earlier = await ask(asker.token, field);
-    await h.t.owner.query('DELETE FROM app.routes WHERE question_id = $1', [earlier]);
-    const { rows } = await h.t.owner.query<{ id: string }>('INSERT INTO app.answers (question_id, answerer_id, body) VALUES ($1, $2, $3) RETURNING id',
-      [earlier, ignorer.id, 'I did this last year and it went fine for me.']);
-    await h.t.owner.query('INSERT INTO app.verdicts (answer_id, correct) VALUES ($1, true)', [must(rows[0]).id]);
-    // ...but five earlier questions were put to them, and none answered.
+    // The same record for both: one answer an asker said turned out right.
+    for (const person of [ignorer, fresh]) {
+      const earlier = await ask(asker.token, field);
+      await h.t.owner.query('DELETE FROM app.routes WHERE question_id = $1', [earlier]);
+      const { rows } = await h.t.owner.query<{ id: string }>('INSERT INTO app.answers (question_id, answerer_id, body) VALUES ($1, $2, $3) RETURNING id',
+        [earlier, person.id, 'I did this last year and it went fine for me.']);
+      await h.t.owner.query('INSERT INTO app.verdicts (answer_id, correct) VALUES ($1, true)', [must(rows[0]).id]);
+    }
+    // But five earlier questions were put to the ignorer, and none answered.
     for (let i = 0; i < 5; i++) {
       const old = await ask(asker.token, 'travel');
       await h.t.owner.query('INSERT INTO app.routes (question_id, profile_id, wave) VALUES ($1, $2, 1)', [old, ignorer.id]);
@@ -256,6 +258,99 @@ describe('the score learns from what people did', () => {
       await h.t.owner.query("UPDATE app.routes SET routed_at = now() - interval '3 days' WHERE question_id = $1", [old]);
     }
     expect(await firstPick(await ask(asker.token, field))).toBe(fresh.id);
+  });
+
+  /** A unit vector along `axis`, leaning `lean` towards the next axis: known closeness without a model. */
+  const towards = (axis: number, lean = 0) => {
+    const v = new Array<number>(DIMS).fill(0);
+    v[axis] = Math.sqrt(1 - lean * lean);
+    v[axis + 1] = lean;
+    return v;
+  };
+  async function meaning(questionId: string, v: number[]) {
+    await h.t.owner.query("UPDATE app.questions SET embedding = $2::extensions.halfvec(768), embedding_model = 'test' WHERE id = $1", [questionId, vectorLiteral(v)]);
+  }
+  async function answered(person: { id: string }, questionId: string) {
+    await h.t.owner.query('DELETE FROM app.routes WHERE question_id = $1', [questionId]);
+    const { rows } = await h.t.owner.query<{ id: string }>('INSERT INTO app.answers (question_id, answerer_id, body) VALUES ($1, $2, $3) RETURNING id',
+      [questionId, person.id, 'I did exactly this last spring, here is how it went.']);
+    return must(rows[0]).id;
+  }
+
+  it('prefers someone who answered a question close in meaning (φ1), and never counts a removed answer', async () => {
+    const field = 'cars-vehicles';
+    const asker = await member({ fields: ['travel'], joinedDaysAgo: 30 });
+    const close = await member({ fields: [field], joinedDaysAgo: 30 });
+    const far = await member({ fields: [field], joinedDaysAgo: 30 });
+    // Each answered one earlier question: the same record, different topics.
+    const near = await ask(asker.token, field);
+    await meaning(near, towards(0));
+    const nearAnswer = await answered(close, near);
+    const other = await ask(asker.token, field);
+    await meaning(other, towards(10));
+    // A small edge for the other person (an answer that turned out right), so
+    // without closeness in meaning they would be first, every time.
+    await h.t.owner.query('INSERT INTO app.verdicts (answer_id, correct) VALUES ($1, true)', [await answered(far, other)]);
+    const next = await ask(asker.token, field);
+    await meaning(next, towards(0, 0.2));
+    expect(await firstPick(next)).toBe(close.id);
+
+    const proximity = async () => new Map((await h.t.database.asSystem(q => q.query<{ profile_id: string; proximity: number }>(
+      'SELECT profile_id, proximity FROM app.experience_proximity($1, $2::uuid[])', [next, [close.id, far.id]]))).rows.map(r => [r.profile_id, r.proximity]));
+    expect((await proximity()).get(close.id)).toBeCloseTo(Math.sqrt(1 - 0.04), 2);
+    expect((await proximity()).get(far.id)).toBeCloseTo(0, 2);
+    // Removed by a moderator: it no longer speaks for them.
+    await h.t.owner.query("INSERT INTO app.decisions (answer_id, decision) VALUES ($1, 'remove')", [nearAnswer]);
+    expect((await proximity()).has(close.id)).toBe(false);
+    // Only the routing job may ask: it says something about what a person answered.
+    const asApi = await h.t.database.withUser(asker.id, q => q.query('SELECT * FROM app.experience_proximity($1, $2::uuid[])', [next, [close.id, far.id]]));
+    expect(asApi.rows).toEqual([]);
+  });
+
+  it('prefers someone a trusted person picked once (φ4) over a ring picking each other more often', async () => {
+    const field = 'software-programming';
+    const moderator = await member({ fields: ['travel'], joinedDaysAgo: 30 });
+    await h.t.owner.query('INSERT INTO app.moderators (profile_id) VALUES ($1)', [moderator.id]);
+    // The ring: two accounts each pick the other's answer once.
+    const ring = [await member({ fields: [field], joinedDaysAgo: 30 }), await member({ fields: [field], joinedDaysAgo: 30 })];
+    const trusted = await member({ fields: [field], joinedDaysAgo: 30 });
+    const pick = async (asker: { token: string }, answerer: { id: string }) => {
+      const qid = await ask(asker.token, field);
+      const answer = await answered(answerer, qid);
+      expect((await h.call('PUT', `/questions/${qid}/selection`, asker.token, { answerId: answer })).statusCode).toBe(200);
+    };
+    // Twice each: on picks alone the ring would come first, every time.
+    for (let i = 0; i < 2; i++) {
+      await pick(must(ring[0]), must(ring[1]));
+      await pick(must(ring[1]), must(ring[0]));
+    }
+    // One pick for the trusted person, by the moderator.
+    await pick(moderator, trusted);
+    const asker = await member({ fields: ['travel'], joinedDaysAgo: 30 });
+    expect(await firstPick(await ask(asker.token, field))).toBe(trusted.id);
+  });
+
+  it('keeps the newcomer bonus to the explore place, so a busy field still reaches its proven people', async () => {
+    const field = 'everything-else';
+    const asker = await member({ fields: ['travel'], joinedDaysAgo: 30 });
+    const proven = await member({ fields: [field], joinedDaysAgo: 30 });
+    const veteran = await member({ fields: [field], joinedDaysAgo: 30 });
+    // Members who have never done anything here (joined long ago, so not the newcomer place).
+    for (let i = 0; i < 4; i++) await member({ fields: [field], joinedDaysAgo: 30 });
+    // A busy field: 50 questions put to people before. 5 to the proven
+    // member, who answered each and was picked twice; 45 to the veteran.
+    for (let i = 0; i < 50; i++) {
+      const { rows } = await h.t.owner.query<{ id: string }>(
+        "INSERT INTO app.questions (asker_id, field, title) VALUES ($1, $2, $3) RETURNING id", [asker.id, field, `An earlier question about this, number ${String(i)}`]);
+      const qid = must(rows[0]).id;
+      const answer = i < 5 ? await answered(proven, qid) : null;
+      if (answer !== null && i < 2) await h.t.owner.query('INSERT INTO app.selections (question_id, answer_id) VALUES ($1, $2)', [qid, answer]);
+      await h.t.owner.query('INSERT INTO app.routes (question_id, profile_id, wave) VALUES ($1, $2, 1)', [qid, (i < 5 ? proven : veteran).id]);
+      // The database stamps the time itself; move it back so today's limit doesn't apply.
+      await h.t.owner.query("UPDATE app.routes SET routed_at = now() - interval '3 days' WHERE question_id = $1", [qid]);
+    }
+    // One place, a main one: the proven member, not someone with only a bonus for being new here.
+    expect(await firstPick(await ask(asker.token, field))).toBe(proven.id);
   });
 
   it('prefers people whose picked answers in this field turned out right', async () => {
@@ -291,7 +386,7 @@ describe('the score learns from what people did', () => {
   async function answeredPct(person: { id: string }, field: string) {
     const asker = await member({ fields: ['travel'], joinedDaysAgo: 30 });
     const qid = await ask(asker.token, field);
-    await h.t.database.asSystem(q => routeWave(q, qid, 1, 10, noChance));
+    await h.t.database.asSystem(q => routeWave(q, qid, 1, 10));
     return (await h.t.owner.query<{ answered_pct: number | null }>('SELECT answered_pct FROM app.routes WHERE question_id = $1 AND profile_id = $2', [qid, person.id])).rows[0]?.answered_pct;
   }
 
