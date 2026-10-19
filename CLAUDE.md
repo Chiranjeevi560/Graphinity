@@ -20,7 +20,8 @@ reply threads under answers. No placeholders: no `TODO`, stubs or mocked returns
 is every chosen skill combined into one pipeline, with the bar and the lessons this project paid
 for. **Read `CONSTRAINTS.md` before writing code. Do not weaken it to make a change pass.** Run
 `npm run check:fast` after edits and `npm run check:task` before saying a task is done. Commit and
-push only with `sh scripts/ship.sh <message-file> <paths…>`, which pushes only if every check passed.
+push only with `sh scripts/ship.sh <message-file> <paths…>`, which commits on a branch and pushes it for a
+pull request only if every check passed; `main` changes only through merged pull requests.
 
 ## Hard rules
 
@@ -130,8 +131,8 @@ fade half-way: measure state with JavaScript before calling it a bug.
 ## Commits
 
 One concern per commit. The message says what was wrong, the root cause with evidence, what
-changed, and what was verified (including what wasn't). Push to `origin main` after committing
-when the owner has asked for pushes.
+changed, and what was verified (including what wasn't). Ship to a branch with `ship.sh` and open a
+pull request; the owner merges on GitHub with **Rebase and merge** once CI passes. Never push to `main`.
 
 ## Docs to keep current in the same commit
 
