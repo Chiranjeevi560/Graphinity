@@ -17,6 +17,7 @@ Every setting, where it lives, and the free-tier limits it runs under.
 | `SUPABASE_SECRET_KEY` | yes | `sb_secret_…` | **Most powerful secret.** Used only to delete a person's sign-in. Never in git, chat, logs or the website |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | no (push is off without them) | 87 / 43 base64url chars | Web push keys, both or neither; the server refuses a mismatched pair. Make them with `node scripts/vapid-keys.mjs <env file>`, which writes them into the file and prints only the public key. The private key is a secret. Replacing them makes every device subscribe again |
 | `VAPID_SUBJECT` | no | `https://graphinity.pages.dev` | Who push services can contact about our pushes. Defaults to `WEB_ORIGIN` (no email needed) |
+| `CF_ACCOUNT_ID` / `CF_AI_TOKEN` | no (semantic search falls back to words without them) | 32 hex chars / a Cloudflare API token | Cloudflare Workers AI for embeddings (`@cf/baai/bge-base-en-v1.5`, cls pooling). Both or neither. The token needs only the **Workers AI** permission. Secret. Locally, without them, a deterministic local stand-in is used instead |
 
 Locally, `npm run db:start` generates `DATABASE_URL`, `IP_HASH_KEY`, a local `SUPABASE_URL` and a
 random dev `SUPABASE_SECRET_KEY` into `.local/api.env`.
@@ -52,6 +53,7 @@ Checked on each service's own pages on 2026-10-17. Re-check before relying on a 
 | Supabase Auth email | 2 emails/hour with the built-in sender | Not used: Google sign-in only |
 | Cloudflare Pages | 500 builds/month, 20,000 files, 25 MiB per file | Builds stop until next month |
 | Cloudflare Workers | 100,000 requests/day, 10 ms CPU, 5 cron triggers | Requests refused (error 1027) |
+| Cloudflare Workers AI (checked 2026-10-19) | 10,000 neurons/day on the Free plan; bge-base-en-v1.5 costs 6,058 neurons per million input tokens (about 1.6 million words a day); resets 00:00 UTC | "Further operations will fail with an error": not billed. Graphinity then matches by words and fills missing embeddings later |
 | GitHub Actions | 2,000 minutes/month for private repos | Blocked, not billed, with no payment method |
 | Web push | Free; iPhone needs Home Screen install, iOS 16.4+; no Apple developer account needed | None |
 

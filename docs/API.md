@@ -125,10 +125,21 @@ following page; `next` is `null` on the last page.
 The newest 5,000 questions anyone may see, `{ questions: [{ id, title, createdAt }] }`, for the
 website host's sitemap. Cached for an hour.
 
+### `POST /questions/precheck`
+
+`{ title, details?, field? }` → `{ verdict, questions: [{ id, title, answerCount, similarity }] }`, used
+while someone writes a question (docs/GRAPHINITY_BIBLE.md §11.1, §12.1). Questions are ranked by meaning
+(embeddings, cosine) and by words (full text), fused by Reciprocal Rank Fusion (k 60, weights 0.65 and
+0.35), within `field` when given; up to 5. `verdict`: `duplicate` when one is at least 0.88 similar in
+meaning and has an answer from the last 180 days; `related` from 0.72 (or any word match when meaning is
+unavailable); `clear` otherwise, with no questions. `similarity` is `null` for a match by words alone.
+Titles under 10 characters aren't searched. Hidden questions never appear. Without Cloudflare (out of the
+free allowance, offline, not configured) it still answers, by words only, and never says `duplicate`.
+
 ### `GET /questions/similar?q=:text`
 
 Up to 5 questions matching any word of `q`, including a word still being typed:
-`{ questions: [{ id, title, answerCount }] }`. Used while someone writes a question. Text with no
+`{ questions: [{ id, title, answerCount }] }`. Kept for older clients; the website uses the precheck. Text with no
 letters or digits returns an empty list.
 
 ### `GET /questions/:id`

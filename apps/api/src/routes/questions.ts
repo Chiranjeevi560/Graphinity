@@ -8,6 +8,8 @@ import { cleanBody, cleanLine, prefixQuery, textProblem, type TextProblem } from
 import { fail, pgCode, pgConstraint, signedIn } from './common.ts';
 import { blockedMessage, isBlocked } from './moderation.ts';
 import { consensus, reportedAmount, type Amount, type Claim } from '../consensus.ts';
+import { vectorLiteral, type Embedder } from '../embeddings.ts';
+import { fuse, verdict } from '../precheck.ts';
 import { answerRank, specificity, wilsonLowerBound } from '../reputation.ts';
 import { MAX_CHANGES, standing } from './points.ts';
 
@@ -99,7 +101,26 @@ function refuseText(reply: FastifyReply, what: keyof typeof messages, problem: T
   return fail(reply, 400, `invalid_${what}`, messages[what][problem], { reason: problem });
 }
 
-export function registerQuestionRoutes(app: FastifyInstance, { db, events }: { db: Database; events: Events }) {
+/** What a question means, in the words that matter: its title and the start of its details. */
+export function questionText(title: string, details: string): string {
+  return details ? `${title}\n${details.slice(0, 500)}` : title;
+}
+
+/** Candidates from each ranking before fusing (Bible §12.1 reranks the top 25). */
+const PRECHECK_POOL = 25;
+
+export function registerQuestionRoutes(app: FastifyInstance, { db, events, embedder }: { db: Database; events: Events; embedder: Embedder | null }) {
+  /** An embedding, or null when there's no embedder or it failed: callers fall back to words. */
+  async function embed(text: string): Promise<number[] | null> {
+    if (!embedder) return null;
+    try {
+      return (await embedder.embed([text]))[0] ?? null;
+    } catch {
+      // Out of the free allowance, offline, or a changed format: words still work.
+      return null;
+    }
+  }
+
   // Newest first, a page at a time. `before` is the last id of the previous page.
   app.get('/questions', {
     schema: { querystring: { type: 'object', additionalProperties: false, properties: { before: idSchema } } },
@@ -121,6 +142,56 @@ export function registerQuestionRoutes(app: FastifyInstance, { db, events }: { d
   });
 
   // While someone types a question: has it been asked already?
+  // Bible §11.1 and Screen 2: while someone writes a question, has it been
+  // asked already? Meaning and words, fused; "duplicate" offers the existing
+  // answers first (they can still ask), "related" shows them alongside.
+  app.post('/questions/precheck', {
+    schema: {
+      body: {
+        type: 'object', additionalProperties: false, required: ['title'],
+        properties: { title: { type: 'string', maxLength: 600 }, details: { type: 'string', maxLength: 12_000 }, field: fieldSchema },
+      },
+    },
+  }, async req => {
+    const body = req.body as { title: string; details?: string; field?: string };
+    const title = cleanLine(body.title);
+    // Too short to mean anything yet (counted as people count characters).
+    if (textProblem(title, 10, Number.MAX_SAFE_INTEGER) === 'too_short') return { verdict: 'clear', questions: [] };
+    const vector = await embed(questionText(title, cleanBody(body.details ?? '')));
+    const words = prefixQuery(title);
+    const field = body.field ?? null;
+    const found = await db.withUser(null, async q => {
+      const byMeaning = vector && embedder ? (await q.query<{ id: string; similarity: number }>(
+        'SELECT id::text AS id, similarity FROM app.nearest_questions($1, $2, $3, $4)',
+        [vectorLiteral(vector), embedder.model, field, PRECHECK_POOL])).rows : [];
+      const byWords = words ? (await q.query<{ id: string }>(
+        `SELECT q.id::text AS id FROM app.questions q, to_tsquery('english', $1) query
+         WHERE q.search @@ query AND ($2::text IS NULL OR q.field = $2)
+         ORDER BY ts_rank_cd(q.search, query) DESC, q.id DESC LIMIT ${String(PRECHECK_POOL)}`, [words, field])).rows : [];
+      const ids = fuse(byMeaning.map(r => r.id), byWords.map(r => r.id)).slice(0, SIMILAR_COUNT);
+      // Row-level security leaves out anything a visitor may not see.
+      const details = ids.length ? (await q.query<{ id: string; title: string; answer_count: number; last_answered_at: Date | null }>(
+        `SELECT q.id::text AS id, q.title,
+                (SELECT count(*) FROM app.answers a WHERE a.question_id = q.id)::int AS answer_count,
+                (SELECT max(a.created_at) FROM app.answers a WHERE a.question_id = q.id) AS last_answered_at
+         FROM app.questions q WHERE q.id = ANY($1::bigint[])`, [ids])).rows : [];
+      const similarity = new Map(byMeaning.map(r => [r.id, r.similarity]));
+      const byId = new Map(details.map(d => [d.id, d]));
+      return ids.flatMap(id => {
+        const d = byId.get(id);
+        return d ? [{ ...d, similarity: similarity.get(id) ?? null }] : [];
+      });
+    });
+    const decision = verdict(found.map(f => ({ similarity: f.similarity, lastAnsweredAt: f.last_answered_at })), new Date(), vector !== null);
+    return {
+      verdict: decision,
+      questions: decision === 'clear' ? [] : found.map(f => ({
+        id: f.id, title: f.title, answerCount: f.answer_count,
+        similarity: f.similarity === null ? null : Math.round(f.similarity * 100) / 100,
+      })),
+    };
+  });
+
   app.get('/questions/similar', {
     schema: {
       querystring: {
@@ -297,13 +368,16 @@ export function registerQuestionRoutes(app: FastifyInstance, { db, events }: { d
     if (titleProblem) return refuseText(reply, 'title', titleProblem);
     const detailsProblem = textProblem(details, LIMITS.details.min, LIMITS.details.max);
     if (detailsProblem) return refuseText(reply, 'details', detailsProblem);
+    // Its meaning, for finding it again (a missed one is filled in later by the background job).
+    const vector = await embed(questionText(title, details));
     let id: string | null;
     try {
       id = await db.withUser(user.id, async q => {
         if (await isBlocked(q)) return null;
         return inserted((await q.query<{ id: string }>(
-          'INSERT INTO app.questions (asker_id, field, country, title, body) VALUES ($1, $2, $3, $4, $5) RETURNING id::text AS id',
-          [user.id, body.field, body.country ?? null, title, details])).rows);
+          `INSERT INTO app.questions (asker_id, field, country, title, body, embedding, embedding_model)
+           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id::text AS id`,
+          [user.id, body.field, body.country ?? null, title, details, vector ? vectorLiteral(vector) : null, vector && embedder ? embedder.model : null])).rows);
       });
     } catch (err) {
       if (isNewAccountLimit(err)) return fail(reply, 429, 'new_account_limit', newAccountMessage);

@@ -1522,8 +1522,55 @@ DROP TRIGGER IF EXISTS ratings_stamp ON app.ratings;
 CREATE TRIGGER ratings_stamp BEFORE INSERT OR UPDATE ON app.ratings
   FOR EACH ROW EXECUTE FUNCTION app.stamp_verdict();
 
+-- ---------------------------------------------------------------------------
+-- Meaning, not just words (docs/GRAPHINITY_BIBLE.md §11.1, §12.1): each
+-- question's embedding, so a question asked in other words is still found.
+-- Needs pgvector in the schema "extensions", turned on by an administrator:
+-- on Supabase, Database → Extensions → vector (it isn't a "trusted"
+-- extension, so this file can't turn it on itself); locally, db:start.
+-- halfvec (16-bit) halves the memory with no loss that matters for ranking.
+-- ---------------------------------------------------------------------------
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace
+                 WHERE e.extname = 'vector' AND n.nspname = 'extensions') THEN
+    RAISE EXCEPTION 'Turn on the vector extension in schema "extensions" first (Supabase: Database, Extensions, vector; locally: npm run db:start)';
+  END IF;
+END $$;
+
+ALTER TABLE app.questions ADD COLUMN IF NOT EXISTS embedding extensions.halfvec(768);
+-- Which model made it: vectors from different models are never compared.
+ALTER TABLE app.questions ADD COLUMN IF NOT EXISTS embedding_model text CHECK (char_length(embedding_model) <= 80);
+CREATE INDEX IF NOT EXISTS questions_embedding ON app.questions
+  USING hnsw (embedding extensions.halfvec_cosine_ops) WITH (m = 24, ef_construction = 200);
+-- Only the server's background job fills in a missing embedding later.
+GRANT UPDATE (embedding, embedding_model) ON app.questions TO app_api;
+DROP POLICY IF EXISTS questions_embed_system ON app.questions;
+CREATE POLICY questions_embed_system ON app.questions FOR UPDATE TO app_api
+  USING (app.is_system()) WITH CHECK (app.is_system());
+
+-- The questions nearest in meaning to a given embedding, from one model,
+-- optionally within one field; hidden and removed questions left out.
+-- Definer, so the API role needn't reach the extensions schema; the
+-- vector arrives as text and is cast here, never spliced into SQL.
+CREATE OR REPLACE FUNCTION app.nearest_questions(target text, model text, in_field text, lim integer)
+  RETURNS TABLE (id bigint, similarity double precision)
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = pg_catalog, extensions, pg_temp
+AS $$
+  SELECT q.id, 1 - (q.embedding <=> target::extensions.halfvec(768))
+  FROM app.questions q
+  WHERE q.embedding IS NOT NULL AND q.embedding_model = model
+    AND (in_field IS NULL OR q.field = in_field)
+    AND NOT app.is_question_hidden(q.id)
+  ORDER BY q.embedding <=> target::extensions.halfvec(768)
+  LIMIT least(greatest(lim, 1), 50)
+$$;
+REVOKE ALL ON FUNCTION app.nearest_questions(text, text, text, integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app.nearest_questions(text, text, text, integer) TO app_api;
+
 -- Bump on every change to this file.
-INSERT INTO app.schema_meta (id, version) VALUES (true, 13)
+INSERT INTO app.schema_meta (id, version) VALUES (true, 14)
   ON CONFLICT (id) DO UPDATE SET version = EXCLUDED.version, applied_at = now();
 
 COMMIT;

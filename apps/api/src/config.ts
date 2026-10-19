@@ -29,6 +29,11 @@ export interface Config {
   supabaseSecretKey: string;
   /** Web push keys; push is off without them. */
   vapid: VapidKeys | null;
+  /**
+   * Cloudflare Workers AI for embeddings (semantic search). Off without
+   * them: word matching only in production, a local stand-in in development.
+   */
+  workersAi: { accountId: string; token: string } | null;
 }
 
 export class ConfigError extends Error {
@@ -83,6 +88,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     else vapid = { publicKey: vapidPublic, privateKey: vapidPrivate, subject: env.VAPID_SUBJECT ?? webOrigin };
   }
 
+  // Both or neither: an account id without a token (or the reverse) is a mistake.
+  const cfAccount = env.CF_ACCOUNT_ID ?? '';
+  const cfToken = env.CF_AI_TOKEN ?? '';
+  let workersAi: Config['workersAi'] = null;
+  if (cfAccount || cfToken) {
+    if (!/^[0-9a-f]{32}$/.test(cfAccount)) problems.push('CF_ACCOUNT_ID must be the 32-character Cloudflare account id');
+    else if (cfToken.length < 20) problems.push('CF_AI_TOKEN must be a Cloudflare API token with Workers AI permission');
+    else workersAi = { accountId: cfAccount, token: cfToken };
+  }
+
   // Values are never echoed: they may be secrets.
   if (problems.length) throw new ConfigError(`Configuration problems:\n  - ${problems.join('\n  - ')}`);
 
@@ -97,6 +112,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     supabaseUrl,
     supabaseSecretKey,
     vapid,
+    workersAi,
   };
 }
 

@@ -688,3 +688,42 @@ test('answers that report amounts show how far they agree, and keep the odd one 
   await expect(outlier.getByText('Different outcome · kept visible')).toBeVisible();
   await audit(page, 'question (answers agree in part)');
 });
+
+test('asking something already answered offers those answers first, and never forces them', async ({ page, browserName }) => {
+  const run = `${browserName}${String(Date.now() % 1_000_000)}`;
+  const title = `Which documents did customs want for a used camera from Japan, case ${run}?`;
+  // Someone asked it and got an answer.
+  await signIn(page, 'A brand-new person');
+  await setUpIfNeeded(page, `first.${run}`);
+  await page.goto('/ask');
+  await page.getByLabel('Your question').fill(title);
+  await page.getByLabel('Topic').selectOption('imports-customs');
+  await page.getByRole('button', { name: 'Post question' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
+  const questionUrl = new URL(page.url()).pathname;
+  await signOut(page);
+  await signIn(page, 'A brand-new person');
+  await setUpIfNeeded(page, `answers.${run}`);
+  await page.goto(questionUrl);
+  await page.getByLabel('Your answer').fill('They wanted the invoice and my passport copy, nothing else.');
+  await page.getByRole('button', { name: 'Post answer' }).click();
+  await expect(page.getByText('They wanted the invoice')).toBeVisible();
+  await signOut(page);
+
+  // Someone else starts asking the same thing.
+  await signIn(page, 'Test person A');
+  await establishTestPersonA();
+  await page.goto('/ask');
+  await page.getByLabel('Topic').selectOption('imports-customs');
+  await page.getByLabel('Your question').fill(title);
+  const card = page.getByRole('region', { name: 'This was asked and answered recently' });
+  await expect(card).toBeVisible();
+  await expect(card.getByRole('link', { name: 'Read the answers' })).toHaveAttribute('href', new RegExp(`^${questionUrl.split('/').slice(0, 3).join('/')}`));
+  await expect(page.getByRole('button', { name: 'Post question' })).toBeDisabled();
+  await expect(page.getByText('Read the answers above, or say yours is different.')).toBeVisible();
+  await audit(page, 'ask (already answered)');
+  // Their situation differs: they can still ask.
+  await card.getByRole('button', { name: 'Mine is different' }).click();
+  await expect(card).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Post question' })).toBeEnabled();
+});

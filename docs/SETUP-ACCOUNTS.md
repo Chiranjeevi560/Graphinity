@@ -207,3 +207,30 @@ Supabase dashboard; the website can't.
 
 To remove a moderator later: `DELETE FROM app.moderators WHERE profile_id = (SELECT id FROM app.profiles WHERE handle = 'theirname');`
 
+
+## Part H: Turn on search by meaning (Supabase and Cloudflare, free)
+
+Graphinity finds questions asked in other words ("import tax" for "customs duty") with Cloudflare
+Workers AI's free daily allowance. Past it, Cloudflare refuses rather than bills, and Graphinity
+matches by words until the next day. Nothing here needs a card.
+
+**1. Supabase: turn on the vector extension (before updating the database to version 14).**
+1. Open **supabase.com**, your project, then **Database** in the left bar, then **Extensions**.
+2. Search for **vector**. Switch it on. If it asks for a schema, choose **extensions**.
+3. Then run `db/schema.sql` in the SQL Editor as usual. If you skipped step 2, it stops with a message
+   saying to turn the extension on first; nothing is changed.
+
+**2. Cloudflare: an API token that can only use Workers AI.**
+1. Open **dash.cloudflare.com** and sign in to the account that will host the website.
+2. Your **Account ID** is on the right of the account's home page (Workers & Pages, or the account
+   overview). It is 32 characters. Copy it.
+3. Click your profile icon (top right), **My Profile**, then **API Tokens**, then **Create Token**.
+4. Choose **Create Custom Token**. Name it `graphinity-workers-ai`. Under **Permissions** pick
+   **Account**, **Workers AI**, **Read**. Under **Account Resources** pick your account. Leave the
+   rest. Click **Continue to summary**, then **Create Token**. Copy the token (it is shown once).
+5. Put both into the API's settings yourself, never in chat:
+   - Locally: run `open -e .local/api.env` and add two lines:
+     `CF_ACCOUNT_ID=` followed by the id, and `CF_AI_TOKEN=` followed by the token. Save.
+   - On Render (when deployed): your service, **Environment**, add the same two variables.
+6. Tell me when it's done. I'll check that a question gets its embedding from Cloudflare (the
+   background job also fills in older questions, 20 a minute).

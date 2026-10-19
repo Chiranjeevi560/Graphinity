@@ -55,6 +55,17 @@ If the website says "Graphinity isn't responding", the API isn't running or can'
 says "You're offline" only when the device has no internet. Either way it tries again by itself once
 the connection is back.
 
+Search by meaning needs **pgvector** in the local Postgres. Homebrew has no ready build for macOS 27
+yet, so it was built from the project's official source once (2026-10-19, v0.8.1):
+
+```bash
+cd "$(mktemp -d)" && curl -sSfLO https://github.com/pgvector/pgvector/archive/refs/tags/v0.8.1.tar.gz
+```
+
+then `tar -xzf v0.8.1.tar.gz && cd pgvector-0.8.1 && make PG_CONFIG=/opt/homebrew/opt/postgresql@18/bin/pg_config && make install PG_CONFIG=/opt/homebrew/opt/postgresql@18/bin/pg_config`.
+`npm run db:start` then turns the extension on in schema `extensions`, as Supabase's dashboard does.
+CI uses the pgvector project's own Postgres 17 image.
+
 To try sign-in locally, run `db:start`, then `dev:auth`, `dev:api:local` and `dev:web` in three
 terminals, and open http://localhost:5173. "Continue with Google" opens a local page where you pick
 a test person. To try the production build with its strict security headers, run
@@ -99,7 +110,7 @@ list them too, or stash them first.
 
 - Edit `db/schema.sql`. It must stay safe to run twice and additive only: add, never rename or
   drop in the same release as the code that stops using something.
-- Bump the version in the `INSERT INTO app.schema_meta` line (now 13).
+- Bump the version in the `INSERT INTO app.schema_meta` line (now 14).
 - Every new table needs `ENABLE` and `FORCE ROW LEVEL SECURITY`, explicit grants to `app_api`,
   and policies. The integration test fails if RLS is missing.
 

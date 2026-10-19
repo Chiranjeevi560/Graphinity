@@ -13,6 +13,7 @@ import { registerModerationRoutes } from './routes/moderation.ts';
 import { registerPointRoutes } from './routes/points.ts';
 import { registerGraphRoutes } from './routes/graph.ts';
 import { registerPushRoutes } from './routes/push.ts';
+import type { Embedder } from './embeddings.ts';
 import { registerQuestionRoutes } from './routes/questions.ts';
 
 declare module 'fastify' {
@@ -61,6 +62,8 @@ export interface Deps {
   events?: Events;
   /** The web push public key, or null/absent when push is off. */
   vapidPublicKey?: string | null;
+  /** Embeddings for semantic search; absent: word matching only. */
+  embedder?: Embedder | null;
   limits?: Limits;
   /** Where logs go. Defaults to stdout. */
   logStream?: { write(line: string): void };
@@ -246,7 +249,7 @@ export async function buildServer(deps: Deps) {
 
   registerProfileRoutes(app, { db, authAdmin: deps.authAdmin, clock, subjectKey: config.ipHashKey, log: app.log });
   const events = deps.events ?? createEvents();
-  registerQuestionRoutes(app, { db, events });
+  registerQuestionRoutes(app, { db, events, embedder: deps.embedder ?? null });
   registerLiveRoutes(app, { events, clock });
   registerModerationRoutes(app, { db });
   registerPushRoutes(app, { db, vapidPublicKey: deps.vapidPublicKey ?? null });

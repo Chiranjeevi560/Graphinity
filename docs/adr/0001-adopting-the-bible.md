@@ -33,13 +33,13 @@ Status: ✅ built and tested · ◐ in progress · ○ planned · ⤳ bent (reas
 | §6 OKLCH colour tokens, elevation, focus ring | Replace `tokens.css` values with §6.1; the contrast test re-checks every pair | ○ |
 | §7.1 Two layers (graph behind, sheets above) | Home graph built (docs/GRAPH.md); full-screen Layer 0 to follow | ◐ |
 | §7.2 Screen 1 onboarding | Built (name, country, fields); "tether to cluster" animation | ✅ / ○ |
-| §7.2 Screen 2 composer + semantic intercept | Similar questions while typing (word matching) built; semantic intercept with Workers AI | ✅ / ○ |
+| §7.2 Screen 2 composer + semantic intercept | Built: precheck at a 250 ms pause; "asked and answered recently" card first, "Mine is different" to ask anyway | ✅ |
 | §7.2 Screen 3 live routing view | Built: the asker watches it travel, counts in words, "a few" under 5 | ✅ |
 | §7.2 Screen 4 answers + consensus bar + 5-star | Built: consensus bar and words, "Different outcome · kept visible" pins, credibility row (medal, reputation, picks in field), 5-star radio group after picking | ✅ |
 | §8.1 Springs as m·x″ + c·x′ + k·x | `spring.ts` gains the §8.1 tokens (mass, stiffness, damping) | ○ |
 | §8.3 WebGPU/WebGL2 in a worker | ⤳ Canvas 2D on the main thread: at our node counts it draws in well under a millisecond, and a GPU path is a large dependency-free rewrite to justify later with measurements | ⤳ |
 | §9.2 Canonical `/q/{field}/{country}/{slug}-{id}` with 301 | Today `/q/{id}/{slug}` with the address fixed in place; move with redirects | ○ |
-| §11.1 Semantic dedup (≥ 0.88 intercept, 0.72 related) | Workers AI embeddings + pgvector, thresholds as written; cross-encoder rerank if the free tier allows | ○ |
+| §11.1 Semantic dedup (≥ 0.88 intercept, 0.72 related) | Built: Workers AI `bge-base-en-v1.5` (768, cls) into pgvector `halfvec` with HNSW (m 24, ef 200), RRF with words, thresholds as written. Bent: no cross-encoder rerank yet (another model call per keystroke pause on the free allowance); the thresholds need checking against real Cloudflare vectors once the owner adds the token | ◐ |
 | §11.2 Staged waves 5-5-5 at 0/20/60 min, 3 a day | Built and tested (wave 3's "consensus below 0.70" is "fewer than 3 answers" until consensus is stored) | ✅ |
 | §11.2 11-factor routing + greedy diversity + UCB1 + load dampener | A 5-factor learning score is live (docs/GRAPH.md); replace with the 11 factors, each fed by real data as it exists | ◐ |
 | §11.3 TrueSkill per field, medals | Built: replayed per field from every judgement on the server, Bible tiers replace the old points medals; the opponent gap (8) was calibrated so every bar is reachable (see reputation.ts); next: shown on profiles and answers | ◐ |
@@ -49,7 +49,7 @@ Status: ✅ built and tested · ◐ in progress · ○ planned · ⤳ bent (reas
 | §10.2 Edge weight evolution | Equation built and tested (clip [0.01, 0.999]); next: stored per person and field | ◐ |
 | §12.2 AI only as plumbing, never authoring | Already a rule; kept | ✅ |
 | §13/§14 FSD folders, hexagonal modules, CQRS outbox, BullMQ | ⤳ Kept the current structure (decision 1); new domain maths goes in pure, tested modules | ⤳ |
-| §15 Postgres schema, HNSW, RLS, fillfactor | RLS forced everywhere ✅; pgvector + HNSW with embeddings; fillfactor on hot tables | ✅ / ○ |
+| §15 Postgres schema, HNSW, RLS, fillfactor | RLS forced everywhere; pgvector HNSW on question embeddings; fillfactor on hot tables still to do | ✅ / ○ |
 | §15 UUIDv7 keys | ⤳ Bigint ids stay: changing every key breaks every link and test for no user benefit today | ⤳ |
 | §16 Threat model | Built and documented in SECURITY.md; cookie sign-in waits for a domain (decision 3) | ✅ / ⤳ |
 | §17 Cloudflare + Render + Supabase | Same providers, free tiers (PLAN.md cost rule) | ✅ |

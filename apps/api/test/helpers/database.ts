@@ -72,6 +72,11 @@ export async function createTestDatabase(): Promise<TestDatabase> {
   await admin.query(`GRANT CREATE, CONNECT ON DATABASE ${dbName} TO ${SCHEMA_OWNER}`);
   const owner = new pg.Client({ connectionString: urlFor(dbName) });
   await owner.connect();
+  // pgvector is turned on by an administrator in schema "extensions", as on
+  // Supabase, where its postgres role may use that schema.
+  await owner.query('CREATE SCHEMA IF NOT EXISTS extensions');
+  await owner.query('CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions');
+  await owner.query(`GRANT USAGE ON SCHEMA extensions TO ${SCHEMA_OWNER}`);
   await owner.query(`SET ROLE ${SCHEMA_OWNER}`);
   await owner.query(schema);
   await owner.query(schema);

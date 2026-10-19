@@ -3,6 +3,7 @@
 // integration tests that go through HTTP.
 import { randomUUID } from 'node:crypto';
 import { createTokenVerifier } from '../../src/auth.ts';
+import type { Embedder } from '../../src/embeddings.ts';
 import { createEvents } from '../../src/events.ts';
 import { buildServer, defaultLimits } from '../../src/server.ts';
 import { createTestDatabase } from './database.ts';
@@ -10,7 +11,7 @@ import { fakeAuthAdmin, TEST_ISSUER, testIssuer } from './tokens.ts';
 
 export const IP_HASH_KEY = Buffer.alloc(32, 9);
 
-export async function startApp(now: () => number, opts: { vapidPublicKey?: string } = {}) {
+export async function startApp(now: () => number, opts: { vapidPublicKey?: string; embedder?: Embedder } = {}) {
   const t = await createTestDatabase();
   const issuer = await testIssuer();
   const admin = fakeAuthAdmin();
@@ -23,6 +24,7 @@ export async function startApp(now: () => number, opts: { vapidPublicKey?: strin
     authAdmin: admin,
     events,
     vapidPublicKey: opts.vapidPublicKey ?? null,
+    embedder: opts.embedder ?? null,
     // Generous limits: these tests are about behaviour, not rate limiting.
     limits: { ...defaultLimits, visitor: { capacity: 10_000, refillPerSecond: 1000, maxKeys: 10 }, userWrites: { capacity: 1000, refillPerSecond: 100, maxKeys: 100 } },
     logStream: { write: () => {} },

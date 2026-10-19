@@ -4,6 +4,8 @@ import { loadConfig, ConfigError } from './config.ts';
 import { createDatabase } from './db.ts';
 import { completePendingDeletions } from './deletions.ts';
 import { createEvents } from './events.ts';
+import { embedMissing } from './backfill.ts';
+import { chooseEmbedder } from './embeddings.ts';
 import { errorKind, serial } from './jobs.ts';
 import { expireNetworkMarks } from './networks.ts';
 import { createLimiter, createPushSender } from './push-sender.ts';
@@ -41,6 +43,10 @@ try {
   process.exit(1);
 }
 
+// Semantic search: Cloudflare Workers AI when configured; a local stand-in in
+// development; off (word matching) in production without it.
+const embedder = chooseEmbedder(config, (...args) => fetch(...args));
+
 const authAdmin = createSupabaseAdmin({ supabaseUrl: config.supabaseUrl, secretKey: config.supabaseSecretKey });
 const events = createEvents();
 const app = await buildServer({
@@ -51,6 +57,7 @@ const app = await buildServer({
   authAdmin,
   events,
   vapidPublicKey: config.vapid?.publicKey ?? null,
+  embedder,
 });
 logger.current = app.log;
 
@@ -90,8 +97,13 @@ const runRouting = serial(() => routeDueQuestions(db, app.log)
   })
   .catch((err: unknown) => { app.log.warn({ kind: errorKind(err) }, 'routing run failed'); }));
 events.onAsked(runRouting);
+// Embeddings a question is missing, a few each minute.
+const runBackfill = embedder ? serial(() => embedMissing(db, embedder).then(
+  n => { if (n) app.log.info({ questions: n }, 'embedded questions'); },
+  (err: unknown) => { app.log.warn({ kind: errorKind(err) }, 'embedding backfill failed'); },
+)) : null;
 runRouting();
-const routingTimer = setInterval(runRouting, 60_000);
+const routingTimer = setInterval(() => { runRouting(); runBackfill?.(); }, 60_000);
 routingTimer.unref();
 app.addHook('onClose', (_instance, done) => { clearInterval(routingTimer); done(); });
 

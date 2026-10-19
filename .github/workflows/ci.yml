@@ -19,9 +19,10 @@ jobs:
     timeout-minutes: 30
 
     services:
-      # Supabase runs Postgres 17; test against the same major version.
+      # Supabase runs Postgres 17 with pgvector; test against the same. The
+      # pgvector project's own image, pinned by digest (0.8.1-pg17).
       postgres:
-        image: postgres:17-alpine
+        image: pgvector/pgvector@sha256:3e8b3adfd27b5707128f60956f62a793c3c9326ea8cfaf0eab7adccb5d700b21
         env:
           POSTGRES_PASSWORD: ci-only-password
         ports: ['5432:5432']
@@ -105,6 +106,8 @@ jobs:
       - name: Prepare the database for browser tests
         run: |
           psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE graphinity"
+          # An administrator turns pgvector on, as Supabase's dashboard does.
+          psql "${ADMIN_URL%/postgres}/graphinity" -v ON_ERROR_STOP=1 -c "CREATE SCHEMA IF NOT EXISTS extensions" -c "CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions"
           psql "${ADMIN_URL%/postgres}/graphinity" -v ON_ERROR_STOP=1 -q -f db/schema.sql
           psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c "CREATE ROLE graphinity_api LOGIN PASSWORD 'ci-only-api' IN ROLE app_api" -c "GRANT CONNECT ON DATABASE graphinity TO graphinity_api"
           printf 'DATABASE_URL=postgres://graphinity_api:ci-only-api@localhost:5432/graphinity\nIP_HASH_KEY=%s\nSUPABASE_URL=http://localhost:54321\nSUPABASE_SECRET_KEY=unused_in_ci_0123456789\n' "$(openssl rand -hex 32)" > .local/api.env
