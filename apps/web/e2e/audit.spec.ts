@@ -151,6 +151,8 @@ test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
   await audit(page, 'terms');
 
   await page.goto('/this/does/not/exist');
+  // As for every screen: on the page before auditing, or axe can catch its fade before it starts.
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
   await audit(page, 'not found');
   await expect(page).toHaveTitle('Page not found – Graphinity');
   await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', 'noindex');
