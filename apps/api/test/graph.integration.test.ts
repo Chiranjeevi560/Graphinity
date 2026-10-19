@@ -53,6 +53,25 @@ describe('the public graph', () => {
     expect(text).not.toContain(a.id);
   });
 
+  it('counts exactly how many people know each pair of fields, saying nothing under 5', async () => {
+    // Pairs only this test uses: 6 know fitness and food, 2 know fitness and parenting.
+    for (let i = 0; i < 6; i++) await member(['fitness', 'food-cooking']);
+    for (let i = 0; i < 2; i++) await member(['fitness', 'parenting-schools']);
+    later();
+    const graph = (await h.call('GET', '/graph')).json<{ fields: Array<{ slug: string }>; links: Array<{ a: number; b: number; shared: number | null }> }>();
+    const at = (slug: string) => graph.fields.findIndex(f => f.slug === slug);
+    const link = (x: string, y: string) => graph.links.find(l => (l.a === at(x) && l.b === at(y)) || (l.a === at(y) && l.b === at(x)));
+    // Exact, from everyone, not from the sample the drawing uses.
+    expect(link('fitness', 'food-cooking')?.shared).toBe(6);
+    // Under 5 the server itself never sends the number.
+    expect(link('fitness', 'parenting-schools')).toMatchObject({ shared: null });
+    expect(link('food-cooking', 'parenting-schools')).toBeUndefined();
+    for (const l of graph.links) {
+      expect(l.a).toBeLessThan(l.b);
+      if (l.shared !== null) expect(l.shared).toBeGreaterThanOrEqual(5);
+    }
+  });
+
   it('shows recent questions and answers per field, but not hidden ones', async () => {
     const asker = await member(['fitness']);
     const q = await ask(asker.token, 'fitness', null);

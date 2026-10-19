@@ -52,7 +52,14 @@ export function registerGraphRoutes(app: FastifyInstance, { db, clock }: { db: D
         `SELECT (SELECT count(DISTINCT profile_id) FROM app.profile_fields)::int AS members,
                 (SELECT count(*) FROM app.questions WHERE created_at > now() - interval '1 day')::int AS questions,
                 (SELECT count(*) FROM app.answers WHERE created_at > now() - interval '1 day')::int AS answers`)).rows[0];
-      return { fields, people, recent, counts };
+      // How many people know both of each pair of fields, from everyone (the
+      // sample above is only for drawing). Under 5 the number stays here:
+      // set against public profiles, it could point at who.
+      const links = (await q.query<{ a: string; b: string; shared: number | null }>(
+        `SELECT x.field AS a, y.field AS b, CASE WHEN count(*) >= 5 THEN count(*)::int END AS shared
+         FROM app.profile_fields x JOIN app.profile_fields y ON y.profile_id = x.profile_id AND y.field > x.field
+         GROUP BY x.field, y.field`)).rows;
+      return { fields, people, recent, counts, links };
     });
     const index = new Map(graph.fields.map((f, i) => [f.slug, i]));
     const at = (slug: string) => index.get(slug) ?? -1;
@@ -62,6 +69,11 @@ export function registerGraphRoutes(app: FastifyInstance, { db, clock }: { db: D
       fields: graph.fields.map(f => ({ slug: f.slug, name: f.name, members: f.members })),
       // Each person as the positions (in `fields`) of the fields they know.
       people: graph.people.map(p => p.fields.map(at)),
+      // Pairs of fields people know together, as positions with a < b; shared is null under 5.
+      links: graph.links.map(l => {
+        const [a, b] = [at(l.a), at(l.b)].sort((x, y) => x - y);
+        return { a, b, shared: l.shared };
+      }),
       activity: {
         lastDay: { questions: graph.counts?.questions ?? 0, answers: graph.counts?.answers ?? 0 },
         recent: graph.recent.map(e => ({ field: at(e.field), kind: e.kind })),

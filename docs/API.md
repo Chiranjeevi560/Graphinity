@@ -251,9 +251,12 @@ question. Who was asked is visible only to them.
 
 ### `GET /graph`
 
-Public, cached 5 minutes. `{ members, fields: [{ slug, name, members }], people: [[fieldIndex…]], activity:
-{ lastDay: { questions, answers }, recent: [{ field, kind }] } }`. `people` is a random sample of up to
-300 members, each only as the positions in `fields` of the fields they know: no names or ids.
+Public, cached 5 minutes. `{ members, fields: [{ slug, name, members }], people: [[fieldIndex…]], links:
+[{ a, b, shared }], activity: { lastDay: { questions, answers }, recent: [{ field, kind }] } }`. `people`
+is a random sample of up to 300 members, each only as the positions in `fields` of the fields they know:
+no names or ids; it is for drawing, not counting. `links` counts, from everyone, how many people know
+both of two fields (positions, `a < b`, only pairs someone knows together); `shared` is `null` under 5,
+decided in the query, so a small overlap never leaves the server as a number.
 `members` counts everyone with a profile once.
 `recent` is the last 40 questions (`kind: "question"`) and answers in the last day, newest first,
 by field. Hidden and removed posts are left out.
