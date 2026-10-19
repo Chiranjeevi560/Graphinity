@@ -1,5 +1,6 @@
-// What the asker can do with each answer: pick it, mark it helpful, and
-// later say whether the pick turned out right. Everyone sees the labels.
+// What the asker can do with each answer: pick it, mark it helpful, rate
+// the pick 1 to 5 stars (Bible §7.2 Screen 4), and later say whether it
+// turned out right. Everyone sees the labels.
 import { useId, useState } from 'react';
 import { ApiError } from '../lib/api.ts';
 import { CHANGE_REASONS, type Answer, type ChangeReason, type Selection } from '../lib/questions.ts';
@@ -68,6 +69,7 @@ export function AnswerActions({ questionId, answer, selection, onChanged }: Prop
     method: 'PUT', signedIn: true, body: { answerId: answer.id, ...(why ? { reason: why } : {}) },
   }));
   const verdict = (correct: boolean) => run(() => api(`/answers/${answer.id}/verdict`, { method: 'PUT', signedIn: true, body: { correct } }));
+  const rate = (stars: number) => run(() => api(`/answers/${answer.id}/rating`, { method: 'PUT', signedIn: true, body: { stars } }));
 
   return (
     <div className="answer-actions">
@@ -80,6 +82,25 @@ export function AnswerActions({ questionId, answer, selection, onChanged }: Prop
         <button type="button" className="btn btn-plain" disabled={busy} onClick={() => { void run(() => api(`/answers/${answer.id}/helpful`, { method: 'POST', signedIn: true })); }}>
           Also useful
         </button>
+      )}
+      {picked && (
+        <div className="verdict">
+          <span className="text-subhead" id={`stars-${answer.id}`}>How good was it?</span>
+          <div className="stars" role="radiogroup" aria-labelledby={`stars-${answer.id}`}>
+            {[1, 2, 3, 4, 5].map(n => (
+              <button
+                key={n}
+                type="button"
+                role="radio"
+                aria-checked={selection.stars === n}
+                aria-label={n === 1 ? '1 star' : `${String(n)} stars`}
+                className={selection.stars !== null && n <= selection.stars ? 'is-lit' : undefined}
+                disabled={busy}
+                onClick={() => { void rate(n); }}
+              >★</button>
+            ))}
+          </div>
+        </div>
       )}
       {picked && (
         <div className="verdict">

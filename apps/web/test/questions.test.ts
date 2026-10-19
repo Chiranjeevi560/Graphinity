@@ -32,3 +32,21 @@ describe('counting characters', () => {
     expect(charCount('😀😀')).toBe(2);
   });
 });
+
+describe('amounts and agreement in words', () => {
+  it('writes amounts the way their currency does', async () => {
+    const { formatAmount, formatRange } = await import('../src/lib/questions.ts');
+    expect(formatAmount(14_000_000, 'INR')).toBe('₹1,40,000');
+    expect(formatAmount(120_050, 'USD')).toBe('$1,200.50');
+    expect(formatRange(9_200_000, 9_800_000, 'INR')).toBe('₹92,000–₹98,000');
+    expect(formatRange(8_000_000, 8_000_000, 'INR')).toBe('₹80,000');
+    expect(formatAmount(500, 'XXX!')).toBe('XXX! 5');
+  });
+
+  it('says how far people agree in plain words', async () => {
+    const { agreementWords } = await import('../src/lib/questions.ts');
+    expect(agreementWords(0.85)).toBe('Most people agree');
+    expect(agreementWords(0.5)).toBe('People partly agree');
+    expect(agreementWords(0.1)).toBe('People’s experiences differ');
+  });
+});

@@ -35,7 +35,7 @@ Status: ✅ built and tested · ◐ in progress · ○ planned · ⤳ bent (reas
 | §7.2 Screen 1 onboarding | Built (name, country, fields); "tether to cluster" animation | ✅ / ○ |
 | §7.2 Screen 2 composer + semantic intercept | Similar questions while typing (word matching) built; semantic intercept with Workers AI | ✅ / ○ |
 | §7.2 Screen 3 live routing view | Built: the asker watches it travel, counts in words, "a few" under 5 | ✅ |
-| §7.2 Screen 4 answers + consensus bar + 5-star | Consensus engine and bar, minority pins, 5-star after best answer | ○ |
+| §7.2 Screen 4 answers + consensus bar + 5-star | Built: consensus bar and words, "Different outcome · kept visible" pins, credibility row (medal, reputation, picks in field), 5-star radio group after picking | ✅ |
 | §8.1 Springs as m·x″ + c·x′ + k·x | `spring.ts` gains the §8.1 tokens (mass, stiffness, damping) | ○ |
 | §8.3 WebGPU/WebGL2 in a worker | ⤳ Canvas 2D on the main thread: at our node counts it draws in well under a millisecond, and a GPU path is a large dependency-free rewrite to justify later with measurements | ⤳ |
 | §9.2 Canonical `/q/{field}/{country}/{slug}-{id}` with 301 | Today `/q/{id}/{slug}` with the address fixed in place; move with redirects | ○ |
@@ -43,9 +43,9 @@ Status: ✅ built and tested · ◐ in progress · ○ planned · ⤳ bent (reas
 | §11.2 Staged waves 5-5-5 at 0/20/60 min, 3 a day | Built and tested (wave 3's "consensus below 0.70" is "fewer than 3 answers" until consensus is stored) | ✅ |
 | §11.2 11-factor routing + greedy diversity + UCB1 + load dampener | A 5-factor learning score is live (docs/GRAPH.md); replace with the 11 factors, each fed by real data as it exists | ◐ |
 | §11.3 TrueSkill per field, medals | Built: replayed per field from every judgement on the server, Bible tiers replace the old points medals; the opponent gap (8) was calibrated so every bar is reachable (see reputation.ts); next: shown on profiles and answers | ◐ |
-| §7.2 Screen 4 five-star rating | Built on the server (`PUT /answers/:id/rating`, database-enforced asker-only); screen next | ◐ |
-| §11.4 Consensus (1D DBSCAN, entropy, minority pinning) | Maths built and tested (`apps/api/src/consensus.ts`, reads ₹/Rs/lakh/k/$ amounts deterministically); next: stored and drawn as the bar | ◐ |
-| §11.5 Answer rank Ω with Wilson | Maths built and tested; next: orders answers on the question page | ◐ |
+| §7.2 Screen 4 five-star rating | Built: `PUT /answers/:id/rating` (database-enforced asker-only) and the stars on the picked answer | ✅ |
+| §11.4 Consensus (1D DBSCAN, entropy, minority pinning) | Built: computed on each question page from visible answers (deterministic amount reading); routing's wave 3 still uses "3 answers" until it is stored | ✅ |
+| §11.5 Answer rank Ω with Wilson | Built: answers are ordered by Ω; the asker's pick and helpful mark are the only votes, so Wilson is of one vote | ✅ |
 | §10.2 Edge weight evolution | Equation built and tested (clip [0.01, 0.999]); next: stored per person and field | ◐ |
 | §12.2 AI only as plumbing, never authoring | Already a rule; kept | ✅ |
 | §13/§14 FSD folders, hexagonal modules, CQRS outbox, BullMQ | ⤳ Kept the current structure (decision 1); new domain maths goes in pure, tested modules | ⤳ |

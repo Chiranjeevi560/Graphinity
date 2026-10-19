@@ -133,9 +133,15 @@ letters or digits returns an empty list.
 
 ### `GET /questions/:id`
 
-`{ question: summary + { body }, answers: [{ id, body, answerer: { handle }, createdAt, helpful }], selection }`,
-answers oldest first. `selection` is `null` until the asker picks, then
-`{ answerId, changesLeft, correct }` (`answerId` is `null` if the picked answer's author deleted their
+`{ question: summary + { body }, answers: [{ id, body, answerer: { handle }, createdAt, helpful, author, claim,
+minorityPinned, rank }], selection, consensus }`, answers in order of the Bible's rank Ω (§11.5: 0.30 picked,
+0.22 Wilson of the asker's vote, 0.18 author's reputation, 0.12 their group's share, 0.10 trust, 0.08
+specificity). `author` is `{ reputation, accepted, medal }` in this question's field. `claim` is the
+amount the answer reports (`{ minor, currency }`, minor units) or `null`. `consensus` is `null` until 3
+visible answers report an amount, then `{ confidence, clusters: [{ currency, lowMinor, highMinor, share,
+answers }] }`: groups within 8%, largest share first, shares weighted by authors' standing;
+`minorityPinned` marks the strongest answer of every smaller group. `selection` is `null` until the asker
+picks, then `{ answerId, changesLeft, correct, stars }` (`answerId` is `null` if the picked answer's author deleted their
 account; `correct` is `null` until the asker says how it turned out). 404 `not_found` if there's no such question.
 
 Two parts appear only for one person each, and are left out for everyone else:

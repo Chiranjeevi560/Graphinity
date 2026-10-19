@@ -10,12 +10,21 @@ export interface QuestionSummary {
   answerCount: number;
 }
 
+export type Medal = 'verified' | 'bronze' | 'silver' | 'gold';
+export interface Amount { minor: number; currency: string }
+
 export interface Answer {
   id: string;
   body: string;
   answerer: { handle: string };
   createdAt: string;
   helpful: boolean;
+  /** The author's standing in this question's field (Bible §11.3). */
+  author: { reputation: number; accepted: number; medal: Medal | null };
+  /** The amount the answer reports, if any (Bible §11.4). */
+  claim: Amount | null;
+  /** The strongest answer of a smaller group: kept visible, never buried. */
+  minorityPinned: boolean;
 }
 
 /** The asker's pick. `answerId` is null if the picked answer's author left. */
@@ -23,6 +32,41 @@ export interface Selection {
   answerId: string | null;
   changesLeft: number;
   correct: boolean | null;
+  /** The asker's 1-5 star rating of the pick; null until given. */
+  stars: number | null;
+}
+
+/** How far the answers' amounts agree, once 3 report one. Shares are trust-weighted. */
+export interface Consensus {
+  confidence: number;
+  clusters: Array<{ currency: string; lowMinor: number; highMinor: number; share: number; answers: number }>;
+}
+
+export const MEDAL_NAMES: Record<Medal, string> = { verified: 'Verified', bronze: 'Bronze', silver: 'Silver', gold: 'Gold' };
+
+/** "₹1,40,000", "$1,200.50": the currency's own way of writing amounts, whole units when whole. */
+export function formatAmount(minor: number, currency: string): string {
+  const value = minor / 100;
+  try {
+    return new Intl.NumberFormat(currency === 'INR' ? 'en-IN' : 'en', {
+      style: 'currency', currency, currencyDisplay: 'narrowSymbol',
+      maximumFractionDigits: Number.isInteger(value) ? 0 : 2,
+    }).format(value);
+  } catch {
+    return `${currency} ${value.toLocaleString('en')}`;
+  }
+}
+
+/** A range when the group spans one, a single amount when it doesn't. */
+export function formatRange(lowMinor: number, highMinor: number, currency: string): string {
+  return lowMinor === highMinor ? formatAmount(lowMinor, currency) : `${formatAmount(lowMinor, currency)}–${formatAmount(highMinor, currency)}`;
+}
+
+/** Bible §11.4 confidence in words: ≥ 0.7 is where it stops sending more people. */
+export function agreementWords(confidence: number): string {
+  if (confidence >= 0.7) return 'Most people agree';
+  if (confidence >= 0.4) return 'People partly agree';
+  return 'People’s experiences differ';
 }
 
 export const CHANGE_REASONS = [

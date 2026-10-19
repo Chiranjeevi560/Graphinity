@@ -132,7 +132,7 @@ describe('saying how it turned out', () => {
     expect((await say(author.token, a, true)).json<Body>()).toMatchObject({ error: 'not_your_question' });
     expect((await say(asker.token, b, true)).json<Body>()).toMatchObject({ error: 'not_picked' });
     expect((await say(asker.token, a, true)).json()).toEqual({ verdict: { correct: true } });
-    expect((await h.call('GET', `/questions/${q}`)).json<{ selection: unknown }>().selection).toEqual({ answerId: a, changesLeft: 2, correct: true });
+    expect((await h.call('GET', `/questions/${q}`)).json<{ selection: unknown }>().selection).toEqual({ answerId: a, changesLeft: 2, correct: true, stars: null });
   });
 });
 

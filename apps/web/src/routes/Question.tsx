@@ -8,8 +8,9 @@ import { ReportButton } from '../components/ReportButton.tsx';
 import { ApiError } from '../lib/api.ts';
 import { onLive } from '../lib/live.ts';
 import { applyMeta } from '../lib/meta.ts';
-import { ANSWER, charCount, questionPath, timeAgo, type Answer, type QuestionSummary, type Selection } from '../lib/questions.ts';
+import { ANSWER, charCount, MEDAL_NAMES, questionPath, timeAgo, type Answer, type Consensus, type QuestionSummary, type Selection } from '../lib/questions.ts';
 import { AnswerActions, AnswerLabels } from '../components/AnswerActions.tsx';
+import { ConsensusBar } from '../components/ConsensusBar.tsx';
 import { RoutingGraph } from '../components/RoutingGraph.tsx';
 import { SquircleLayers } from '../components/Squircle.tsx';
 import { routingLine } from '../lib/graph-words.ts';
@@ -23,6 +24,8 @@ interface Page {
   question: QuestionSummary & { body: string; hidden: boolean };
   answers: Array<Answer & { hidden: boolean }>;
   selection: Selection | null;
+  /** Once 3 answers report an amount (Bible §11.4). */
+  consensus: Consensus | null;
   /** The asker only, once it went out. */
   routing?: { waves: number; asked: number | null; inCountry: number | null };
   /** Someone it was put to only. */
@@ -141,15 +144,21 @@ export default function Question({ id }: { id: string }) {
         {asked && !selection && answers.length > 0 && (
           <p className="text-subhead secondary">Choose the answer that helped you. It earns them points.</p>
         )}
+        {page.consensus && <ConsensusBar consensus={page.consensus} />}
         {answers.length > 0 && (
           <ol className="answer-list">
-            {/* The answer that helped comes first. */}
+            {/* The answer that helped comes first; the rest in the server's order (Bible §11.5). */}
             {[...answers].sort((x, y) => Number(y.id === selection?.answerId) - Number(x.id === selection?.answerId)).map(a => (
               <li key={a.id} className={`answer${selection?.answerId === a.id ? ' is-picked' : ''}`}>
                 <AnswerLabels answer={a} picked={selection?.answerId === a.id} correct={selection?.answerId === a.id ? selection.correct : null} />
+                {a.minorityPinned && <p className="minority-badge text-footnote">Different outcome · kept visible</p>}
                 <p className="text-body post-body">{a.body}</p>
                 <p className="text-footnote secondary question-meta">
                   <span><Link to={`/u/${encodeURIComponent(a.answerer.handle)}`}>@{a.answerer.handle}</Link></span>
+                  {/* Who they are as a source here (Bible §3.1: a few tokens, read at a glance). */}
+                  {a.author.medal && <span className={`medal medal-${a.author.medal}`}>{MEDAL_NAMES[a.author.medal]}</span>}
+                  {a.author.reputation > 0 && <span>Reputation {Math.round(a.author.reputation)}</span>}
+                  {a.author.accepted > 0 && <span>{a.author.accepted === 1 ? '1 pick' : `${String(a.author.accepted)} picks`} in {question.field.name}</span>}
                   <span><time dateTime={a.createdAt}>{timeAgo(a.createdAt, now)}</time></span>
                   {state.status === 'ready' && me !== a.answerer.handle && <span><ReportButton kind="answer" id={a.id} /></span>}
                 </p>

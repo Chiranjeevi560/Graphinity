@@ -7,7 +7,14 @@ import type { Events } from '../events.ts';
 import { cleanBody, cleanLine, prefixQuery, textProblem, type TextProblem } from '../text.ts';
 import { fail, pgCode, pgConstraint, signedIn } from './common.ts';
 import { blockedMessage, isBlocked } from './moderation.ts';
-import { MAX_CHANGES } from './points.ts';
+import { consensus, reportedAmount, type Amount, type Claim } from '../consensus.ts';
+import { answerRank, specificity, wilsonLowerBound } from '../reputation.ts';
+import { MAX_CHANGES, standing } from './points.ts';
+
+/** The Bible's consensus bar appears once this many answers report an amount (§7.2 Screen 4). */
+const CONSENSUS_MIN = 3;
+/** Trust for someone not yet judged by 3 askers: neither trusted nor distrusted. */
+const NEUTRAL_TRUST = 0.5;
 
 export const LIMITS = {
   title: { min: 15, max: 150 },
@@ -145,34 +152,93 @@ export function registerQuestionRoutes(app: FastifyInstance, { db, events }: { d
       if (viewer) await q.query('UPDATE app.routes SET seen_at = now() WHERE question_id = $1 AND profile_id = $2 AND seen_at IS NULL', [id, viewer]);
       const question = (await q.query<QuestionRow & { hidden: boolean }>(`${questionSelect('app.is_question_hidden(q.id) AS hidden,')} WHERE q.id = $1`, [id])).rows[0];
       if (!question) return null;
-      const answers = (await q.query<{ id: string; body: string; answerer: string; created_at: Date; helpful: boolean; hidden: boolean }>(
-        `SELECT a.id::text AS id, a.body, p.handle AS answerer, a.created_at, app.is_answer_hidden(a.id) AS hidden,
+      const answers = (await q.query<{ id: string; body: string; answerer: string; answerer_id: string; created_at: Date; helpful: boolean; hidden: boolean }>(
+        `SELECT a.id::text AS id, a.body, p.handle AS answerer, a.answerer_id, a.created_at, app.is_answer_hidden(a.id) AS hidden,
                 EXISTS (SELECT 1 FROM app.helpful_marks h WHERE h.answer_id = a.id) AS helpful
          FROM app.answers a JOIN app.profiles p ON p.id = a.answerer_id
          WHERE a.question_id = $1 ORDER BY a.created_at, a.id`, [id])).rows;
-      const selection = (await q.query<{ answer_id: string | null; changes: number; correct: boolean | null }>(
-        `SELECT s.answer_id::text AS answer_id, s.changes, v.correct
+      const selection = (await q.query<{ answer_id: string | null; changes: number; correct: boolean | null; stars: number | null }>(
+        `SELECT s.answer_id::text AS answer_id, s.changes, v.correct, r.stars
          FROM app.selections s LEFT JOIN app.verdicts v ON v.answer_id = s.answer_id
+         LEFT JOIN app.ratings r ON r.answer_id = s.answer_id
          WHERE s.question_id = $1`, [id])).rows[0] ?? null;
+      // Each author's standing in this question's field: public on their
+      // profile already; here it's who they are as a source on this question.
+      const credibility = new Map<string, { reputation: number; accepted: number; medal: string | null; trust: number }>();
+      for (const authorId of new Set(answers.map(a => a.answerer_id))) {
+        const s = await standing(q, authorId);
+        const inField = s.points.find(p => p.field.slug === question.field);
+        credibility.set(authorId, {
+          reputation: inField?.reputation ?? 0,
+          accepted: inField?.accepted ?? 0,
+          medal: inField?.medal ?? null,
+          trust: s.trust ? s.trust.correct / s.trust.askers : NEUTRAL_TRUST,
+        });
+      }
       // How far it went (the asker only, numbers only), and why it reached
       // this viewer (that person only): the database gives each to no one else.
       const routing = (await q.query<{ waves: number; asked: number | null; in_country: number | null }>(
         'SELECT waves, asked, in_country FROM app.routing_summary($1)', [id])).rows[0];
       const why = viewer ? (await q.query<{ same_country: boolean | null; field_points: number | null; trust_pct: number | null; answered_pct: number | null; newcomer: boolean | null }>(
         'SELECT same_country, field_points, trust_pct, answered_pct, newcomer FROM app.routes WHERE question_id = $1 AND profile_id = $2', [id, viewer])).rows[0] : undefined;
-      return { question, answers, selection, routing, why };
+      return { question, answers, selection, routing, why, credibility };
     });
     if (!found) return fail(reply, 404, 'not_found', 'This question doesn’t exist. It may have been deleted.');
+
+    // Bible §11.4: what the answers report, how far they agree, and the
+    // strongest answer of every smaller group pinned so it isn't buried.
+    // Hidden answers don't count.
+    const pickedId = found.selection?.answer_id ?? null;
+    const claimed = new Map<string, Amount>();
+    for (const a of found.answers) {
+      const amount = a.hidden ? null : reportedAmount(a.body);
+      if (amount) claimed.set(a.id, amount);
+    }
+    const cred = (authorId: string) => found.credibility.get(authorId) ?? { reputation: 0, accepted: 0, medal: null, trust: NEUTRAL_TRUST };
+    const claims: Claim[] = found.answers.flatMap(a => {
+      const amount = claimed.get(a.id);
+      return amount ? [{ answerId: a.id, amount, reputation: cred(a.answerer_id).reputation / 100, trust: cred(a.answerer_id).trust }] : [];
+    });
+    const agreement = claims.length >= CONSENSUS_MIN ? consensus(claims) : null;
+    const massOf = new Map(agreement?.clusters.flatMap(c => c.answerIds.map(id => [id, c.mass] as const)) ?? []);
+    const pinned = new Set(agreement?.minorityPinned ?? []);
+    // Bible §11.5: answers in order of Ω. The pick and helpful marks are the
+    // asker's votes (one evaluation each), so Wilson is of that one vote.
+    const ranked = found.answers.map(a => ({
+      a,
+      rank: answerRank({
+        best: a.id === pickedId,
+        wilson: wilsonLowerBound(a.helpful || a.id === pickedId ? 1 : 0, 1),
+        reputation: cred(a.answerer_id).reputation / 100,
+        clusterMass: massOf.get(a.id) ?? 0,
+        trust: cred(a.answerer_id).trust,
+        specificity: specificity(a.body),
+      }),
+    })).sort((x, y) => y.rank - x.rank || x.a.created_at.getTime() - y.a.created_at.getTime());
     return {
       // Hidden posts reach only their author and moderators; it says so for them.
       question: { ...summary(found.question), body: found.question.body, hidden: found.question.hidden },
-      answers: found.answers.map(a => ({ id: a.id, body: a.body, answerer: { handle: a.answerer }, createdAt: a.created_at.toISOString(), helpful: a.helpful, hidden: a.hidden })),
+      answers: ranked.map(({ a, rank }) => ({
+        id: a.id, body: a.body, answerer: { handle: a.answerer }, createdAt: a.created_at.toISOString(), helpful: a.helpful, hidden: a.hidden,
+        // Who they are as a source here: their standing in this field.
+        author: { reputation: cred(a.answerer_id).reputation, accepted: cred(a.answerer_id).accepted, medal: cred(a.answerer_id).medal },
+        claim: claimed.get(a.id) ?? null,
+        minorityPinned: pinned.has(a.id),
+        rank: Math.round(rank * 1000) / 1000,
+      })),
+      // Once 3 answers report an amount: the groups, largest first, and how
+      // far they agree (1 = all agree). Shares are trust-weighted, not headcounts.
+      consensus: agreement && {
+        confidence: Math.round(agreement.confidence * 100) / 100,
+        clusters: agreement.clusters.map(c => ({ currency: c.currency, lowMinor: c.lowMinor, highMinor: c.highMinor, share: Math.round(c.mass * 1000) / 1000, answers: c.answerIds.length })),
+      },
       // The answer the asker picked, how many changes they have left, and
       // whether they said it turned out right (null: not said yet).
       selection: found.selection && {
         answerId: found.selection.answer_id,
         changesLeft: MAX_CHANGES - found.selection.changes,
         correct: found.selection.correct,
+        stars: found.selection.stars,
       },
       // Only for the asker, once it went out: how many waves, how many people,
       // how many in the question's country. Under 5 is null ("a few"). Never who.

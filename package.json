@@ -54,12 +54,12 @@
     {
       "name": "styles (brotli)",
       "path": "apps/web/dist/assets/index-*.css",
-      "limit": "4.97 kB"
+      "limit": "5.22 kB"
     },
     {
       "name": "all scripts (brotli)",
       "path": "apps/web/dist/assets/*.js",
-      "limit": "92.99 kB"
+      "limit": "93.83 kB"
     }
   ]
 }

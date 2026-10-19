@@ -424,6 +424,11 @@ test('picking an answer moves points, and the profile shows them', async ({ page
   await first.getByRole('group', { name: 'Did it turn out right?' }).getByRole('button', { name: 'Yes' }).click();
   await expect(first.getByText('Helped the asker · turned out right')).toBeVisible();
   await expect(first.getByRole('group', { name: 'Did it turn out right?' }).getByRole('button', { name: 'Yes' })).toHaveAttribute('aria-pressed', 'true');
+  // One tap (or one key) rates it.
+  const stars = first.getByRole('radiogroup', { name: 'How good was it?' });
+  await stars.getByRole('radio', { name: '4 stars' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(stars.getByRole('radio', { name: '4 stars' })).toHaveAttribute('aria-checked', 'true');
   await second.getByRole('button', { name: 'Also useful' }).click();
   await expect(second.getByText('Useful to the asker')).toBeVisible();
   await audit(page, 'question (asker, picked)');
@@ -647,4 +652,39 @@ test('the home graph is alive, and holds still for people who turn motion off', 
   const still = await drawn();
   await page.waitForTimeout(800);
   expect((await drawn()).h).toBe(still.h);
+});
+
+test('answers that report amounts show how far they agree, and keep the odd one visible', async ({ page, browserName }) => {
+  const run = `${browserName}${String(Date.now() % 1_000_000)}`;
+  await signIn(page, 'Test person A');
+  await setUpIfNeeded(page, `asker.${run}`);
+  await establishTestPersonA();
+  await page.goto('/ask');
+  const title = `How much customs did you pay on a watch through Chennai, case ${run}?`;
+  await page.getByLabel('Your question').fill(title);
+  await page.getByLabel('Topic').selectOption('imports-customs');
+  await page.getByRole('button', { name: 'Post question' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
+  const questionUrl = new URL(page.url()).pathname;
+  await signOut(page);
+
+  const reports = ['Paid ₹95,000 in duty at Chennai air cargo.', 'The duty came to ₹96,000 for me at Chennai.', 'Paid ₹1,40,000 because my invoice didn’t match.'];
+  for (const [i, body] of reports.entries()) {
+    await signIn(page, 'A brand-new person');
+    await setUpIfNeeded(page, `amount${String(i)}.${run}`);
+    await page.goto(questionUrl);
+    await page.getByLabel('Your answer').fill(body);
+    await page.getByRole('button', { name: 'Post answer' }).click();
+    await expect(page.getByText(body)).toBeVisible();
+    await signOut(page);
+  }
+
+  await page.goto(questionUrl);
+  const summary = page.getByRole('region', { name: /agree|differ/ });
+  await expect(summary).toBeVisible();
+  await expect(summary).toContainText('₹95,000–₹96,000');
+  await expect(summary).toContainText('₹1,40,000');
+  const outlier = page.getByRole('listitem').filter({ hasText: 'Paid ₹1,40,000' });
+  await expect(outlier.getByText('Different outcome · kept visible')).toBeVisible();
+  await audit(page, 'question (answers agree in part)');
 });
