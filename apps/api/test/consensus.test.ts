@@ -28,7 +28,7 @@ describe('reading amounts the way people write them', () => {
   });
 });
 
-describe('agreement among answers (the Bible’s own example)', () => {
+describe('agreement among answers (the spec’s own example)', () => {
   // 7 near ₹95,000, 2 near ₹80,000, 1 at ₹1,40,000, everyone equally trusted.
   const claims: Claim[] = [
     ...[92_000, 93_500, 94_000, 95_000, 95_500, 96_000, 98_000].map((r, i) => ({ answerId: `maj${String(i)}`, amount: inr(r), reputation: 0.5, trust: 0.5 })),

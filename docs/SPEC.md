@@ -1,4 +1,4 @@
-# Graphinity: The Complete Design, Architecture, and Engineering Bible
+# Graphinity: The Complete Design, Architecture, and Engineering Specification
 
 ## 1\. Product Philosophy, Mission, and Behavioral Foundations
 

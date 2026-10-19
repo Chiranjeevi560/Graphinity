@@ -1,4 +1,4 @@
-// Agreement among answers, as docs/GRAPHINITY_BIBLE.md §11.4 defines it:
+// Agreement among answers, as docs/SPEC.md §11.4 defines it:
 // read the amount each answer reports, group amounts within 8% of each
 // other, weigh each group by its authors' standing (not headcount, which a
 // brigade can fake), measure agreement by entropy, and keep the strongest
@@ -34,7 +34,7 @@ export function amountsIn(text: string): Array<Amount & { at: number }> {
     if (!currency || !g.num) continue;
     const value = Number(g.num.replace(/,/g, '')) * (g.scale ? SCALE[g.scale.toLowerCase()] ?? 1 : 1);
     if (!Number.isFinite(value) || value <= 0) continue;
-    // Integer minor units (paise, cents), as Bible §22.3 #4 asks: no float drift.
+    // Integer minor units (paise, cents), as spec §22.3 #4 asks: no float drift.
     found.push({ minor: Math.round(value * 100), currency, at: m.index });
   }
   return found;
@@ -81,10 +81,10 @@ export interface Consensus {
   minorityPinned: string[];
 }
 
-/** Bible §11.4: amounts within 8% of their neighbour belong together. */
+/** Spec §11.4: amounts within 8% of their neighbour belong together. */
 export const EPSILON_REL = 0.08;
 
-/** Bible §11.4: a claim weighs (0.5 + 0.5·reputation) × trust. */
+/** Spec §11.4: a claim weighs (0.5 + 0.5·reputation) × trust. */
 export function claimWeight(c: Pick<Claim, 'reputation' | 'trust'>): number {
   return (0.5 + 0.5 * clamp01(c.reputation)) * clamp01(c.trust);
 }
@@ -120,7 +120,7 @@ export function consensus(claims: readonly Claim[]): Consensus {
   }
   groups.sort((a, b) => b.mass - a.mass || b.answerIds.length - a.answerIds.length || a.lowMinor - b.lowMinor);
 
-  // Bible §11.4: H = −Σ M ln M / ln(max(groups, 2)); confidence = 1 − H.
+  // Spec §11.4: H = −Σ M ln M / ln(max(groups, 2)); confidence = 1 − H.
   const entropy = -groups.reduce((sum, g) => sum + (g.mass > 0 ? g.mass * Math.log(g.mass) : 0), 0) / Math.log(Math.max(groups.length, 2));
   const confidence = groups.length === 0 ? 0 : clamp01(1 - entropy);
 

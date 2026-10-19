@@ -1,34 +1,34 @@
-# ADR 0001: Adopting the Engineering Bible into the existing app
+# ADR 0001: Adopting the Engineering Spec into the existing app
 
 Date: 2026-10-19. Status: accepted by the owner.
 
 ## Context
 
-The owner supplied `docs/GRAPHINITY_BIBLE.md` (the specification) and `docs/BUILD_PLAYBOOK.md` (ten
+The owner supplied `docs/SPEC.md` (the specification) and `docs/BUILD_PLAYBOOK.md` (ten
 prompts written for an empty folder). Graphinity already exists: npm workspaces, Node 24, Fastify 5,
 Supabase Postgres with forced row-level security, tested and pushed.
 
 ## Decisions (the owner's)
 
-1. **Evolve, don't rewrite.** The Bible decides *what* Graphinity does; the existing, tested stack
+1. **Evolve, don't rewrite.** The spec decides *what* Graphinity does; the existing, tested stack
    decides *how*. No pnpm, Docker, Redis/BullMQ, Kysely, Drizzle or Node 22 migration.
 2. **Embeddings: Cloudflare Workers AI's free allowance**, once Cloudflare's own pages confirm it
    refuses rather than bills past the limit. Not OpenAI (paid).
 3. **Sign-in stays as built** (access token in memory, refresh token in this tab's storage) until a
-   custom domain exists; then `__Host-` HttpOnly cookies per Bible §16.1. Cookies can't work while
+   custom domain exists; then `__Host-` HttpOnly cookies per spec §16.1. Cookies can't work while
    the site (`pages.dev`) and API (`onrender.com`) are different sites.
-4. **Routing pace from the Bible:** at most 3 questions a day per person; waves of 5, 5 and 5 at 0, 20
+4. **Routing pace from the spec:** at most 3 questions a day per person; waves of 5, 5 and 5 at 0, 20
    and 60 minutes.
 
-## What each part of the Bible becomes
+## What each part of the spec becomes
 
 Status: ✅ built and tested · ◐ in progress · ○ planned · ⤳ bent (reason given)
 
-| Bible | Here | Status |
+| Spec | Here | Status |
 |---|---|---|
 | §1.3 Anti-goals (no feed, no follows, no global score, no threads, no ad-tech) | Already true; kept as hard rules in CLAUDE.md | ✅ |
 | §3.1 Hick/Fitts/Miller | 44px targets enforced by the browser audit; answer header ≤ 6 tokens when the consensus screen lands | ✅ / ○ |
-| §4.1 "Living Nexus" logo geometry | Redraw the mark from the golden-ratio spec | ○ |
+| §4.1 "Living Nexus" logo geometry | ⤳ The owner kept the current mark (three connected people); it keeps its own indigo (`--brand`) while the interface uses the spec's blue | ⤳ |
 | §5 Typography tokens, tracking formula | Tokens from §5.1 with the formula; fonts: system stack first (see bends) | ○ |
 | §6 OKLCH colour tokens, elevation, focus ring | Replace `tokens.css` values with §6.1; the contrast test re-checks every pair | ○ |
 | §7.1 Two layers (graph behind, sheets above) | Home graph built (docs/GRAPH.md); full-screen Layer 0 to follow | ◐ |
@@ -42,7 +42,7 @@ Status: ✅ built and tested · ◐ in progress · ○ planned · ⤳ bent (reas
 | §11.1 Semantic dedup (≥ 0.88 intercept, 0.72 related) | Built: Workers AI `bge-base-en-v1.5` (768, cls) into pgvector `halfvec` with HNSW (m 24, ef 200), RRF with words, thresholds as written. Bent: no cross-encoder rerank yet (another model call per keystroke pause on the free allowance); the thresholds need checking against real Cloudflare vectors once the owner adds the token | ◐ |
 | §11.2 Staged waves 5-5-5 at 0/20/60 min, 3 a day | Built and tested (wave 3's "consensus below 0.70" is "fewer than 3 answers" until consensus is stored) | ✅ |
 | §11.2 11-factor routing + greedy diversity + UCB1 + load dampener | A 5-factor learning score is live (docs/GRAPH.md); replace with the 11 factors, each fed by real data as it exists | ◐ |
-| §11.3 TrueSkill per field, medals | Built: replayed per field from every judgement on the server, Bible tiers replace the old points medals; the opponent gap (8) was calibrated so every bar is reachable (see reputation.ts); next: shown on profiles and answers | ◐ |
+| §11.3 TrueSkill per field, medals | Built: replayed per field from every judgement on the server, spec tiers replace the old points medals; the opponent gap (8) was calibrated so every bar is reachable (see reputation.ts); next: shown on profiles and answers | ◐ |
 | §7.2 Screen 4 five-star rating | Built: `PUT /answers/:id/rating` (database-enforced asker-only) and the stars on the picked answer | ✅ |
 | §11.4 Consensus (1D DBSCAN, entropy, minority pinning) | Built: computed on each question page from visible answers (deterministic amount reading); routing's wave 3 still uses "3 answers" until it is stored | ✅ |
 | §11.5 Answer rank Ω with Wilson | Built: answers are ordered by Ω; the asker's pick and helpful mark are the only votes, so Wilson is of one vote | ✅ |
@@ -64,8 +64,8 @@ Status: ✅ built and tested · ◐ in progress · ○ planned · ⤳ bent (reas
 
 ## Bends, in one place
 
-- **Fonts**: the Bible lists Inter first. On Apple devices the system font *is* SF Pro, which the
-  Bible names as the model; Inter would replace it there and add a download. Kept the system stack
+- **Fonts**: the spec lists Inter first. On Apple devices the system font *is* SF Pro, which the
+  spec names as the model; Inter would replace it there and add a download. Kept the system stack
   first, Inter not loaded. Revisit if the owner wants one face on every platform.
 - **GPU graph**: see §8.3 row. Canvas 2D at 30 fps, paused when hidden, still for reduced motion.
 - **Keys and folders**: see §13–§15 rows.

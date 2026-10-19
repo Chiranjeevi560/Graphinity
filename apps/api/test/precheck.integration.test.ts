@@ -1,4 +1,4 @@
-// "Has this been asked already?" on a real database with pgvector (Bible §11.1).
+// "Has this been asked already?" on a real database with pgvector (spec §11.1).
 import { beforeAll, describe, expect, it } from 'vitest';
 import { embedMissing } from '../src/backfill.ts';
 import { localEmbedder, type Embedder } from '../src/embeddings.ts';

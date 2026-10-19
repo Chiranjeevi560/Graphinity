@@ -1028,7 +1028,7 @@ CREATE TRIGGER verdicts_stamp BEFORE INSERT OR UPDATE ON app.verdicts
 -- Routing: who a question was put to, in waves. Who was asked is private:
 -- each person sees only their own routes. Only the server's routing job
 -- (app.is_system(), set by its own transactions, never by a request) may
--- create them. A person gets at most 3 a day (docs/GRAPHINITY_BIBLE.md
+-- create them. A person gets at most 3 a day (docs/SPEC.md
 -- §3.2: expert attention is scarce), and never their own question.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION app.is_system() RETURNS boolean
@@ -1485,7 +1485,7 @@ REVOKE ALL ON FUNCTION app.routing_summary(bigint) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app.routing_summary(bigint) TO app_api;
 
 -- ---------------------------------------------------------------------------
--- The asker's 1-5 star rating of the answer they picked (docs/GRAPHINITY_BIBLE.md
+-- The asker's 1-5 star rating of the answer they picked (docs/SPEC.md
 -- §7.2 Screen 4, §10.2): one tap after picking. It feeds the author's
 -- reputation in the field: a pick rated 2 stars or less counts against the
 -- answer instead of for it. Like verdicts: one per answer, only the asker,
@@ -1523,7 +1523,7 @@ CREATE TRIGGER ratings_stamp BEFORE INSERT OR UPDATE ON app.ratings
   FOR EACH ROW EXECUTE FUNCTION app.stamp_verdict();
 
 -- ---------------------------------------------------------------------------
--- Meaning, not just words (docs/GRAPHINITY_BIBLE.md §11.1, §12.1): each
+-- Meaning, not just words (docs/SPEC.md §11.1, §12.1): each
 -- question's embedding, so a question asked in other words is still found.
 -- Needs pgvector in the schema "extensions", turned on by an administrator:
 -- on Supabase, Database → Extensions → vector (it isn't a "trusted"
@@ -1570,7 +1570,7 @@ REVOKE ALL ON FUNCTION app.nearest_questions(text, text, text, integer) FROM PUB
 GRANT EXECUTE ON FUNCTION app.nearest_questions(text, text, text, integer) TO app_api;
 
 -- ---------------------------------------------------------------------------
--- Answers are reports, not leads for middlemen (docs/GRAPHINITY_BIBLE.md
+-- Answers are reports, not leads for middlemen (docs/SPEC.md
 -- §21.2): no phone numbers, email addresses or invitations to message
 -- elsewhere. The API refuses them first (src/solicitation.ts); this repeats
 -- it with the same patterns. NOT VALID: checked on every new or changed

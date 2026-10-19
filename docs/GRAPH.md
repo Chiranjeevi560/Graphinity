@@ -27,7 +27,7 @@ Reduced motion: the same graph, still. A text summary is always there for screen
 ## Routing that learns
 
 A question goes only to people who list its field, in waves of 5, 5 and 5 at 0, 20 and 60 minutes
-(Bible §11.2: wave 2 only if fewer than 3 have opened it or answered, wave 3 only while it has fewer
+(spec §11.2: wave 2 only if fewer than 3 have opened it or answered, wave 3 only while it has fewer
 than 3 answers), at most 3 a day per person, with one place in each wave kept for a newcomer. Within the field, each person gets a score:
 
 | Part | Weight | Learns from |

@@ -165,7 +165,7 @@ describe('rating the picked answer', () => {
 });
 
 describe('standing on a profile', () => {
-  it('shows the Bible’s reputation per field, and Verified after 3 accepted answers that held up', async () => {
+  it('shows the spec’s reputation per field, and Verified after 3 accepted answers that held up', async () => {
     const author = await member();
     const accepted = async (n: number) => {
       for (let i = 0; i < n; i++) {

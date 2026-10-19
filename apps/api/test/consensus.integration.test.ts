@@ -1,4 +1,4 @@
-// Agreement among real answers on a question page (Bible §11.4, §11.5).
+// Agreement among real answers on a question page (spec §11.4, §11.5).
 import { beforeAll, describe, expect, it } from 'vitest';
 import { startApp, type TestApp } from './helpers/app.ts';
 import { must } from './helpers/must.ts';
@@ -78,7 +78,7 @@ describe('agreement among the answers', () => {
   });
 });
 
-describe('the order of answers (Bible §11.5)', () => {
+describe('the order of answers (spec §11.5)', () => {
   it('puts the picked answer first, then concrete answers in the agreeing group', async () => {
     const { asker, q, ids, page } = await questionWith([
       'Just be careful and it should be fine for you.',

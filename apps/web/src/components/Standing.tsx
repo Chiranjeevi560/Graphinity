@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../session.tsx';
 
 export interface StandingData {
-  /** Per field (Bible §11.3): reputation 0-100, picks that stand, Wilson of helped/answered. */
+  /** Per field (spec §11.3): reputation 0-100, picks that stand, Wilson of helped/answered. */
   points: Array<{ field: { slug: string; name: string }; points: number; medal: 'gold' | 'silver' | 'bronze' | 'verified' | null; reputation: number; accepted: number; wilson: number }>;
   trust: { correct: number; askers: number } | null;
 }

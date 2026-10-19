@@ -1,5 +1,5 @@
 // Putting a question to the people most likely to have done it, in staged
-// waves (docs/GRAPHINITY_BIBLE.md §11.2): 5 people at once; 5 more at 20
+// waves (docs/SPEC.md §11.2): 5 people at once; 5 more at 20
 // minutes if fewer than 3 of them have opened it or answered; 5 more at 60
 // minutes while there's no consensus yet (fewer than 3 answers: consensus
 // needs at least 3). Experts' attention is scarce: at most 3 a day each.

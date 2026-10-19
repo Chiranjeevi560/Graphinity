@@ -123,7 +123,7 @@ describe('the sitemap list', () => {
     const { questions } = res.json<{ questions: Array<{ id: string; title: string; createdAt: string; lastAnsweredAt: string }> }>();
     expect(questions[0]).toMatchObject({ id: answered, title: 'Which bus goes from the airport to the old town?' });
     expect(Date.parse(must(questions[0]).lastAnsweredAt)).toBeGreaterThanOrEqual(Date.parse(must(questions[0]).createdAt));
-    // Bible §19.2: nothing thin goes to search engines.
+    // Spec §19.2: nothing thin goes to search engines.
     expect(questions.map(q => q.id)).not.toContain(unanswered);
     expect(res.body).not.toMatch(UUID);
   });
@@ -192,7 +192,7 @@ describe('answering', () => {
   });
 });
 
-describe('contact details in answers (Bible §21.2)', () => {
+describe('contact details in answers (spec §21.2)', () => {
   it('are refused with a plain reason, while real reports with numbers go through', async () => {
     const asker = await member(), helper = await member();
     const id = await ask(asker.token);

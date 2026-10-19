@@ -23,7 +23,7 @@ export interface QuestionPage { question: Question; answers: PageAnswer[]; selec
 const SUGGESTED_MAX = 5;
 
 /**
- * Schema.org QAPage (docs/GRAPHINITY_BIBLE.md §19.1): the question, the
+ * Schema.org QAPage (docs/SPEC.md §19.1): the question, the
  * answer the asker picked as acceptedAnswer, the others as suggestedAnswer,
  * each linked to its place on the page. Only for a question with an answer.
  * "<" is written as \u003c, so no answer text can end the script element.
@@ -70,7 +70,7 @@ function shorten(text: string, max = 160): string {
 /**
  * The page's head with this question's title, description and address, and
  * for an answered question its QAPage data; an unanswered one is kept out
- * of search results until it has an answer (Bible §19.2). Everything
+ * of search results until it has an answer (spec §19.2). Everything
  * inserted is escaped.
  */
 export function questionHead(html: string, page: QuestionPage, siteOrigin: string): string {

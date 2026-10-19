@@ -21,7 +21,7 @@ const idSchema = { type: 'string', pattern: '^[1-9][0-9]{0,15}$' };
 const idParams = { type: 'object', properties: { id: idSchema }, required: ['id'] };
 
 /**
- * A person's standing, field by field, as docs/GRAPHINITY_BIBLE.md §11.3
+ * A person's standing, field by field, as docs/SPEC.md §11.3
  * defines it, plus points and trust: what anyone may see.
  *
  * Reputation is TrueSkill replayed from every judgement on their answers in
@@ -83,7 +83,7 @@ export async function standing(q: Queryable, profileId: string) {
       field: { slug: p.slug, name: p.name },
       points: p.points,
       medal: medalFor({ accepted: p.accepted, reputation, wilson, topPercent }),
-      // Bible §11.3: 0 to 100, one decimal; how many picks; Wilson of helped/answered.
+      // Spec §11.3: 0 to 100, one decimal; how many picks; Wilson of helped/answered.
       reputation: Math.round(reputation * 10) / 10,
       accepted: p.accepted,
       wilson: Math.round(wilson * 100) / 100,
@@ -226,7 +226,7 @@ export function registerPointRoutes(app: FastifyInstance, { db }: { db: Database
     return { verdict: { correct } };
   });
 
-  // Bible §7.2 Screen 4: one tap after picking, how good the answer was.
+  // Spec §7.2 Screen 4: one tap after picking, how good the answer was.
   app.put('/answers/:id/rating', {
     config: { auth: 'required', write: true },
     schema: {

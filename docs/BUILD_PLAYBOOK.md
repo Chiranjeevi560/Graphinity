@@ -12,9 +12,9 @@ cd graphinity
 
 git init
 
-\# 2\. Save Graphinity\_Engineering\_Bible.md into docs/GRAPHINITY\_BIBLE.md
+\# 2\. Save Graphinity\_Engineering\_Spec.md into docs/SPEC.md
 
-\# (Download from Google Drive and place at ./docs/GRAPHINITY\_BIBLE.md)
+\# (Download from Google Drive and place at ./docs/SPEC.md)
 
 \# 3\. Create the root CLAUDE.md constitution file (copy Section 2 below into ./CLAUDE.md)
 
@@ -28,9 +28,9 @@ Copy the following block verbatim into `./CLAUDE.md` at the root of your reposit
 
 \#\# 1\. Primary Source of Truth
 
-The complete architecture, mathematics, design system, and database specification for \*\*Graphinity\*\* (\*"Ask once. Reach people who've actually done it."\*) lives in \`docs/GRAPHINITY\_BIBLE.md\`.
+The complete architecture, mathematics, design system, and database specification for \*\*Graphinity\*\* (\*"Ask once. Reach people who've actually done it."\*) lives in \`docs/SPEC.md\`.
 
-Before planning or writing code for any feature, ALWAYS read the referenced sections of \`docs/GRAPHINITY\_BIBLE.md\` first.
+Before planning or writing code for any feature, ALWAYS read the referenced sections of \`docs/SPEC.md\` first.
 
 \#\# 2\. Product Anti-Goals (Strictly Forbidden)
 
@@ -66,7 +66,7 @@ Before planning or writing code for any feature, ALWAYS read the referenced sect
 
    \- Stack: \[React 19\](https\://react.dev/reference/react) \+ \[Vite\](https\://vite.dev/guide/) \+ TypeScript following Feature-Sliced Design (\`app\`, \`pages\`, \`widgets\`, \`features\`, \`entities\`, \`shared\`).
 
-   \- Color System: Exclusively use the OKLCH CSS custom properties from Section 6.1 of \`docs/GRAPHINITY\_BIBLE.md\` meeting \[WCAG 2.2\](https\://www\.w3.org/TR/WCAG22/) AA/AAA contrast. Never hardcode raw \`\#hex\` or \`rgb()\` values in components.
+   \- Color System: Exclusively use the OKLCH CSS custom properties from Section 6.1 of \`docs/SPEC.md\` meeting \[WCAG 2.2\](https\://www\.w3.org/TR/WCAG22/) AA/AAA contrast. Never hardcode raw \`\#hex\` or \`rgb()\` values in components.
 
    \- Motion Physics: All interactive transitions must use the damped harmonic spring solver (\`m \* x'' \+ c \* x' \+ k \* x \= 0\`) from Section 8.1 and respect \`prefers-reduced-motion: reduce\`.
 
@@ -90,7 +90,7 @@ Run these prompts **one by one in sequential order**. Wait until Claude runs the
 
 **Estimated AI Execution Time**: \~15 minutes
 
-Read Sections 13.1, 14.1, and 15.1 of \`docs/GRAPHINITY\_BIBLE.md\`.
+Read Sections 13.1, 14.1, and 15.1 of \`docs/SPEC.md\`.
 
 Task:
 
@@ -118,7 +118,7 @@ Task:
 
 **Estimated AI Execution Time**: \~20 minutes
 
-Read Sections 15.2, 15.3, 15.4, and 22.3 (Items 2, 3, 4, 5, 6, 14\) of \`docs/GRAPHINITY\_BIBLE.md\`.
+Read Sections 15.2, 15.3, 15.4, and 22.3 (Items 2, 3, 4, 5, 6, 14\) of \`docs/SPEC.md\`.
 
 Task:
 
@@ -148,7 +148,7 @@ Task:
 
 **Estimated AI Execution Time**: \~25 minutes
 
-Read Sections 7.2 (Screen 1), 14.1, and 16.1 of \`docs/GRAPHINITY\_BIBLE.md\`.
+Read Sections 7.2 (Screen 1), 14.1, and 16.1 of \`docs/SPEC.md\`.
 
 Task:
 
@@ -170,7 +170,7 @@ Task:
 
 **Estimated AI Execution Time**: \~25 minutes
 
-Read Sections 7.2 (Screen 2), 11.1, and 12.1 of \`docs/GRAPHINITY\_BIBLE.md\`.
+Read Sections 7.2 (Screen 2), 11.1, and 12.1 of \`docs/SPEC.md\`.
 
 Task:
 
@@ -192,7 +192,7 @@ Task:
 
 **Estimated AI Execution Time**: \~30 minutes
 
-Read Sections 10.2, 11.2, and 14.3 of \`docs/GRAPHINITY\_BIBLE.md\`.
+Read Sections 10.2, 11.2, and 14.3 of \`docs/SPEC.md\`.
 
 Task:
 
@@ -216,7 +216,7 @@ Task:
 
 **Estimated AI Execution Time**: \~30 minutes
 
-Read Sections 10.2, 11.3, 11.4, 11.5, and 21.2 of \`docs/GRAPHINITY\_BIBLE.md\`.
+Read Sections 10.2, 11.3, 11.4, 11.5, and 21.2 of \`docs/SPEC.md\`.
 
 Task:
 
@@ -248,7 +248,7 @@ Task:
 
 **Estimated AI Execution Time**: \~30 minutes
 
-Read Sections 3, 4, 5, 6, 7, and 8.1 of \`docs/GRAPHINITY\_BIBLE.md\`.
+Read Sections 3, 4, 5, 6, 7, and 8.1 of \`docs/SPEC.md\`.
 
 Task:
 
@@ -280,7 +280,7 @@ Task:
 
 **Estimated AI Execution Time**: \~35 minutes
 
-Read Sections 7.1, 7.2 (Screen 3), 8.3, 18, and 20.1 of \`docs/GRAPHINITY\_BIBLE.md\`.
+Read Sections 7.1, 7.2 (Screen 3), 8.3, 18, and 20.1 of \`docs/SPEC.md\`.
 
 Task:
 
@@ -308,7 +308,7 @@ Task:
 
 **Estimated AI Execution Time**: \~25 minutes
 
-Read Sections 16.1, 19.1, 19.2, 21.1, and 22.3 of \`docs/GRAPHINITY\_BIBLE.md\`.
+Read Sections 16.1, 19.1, 19.2, 21.1, and 22.3 of \`docs/SPEC.md\`.
 
 Task:
 
@@ -332,7 +332,7 @@ Task:
 
 **Estimated AI Execution Time**: \~20 minutes
 
-Read Sections 17.1, 17.2, 18, and 21.1 of \`docs/GRAPHINITY\_BIBLE.md\`.
+Read Sections 17.1, 17.2, 18, and 21.1 of \`docs/SPEC.md\`.
 
 Task:
 

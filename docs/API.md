@@ -27,7 +27,7 @@ Base URL: `http://localhost:3000` locally; the Render URL in production.
 | 403 | `no_profile` | Asking or answering before setting up a profile |
 | 404 | `not_found` / `no_profile` | Nothing there / set up your profile first |
 | 409 | `handle_taken` / `profile_exists` / `handle_change_too_soon` | The last one includes `availableAt` (ISO time) |
-| 400 | `contact_details` | An answer holding a phone number, email address or invitation to message elsewhere (Bible §21.2). Amounts, codes and dates are fine |
+| 400 | `contact_details` | An answer holding a phone number, email address or invitation to message elsewhere (spec §21.2). Amounts, codes and dates are fine |
 | 409 | `already_answered` / `own_question` | One answer per person per question; never on your own |
 | 400 / 403 / 409 | `not_an_answer` / `reason_required` / `not_your_question` / `no_changes_left` / `not_picked` | Picking, marking, verdicts and ratings (see below) |
 | 413 | `too_large` | Body over the limit (4 KB; 48 KB when asking or answering while signed in) |
@@ -124,13 +124,13 @@ following page; `next` is `null` on the last page.
 ### `GET /sitemap/questions`
 
 `{ questions: [{ id, title, createdAt, lastAnsweredAt }] }`: questions with at least one answer a visitor
-can see, newest first, up to 5000, for the website host's sitemap (docs/GRAPHINITY_BIBLE.md §19.2: no
+can see, newest first, up to 5000, for the website host's sitemap (docs/SPEC.md §19.2: no
 unanswered pages go to search engines). Cached for an hour.
 
 ### `POST /questions/precheck`
 
 `{ title, details?, field? }` → `{ verdict, questions: [{ id, title, answerCount, similarity }] }`, used
-while someone writes a question (docs/GRAPHINITY_BIBLE.md §11.1, §12.1). Questions are ranked by meaning
+while someone writes a question (docs/SPEC.md §11.1, §12.1). Questions are ranked by meaning
 (embeddings, cosine) and by words (full text), fused by Reciprocal Rank Fusion (k 60, weights 0.65 and
 0.35), within `field` when given; up to 5. `verdict`: `duplicate` when one is at least 0.88 similar in
 meaning and has an answer from the last 180 days; `related` from 0.72 (or any word match when meaning is
@@ -147,7 +147,7 @@ letters or digits returns an empty list.
 ### `GET /questions/:id`
 
 `{ question: summary + { body }, answers: [{ id, body, answerer: { handle }, createdAt, helpful, author, claim,
-minorityPinned, rank }], selection, consensus }`, answers in order of the Bible's rank Ω (§11.5: 0.30 picked,
+minorityPinned, rank }], selection, consensus }`, answers in order of the spec's rank Ω (§11.5: 0.30 picked,
 0.22 Wilson of the asker's vote, 0.18 author's reputation, 0.12 their group's share, 0.10 trust, 0.08
 specificity). `author` is `{ reputation, accepted, medal }` in this question's field. `claim` is the
 amount the answer reports (`{ minor, currency }`, minor units) or `null`. `consensus` is `null` until 3
@@ -214,7 +214,7 @@ author's reputation instead of for it.
 }
 ```
 
-Per field, as docs/GRAPHINITY_BIBLE.md §11.3 defines it: `reputation` (0 to 100) is TrueSkill's cautious
+Per field, as docs/SPEC.md §11.3 defines it: `reputation` (0 to 100) is TrueSkill's cautious
 μ − 3σ × 2, replayed from every judgement on the person's answers in that field (a standing pick or
 helpful mark is a win unless the pick was rated 2 stars or less; "turned out right" a win, "wrong" a
 loss); `accepted` counts picks that still stand; `wilson` is the Wilson lower bound of answers picked or
@@ -229,7 +229,7 @@ still work, but no points move for them.
 ## Routing and the inbox
 
 New questions are put to people in staged waves by a job inside the server (every minute, and
-straight after each new question), as docs/GRAPHINITY_BIBLE.md §11.2 sets out: 5 people at once; 5
+straight after each new question), as docs/SPEC.md §11.2 sets out: 5 people at once; 5
 more 20 minutes after asking if fewer than 3 of them have opened it or answered; 5 more at 60 minutes
 while it has fewer than 3 answers (the least a consensus needs). People are chosen from those who
 know the question's field, by a score (docs/GRAPH.md): 35% points in that field, 20% same country,

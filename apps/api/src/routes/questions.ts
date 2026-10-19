@@ -14,7 +14,7 @@ import { contactDetails, solicitationMessage } from '../solicitation.ts';
 import { answerRank, specificity, wilsonLowerBound } from '../reputation.ts';
 import { MAX_CHANGES, standing } from './points.ts';
 
-/** The Bible's consensus bar appears once this many answers report an amount (§7.2 Screen 4). */
+/** The spec's consensus bar appears once this many answers report an amount (§7.2 Screen 4). */
 const CONSENSUS_MIN = 3;
 /** Trust for someone not yet judged by 3 askers: neither trusted nor distrusted. */
 const NEUTRAL_TRUST = 0.5;
@@ -107,7 +107,7 @@ export function questionText(title: string, details: string): string {
   return details ? `${title}\n${details.slice(0, 500)}` : title;
 }
 
-/** Candidates from each ranking before fusing (Bible §12.1 reranks the top 25). */
+/** Candidates from each ranking before fusing (spec §12.1 reranks the top 25). */
 const PRECHECK_POOL = 25;
 
 export function registerQuestionRoutes(app: FastifyInstance, { db, events, embedder }: { db: Database; events: Events; embedder: Embedder | null }) {
@@ -135,7 +135,7 @@ export function registerQuestionRoutes(app: FastifyInstance, { db, events, embed
   });
 
   // For the sitemap (built by the website's host): the newest questions anyone may see.
-  // Bible §19.2: only questions with an answer anyone can see go to search
+  // Spec §19.2: only questions with an answer anyone can see go to search
   // engines (no thin, unanswered pages), dated by their latest answer.
   app.get('/sitemap/questions', async (_req, reply) => {
     const rows = await db.withUser(null, async q => (await q.query<{ id: string; title: string; created_at: Date; last_answered_at: Date }>(
@@ -148,7 +148,7 @@ export function registerQuestionRoutes(app: FastifyInstance, { db, events, embed
     return { questions: rows.map(r => ({ id: r.id, title: r.title, createdAt: r.created_at.toISOString(), lastAnsweredAt: r.last_answered_at.toISOString() })) };
   });
 
-  // Bible §11.1 and Screen 2: while someone writes a question, has it been
+  // Spec §11.1 and Screen 2: while someone writes a question, has it been
   // asked already? Meaning and words, fused; "duplicate" offers the existing
   // answers first (they can still ask), "related" shows them alongside.
   app.post('/questions/precheck', {
@@ -262,7 +262,7 @@ export function registerQuestionRoutes(app: FastifyInstance, { db, events, embed
     });
     if (!found) return fail(reply, 404, 'not_found', 'This question doesn’t exist. It may have been deleted.');
 
-    // Bible §11.4: what the answers report, how far they agree, and the
+    // Spec §11.4: what the answers report, how far they agree, and the
     // strongest answer of every smaller group pinned so it isn't buried.
     // Hidden answers don't count.
     const pickedId = found.selection?.answer_id ?? null;
@@ -279,7 +279,7 @@ export function registerQuestionRoutes(app: FastifyInstance, { db, events, embed
     const agreement = claims.length >= CONSENSUS_MIN ? consensus(claims) : null;
     const massOf = new Map(agreement?.clusters.flatMap(c => c.answerIds.map(id => [id, c.mass] as const)) ?? []);
     const pinned = new Set(agreement?.minorityPinned ?? []);
-    // Bible §11.5: answers in order of Ω. The pick and helpful marks are the
+    // Spec §11.5: answers in order of Ω. The pick and helpful marks are the
     // asker's votes (one evaluation each), so Wilson is of that one vote.
     const ranked = found.answers.map(a => ({
       a,
@@ -415,7 +415,7 @@ export function registerQuestionRoutes(app: FastifyInstance, { db, events, embed
     const text = cleanBody((req.body as { body: string }).body);
     const problem = textProblem(text, LIMITS.answer.min, LIMITS.answer.max);
     if (problem) return refuseText(reply, 'answer', problem);
-    // Bible §21.2: reports, not leads for middlemen.
+    // Spec §21.2: reports, not leads for middlemen.
     if (contactDetails(text)) return fail(reply, 400, 'contact_details', solicitationMessage);
     let outcome: { kind: 'missing' } | { kind: 'own' } | { kind: 'blocked' } | { kind: 'ok'; id: string; askerId: string };
     try {

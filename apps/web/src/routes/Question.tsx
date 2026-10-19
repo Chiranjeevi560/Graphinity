@@ -24,7 +24,7 @@ interface Page {
   question: QuestionSummary & { body: string; hidden: boolean };
   answers: Array<Answer & { hidden: boolean }>;
   selection: Selection | null;
-  /** Once 3 answers report an amount (Bible §11.4). */
+  /** Once 3 answers report an amount (spec §11.4). */
   consensus: Consensus | null;
   /** The asker only, once it went out. */
   routing?: { waves: number; asked: number | null; inCountry: number | null };
@@ -64,7 +64,7 @@ function routingCaption(page: Page, now: number): string {
 function present(page: Page) {
   const path = questionPath(page.question);
   if (location.pathname !== path) history.replaceState(history.state, '', path);
-  // Bible §19.2: only once someone has answered does it belong in search results.
+  // Spec §19.2: only once someone has answered does it belong in search results.
   applyMeta({ title: `${page.question.title} – Graphinity`, index: page.answers.some(a => !a.hidden) }, path, import.meta.env.VITE_SITE_ORIGIN);
 }
 
@@ -148,7 +148,7 @@ export default function Question({ id }: { id: string }) {
         {page.consensus && <ConsensusBar consensus={page.consensus} />}
         {answers.length > 0 && (
           <ol className="answer-list">
-            {/* The answer that helped comes first; the rest in the server's order (Bible §11.5). */}
+            {/* The answer that helped comes first; the rest in the server's order (spec §11.5). */}
             {[...answers].sort((x, y) => Number(y.id === selection?.answerId) - Number(x.id === selection?.answerId)).map(a => (
               <li key={a.id} id={`answer-${a.id}`} className={`answer${selection?.answerId === a.id ? ' is-picked' : ''}`}>
                 <AnswerLabels answer={a} picked={selection?.answerId === a.id} correct={selection?.answerId === a.id ? selection.correct : null} />
@@ -156,7 +156,7 @@ export default function Question({ id }: { id: string }) {
                 <p className="text-body post-body">{a.body}</p>
                 <p className="text-footnote secondary question-meta">
                   <span><Link to={`/u/${encodeURIComponent(a.answerer.handle)}`}>@{a.answerer.handle}</Link></span>
-                  {/* Who they are as a source here (Bible §3.1: a few tokens, read at a glance). */}
+                  {/* Who they are as a source here (spec §3.1: a few tokens, read at a glance). */}
                   {a.author.medal && <span className={`medal medal-${a.author.medal}`}>{MEDAL_NAMES[a.author.medal]}</span>}
                   {a.author.reputation > 0 && <span>Reputation {Math.round(a.author.reputation)}</span>}
                   {a.author.accepted > 0 && <span>{a.author.accepted === 1 ? '1 pick' : `${String(a.author.accepted)} picks`} in {question.field.name}</span>}

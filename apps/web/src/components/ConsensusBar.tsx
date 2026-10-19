@@ -1,7 +1,7 @@
 import { agreementWords, formatRange, type Consensus } from '../lib/questions.ts';
 
 /**
- * What the answers report, at a glance (Bible §7.2 Screen 4, §11.4): one
+ * What the answers report, at a glance (spec §7.2 Screen 4, §11.4): one
  * bar split by how much weight each group of amounts carries, the largest
  * first, and the same in words below. Smaller groups stay visible: an edge
  * case is information, not noise. Shares are weighted by each author's

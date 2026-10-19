@@ -1,5 +1,5 @@
 // What the asker can do with each answer: pick it, mark it helpful, rate
-// the pick 1 to 5 stars (Bible §7.2 Screen 4), and later say whether it
+// the pick 1 to 5 stars (spec §7.2 Screen 4), and later say whether it
 // turned out right. Everyone sees the labels.
 import { useId, useState } from 'react';
 import { ApiError } from '../lib/api.ts';

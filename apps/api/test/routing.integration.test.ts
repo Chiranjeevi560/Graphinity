@@ -68,7 +68,7 @@ describe('the first wave', () => {
   });
 });
 
-describe('later waves (Bible §11.2: 5, 5, 5 at 0, 20 and 60 minutes)', () => {
+describe('later waves (spec §11.2: 5, 5, 5 at 0, 20 and 60 minutes)', () => {
   it('send 5 more at 20 minutes and 5 more at 60, counted from asking', async () => {
     const asker = await member({ fields: ['business-startups'] });
     for (let i = 0; i < 20; i++) await member({ fields: ['business-startups'], joinedDaysAgo: 100 });
@@ -118,7 +118,7 @@ describe('later waves (Bible §11.2: 5, 5, 5 at 0, 20 and 60 minutes)', () => {
 });
 
 describe('the daily budget', () => {
-  it('puts at most 3 questions a day to one person (Bible §3.2: attention is scarce)', async () => {
+  it('puts at most 3 questions a day to one person (spec §3.2: attention is scarce)', async () => {
     const asker = await member({ fields: ['shopping'], joinedDaysAgo: 100 });
     const only = await member({ fields: ['shopping'], joinedDaysAgo: 100 });
     for (let i = 0; i < 7; i++) await ask(asker.token, 'shopping');

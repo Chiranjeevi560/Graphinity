@@ -1,17 +1,17 @@
-// Before a question is asked: has it been asked already? (docs/GRAPHINITY_BIBLE.md
+// Before a question is asked: has it been asked already? (docs/SPEC.md
 // §11.1, §12.1). Two rankings are fused, one by meaning (embeddings) and one
 // by words (full text), so exact codes like "BOE-II" and synonyms like
 // "duty" and "import tax" are both found. Pure: the SQL feeds it.
 
-/** Bible §12.1: RRF with k = 60, meaning weighted 0.65 and words 0.35. */
+/** Spec §12.1: RRF with k = 60, meaning weighted 0.65 and words 0.35. */
 export const RRF_K = 60;
 export const W_MEANING = 0.65;
 export const W_WORDS = 0.35;
-/** Bible §11.1: at or above this, it is the same question. */
+/** Spec §11.1: at or above this, it is the same question. */
 export const DUPLICATE_AT = 0.88;
-/** Bible §11.1: at or above this, it is related enough to show. */
+/** Spec §11.1: at or above this, it is related enough to show. */
 export const RELATED_AT = 0.72;
-/** Bible §11.1: a duplicate counts only with an answer this recent. */
+/** Spec §11.1: a duplicate counts only with an answer this recent. */
 export const FRESH_DAYS = 180;
 
 /** Reciprocal Rank Fusion of two best-first lists of ids. */
@@ -32,7 +32,7 @@ export interface Candidate {
 }
 
 /**
- * Bible §11.1. "duplicate" only when the closest in meaning is at least
+ * Spec §11.1. "duplicate" only when the closest in meaning is at least
  * 0.88 and has a visible answer from the last 180 days (an unanswered or
  * stale question is no reason to stop someone asking). "related" from 0.72.
  * Without meaning (embeddings unavailable), word matches are only ever

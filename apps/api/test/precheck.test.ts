@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DUPLICATE_AT, fuse, RELATED_AT, RRF_K, verdict, W_MEANING, W_WORDS } from '../src/precheck.ts';
 
-describe('fusing meaning and words (Bible §12.1)', () => {
+describe('fusing meaning and words (spec §12.1)', () => {
   it('scores each list by reciprocal rank, meaning weighted 0.65 and words 0.35', () => {
     // "b" is second by meaning and first by words; "a" is first by meaning only.
     const b = W_MEANING / (RRF_K + 2) + W_WORDS / (RRF_K + 1);
@@ -17,7 +17,7 @@ describe('fusing meaning and words (Bible §12.1)', () => {
   });
 });
 
-describe('the decision (Bible §11.1)', () => {
+describe('the decision (spec §11.1)', () => {
   const now = new Date('2026-10-19T00:00:00Z');
   const daysAgo = (d: number) => new Date(now.getTime() - d * 86_400_000);
 

@@ -1,4 +1,4 @@
-// Field-specific reputation, as docs/GRAPHINITY_BIBLE.md §10.2, §11.3 and
+// Field-specific reputation, as docs/SPEC.md §10.2, §11.3 and
 // §11.5 define it. Pure maths: no database, no clock, so every number here
 // can be checked by hand and by tests.
 //
@@ -9,7 +9,7 @@
 // every game shrinks σ, and the shown score is the cautious μ − 3σ, so a
 // lucky newcomer can't outrank someone with a long record.
 
-/** Bible §11.3: everyone starts at μ₀ = 25, σ₀ = 25/3. */
+/** Spec §11.3: everyone starts at μ₀ = 25, σ₀ = 25/3. */
 export const MU0 = 25;
 export const SIGMA0 = 25 / 3;
 /** Standard TrueSkill choices: performance noise β = σ₀/2, drift τ = σ₀/100. */
@@ -17,7 +17,7 @@ const BETA = SIGMA0 / 2;
 const TAU = SIGMA0 / 100;
 /**
  * Each judgement is a game against yourself, 8 skill points weaker (about
- * one σ₀). The Bible fixes the medal bars (§11.3) but not the opponent, so
+ * one σ₀). The spec fixes the medal bars (§11.3) but not the opponent, so
  * this was calibrated to them: against a fixed newcomer, 200 perfect
  * judgements reach only 84 and Gold's 85 is unreachable; against an equal,
  * 30 reach 100 and volume alone maxes the score. With the gap, perfect
@@ -29,7 +29,7 @@ export const OPPONENT_GAP = 8;
 
 export interface Skill { mu: number; sigma: number }
 
-/** Bible §11.3: R = max(0, (μ − 3σ) × 2), 0 to 100. Starts at 0. */
+/** Spec §11.3: R = max(0, (μ − 3σ) × 2), 0 to 100. Starts at 0. */
 export function displayedReputation({ mu, sigma }: Skill): number {
   return Math.min(100, Math.max(0, (mu - 3 * sigma) * 2));
 }
@@ -54,7 +54,7 @@ export function replay(outcomes: readonly boolean[]): Skill {
 }
 
 /**
- * Bible §11.5: the lower bound of the Wilson score interval for h good
+ * Spec §11.5: the lower bound of the Wilson score interval for h good
  * out of n, at 95% (z = 1.96). Small samples are judged cautiously: 1 of 1
  * scores far below 90 of 100.
  */
@@ -76,7 +76,7 @@ export interface FieldRecord {
   topPercent: boolean;
 }
 
-/** Bible §11.3 medal tiers, per field, never global. */
+/** Spec §11.3 medal tiers, per field, never global. */
 export function medalFor(r: FieldRecord): Medal | null {
   if (r.topPercent && r.accepted >= 75 && r.reputation >= 85) return 'gold';
   if (r.accepted >= 30 && r.reputation >= 68 && r.wilson >= 0.78) return 'silver';
@@ -85,11 +85,11 @@ export function medalFor(r: FieldRecord): Medal | null {
   return null;
 }
 
-/** Bible §10.2 reinforcement signals R(a, q). */
+/** Spec §10.2 reinforcement signals R(a, q). */
 export const SIGNAL = { bestRatedHigh: 1.5, helpful: 0.65, ignored: -0.05, false: -0.8 } as const;
 
 /**
- * Bible §10.2: an expertise weight fades with time (half-life per field)
+ * Spec §10.2: an expertise weight fades with time (half-life per field)
  * and moves towards 1 on good signals, by learning rate η = 0.08, kept
  * within [0.01, 0.999].
  */
@@ -111,13 +111,13 @@ export interface RankInputs {
   specificity: number;
 }
 
-/** Bible §11.5: Ω = 0.30·best + 0.22·Wilson + 0.18·R + 0.12·M(C) + 0.10·Trust + 0.08·specificity. */
+/** Spec §11.5: Ω = 0.30·best + 0.22·Wilson + 0.18·R + 0.12·M(C) + 0.10·Trust + 0.08·specificity. */
 export function answerRank(a: RankInputs): number {
   return 0.3 * (a.best ? 1 : 0) + 0.22 * a.wilson + 0.18 * a.reputation + 0.12 * a.clusterMass + 0.1 * a.trust + 0.08 * a.specificity;
 }
 
 /**
- * How concrete an answer is, 0 to 1 (Bible §11.5 Q_specificity): numbers,
+ * How concrete an answer is, 0 to 1 (spec §11.5 Q_specificity): numbers,
  * amounts, dates and named steps count; vague advice doesn't.
  */
 export function specificity(text: string): number {

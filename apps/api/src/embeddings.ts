@@ -1,5 +1,5 @@
 // Turning a question into numbers that sit close together when two
-// questions mean the same thing (docs/GRAPHINITY_BIBLE.md §11.1, §12.1).
+// questions mean the same thing (docs/SPEC.md §11.1, §12.1).
 // Plumbing only (§12.2): embeddings find duplicates and similar questions;
 // nothing here writes an answer.
 //

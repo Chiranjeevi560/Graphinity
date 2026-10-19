@@ -1,5 +1,5 @@
 // Answers are reports of what happened, shared here, not leads for middlemen
-// (docs/GRAPHINITY_BIBLE.md §21.2: "DM me on WhatsApp +91... for guaranteed
+// (docs/SPEC.md §21.2: "DM me on WhatsApp +91... for guaranteed
 // clearance"). Customs and visa questions draw exactly that. An answer that
 // asks people to make contact elsewhere is refused with a plain reason
 // rather than silently edited: changing someone's words without telling

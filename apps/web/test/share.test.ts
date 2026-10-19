@@ -56,7 +56,7 @@ function qaPage(out: string): string | undefined {
   return [...out.matchAll(/<script type="application\/ld\+json">(.*?)<\/script>/gs)].map(m => m[1] ?? '').find(j => j.includes('"QAPage"'));
 }
 
-describe('search engines (Bible §19)', () => {
+describe('search engines (spec §19)', () => {
   it('keep an unanswered question out of results until someone answers', () => {
     const out = questionHead(html, page(), SITE);
     expect(out).toContain('<meta name="robots" content="noindex, follow">');

@@ -69,7 +69,7 @@ Render or Supabase.** Limits checked on the services' own pages on 2026-10-17 ar
    editing and deleting posts not offered yet; question pages' link previews and the sitemap of
    questions need a server-side step at deploy, step 8).
 4. ✅ Select, helpful, points, medals, trust, change-with-reason, pair cap (built and tested locally;
-   medals now follow the Bible's per-field tiers, docs/GRAPHINITY_BIBLE.md §11.3).
+   medals now follow the spec's per-field tiers, docs/SPEC.md §11.3).
 5. ✅ Routing waves, live updates, web push (built and tested locally; a real push delivered to a
    phone is checked at deploy, step 8).
 6. ✅ Reporting, auto-hide, owner review page, limits, blocking, shared-network flags (built and

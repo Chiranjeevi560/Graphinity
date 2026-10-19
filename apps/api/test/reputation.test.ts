@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { answerRank, displayedReputation, medalFor, MU0, nextWeight, playGame, replay, SIGMA0, SIGNAL, specificity, wilsonLowerBound } from '../src/reputation.ts';
 
-describe('reputation in one field (TrueSkill, Bible §11.3)', () => {
+describe('reputation in one field (TrueSkill, spec §11.3)', () => {
   it('starts everyone at 0 shown, from μ 25 and σ 25/3', () => {
     expect(displayedReputation({ mu: MU0, sigma: SIGMA0 })).toBeCloseTo(0, 10);
   });
@@ -44,7 +44,7 @@ describe('reputation in one field (TrueSkill, Bible §11.3)', () => {
   });
 });
 
-describe('Wilson lower bound (Bible §11.5)', () => {
+describe('Wilson lower bound (spec §11.5)', () => {
   it('matches known values at 95%', () => {
     expect(wilsonLowerBound(0, 0)).toBe(0);
     expect(wilsonLowerBound(1, 1)).toBeCloseTo(0.2065, 4);
@@ -57,7 +57,7 @@ describe('Wilson lower bound (Bible §11.5)', () => {
   });
 });
 
-describe('medals (Bible §11.3, per field)', () => {
+describe('medals (spec §11.3, per field)', () => {
   it('climbs Verified, Bronze, Silver, Gold only when every bar is met', () => {
     expect(medalFor({ accepted: 2, reputation: 90, wilson: 1, topPercent: true })).toBeNull();
     expect(medalFor({ accepted: 3, reputation: 25, wilson: 0, topPercent: false })).toBe('verified');
@@ -69,7 +69,7 @@ describe('medals (Bible §11.3, per field)', () => {
   });
 });
 
-describe('expertise weight over time (Bible §10.2)', () => {
+describe('expertise weight over time (spec §10.2)', () => {
   it('halves with no signal after one half-life', () => {
     expect(nextWeight(0.5, 0, 180, 180)).toBeCloseTo(0.25, 10);
   });
@@ -85,7 +85,7 @@ describe('expertise weight over time (Bible §10.2)', () => {
   });
 });
 
-describe('ordering answers (Bible §11.5)', () => {
+describe('ordering answers (spec §11.5)', () => {
   it('adds the weighted parts exactly', () => {
     expect(answerRank({ best: true, wilson: 1, reputation: 1, clusterMass: 1, trust: 1, specificity: 1 })).toBeCloseTo(1, 10);
     expect(answerRank({ best: false, wilson: 0.5, reputation: 0, clusterMass: 0, trust: 0, specificity: 0 })).toBeCloseTo(0.11, 10);

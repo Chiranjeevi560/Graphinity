@@ -21,7 +21,7 @@ interface Precheck { verdict: 'duplicate' | 'related' | 'clear'; questions: Simi
 
 /**
  * Has this been asked already? Asked of the server once the person pauses
- * for 250 ms (Bible §7.2 Screen 2), by meaning and by words, within the
+ * for 250 ms (spec §7.2 Screen 2), by meaning and by words, within the
  * chosen topic when there is one.
  */
 function usePrecheck(title: string, field: string): Precheck {

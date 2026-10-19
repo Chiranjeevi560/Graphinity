@@ -19,9 +19,9 @@ export interface Answer {
   answerer: { handle: string };
   createdAt: string;
   helpful: boolean;
-  /** The author's standing in this question's field (Bible §11.3). */
+  /** The author's standing in this question's field (spec §11.3). */
   author: { reputation: number; accepted: number; medal: Medal | null };
-  /** The amount the answer reports, if any (Bible §11.4). */
+  /** The amount the answer reports, if any (spec §11.4). */
   claim: Amount | null;
   /** The strongest answer of a smaller group: kept visible, never buried. */
   minorityPinned: boolean;
@@ -62,7 +62,7 @@ export function formatRange(lowMinor: number, highMinor: number, currency: strin
   return lowMinor === highMinor ? formatAmount(lowMinor, currency) : `${formatAmount(lowMinor, currency)}–${formatAmount(highMinor, currency)}`;
 }
 
-/** Bible §11.4 confidence in words: ≥ 0.7 is where it stops sending more people. */
+/** Spec §11.4 confidence in words: ≥ 0.7 is where it stops sending more people. */
 export function agreementWords(confidence: number): string {
   if (confidence >= 0.7) return 'Most people agree';
   if (confidence >= 0.4) return 'People partly agree';
