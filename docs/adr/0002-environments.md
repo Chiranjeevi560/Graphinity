@@ -1,6 +1,8 @@
 # ADR 0002: Development, staging and production, with one build promoted
 
-Date: 2026-10-20. Status: accepted by the owner; built in phases (table below).
+Date: 2026-10-20. Status: accepted by the owner; built in phases (table below). Extended by the
+approved architecture plan, `docs/plans/architecture-migration.md` (previews, migrations, observability,
+backups, infrastructure as code, Git workflow), whose phase numbers supersede the table below.
 
 ## Context
 
