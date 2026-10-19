@@ -1,7 +1,10 @@
 name: CI
 
+# Pull requests, and main once merged: each change runs once, not again
+# for the branch push behind its pull request.
 on:
   push:
+    branches: [main]
   pull_request:
 
 # Read-only token: nothing in CI can push, tag or publish.
