@@ -26,7 +26,7 @@ function logCollector() {
 async function server(opts: { db?: Database; limits?: Partial<Limits>; hops?: number; logs?: ReturnType<typeof logCollector> } = {}) {
   const t = 0;
   const app = await buildServer({
-    config: { production: true, webOrigin: ORIGIN, trustProxyHops: opts.hops ?? 0, ipHashKey: Buffer.alloc(32, 1) },
+    config: { production: true, environment: 'staging', release: 'a1b2c3d4'.repeat(5), webOrigin: ORIGIN, trustProxyHops: opts.hops ?? 0, ipHashKey: Buffer.alloc(32, 1) },
     db: opts.db ?? fakeDb(),
     clock: { now: () => t },
     // No signed-in routes are exercised here; profile.integration.test.ts covers them.
@@ -43,7 +43,8 @@ describe('health', () => {
     const app = await server();
     const res = await app.inject('/health');
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ status: 'ok', schemaVersion: 7 });
+    // Which environment and commit is answering: the pipeline waits for its own.
+    expect(res.json()).toEqual({ status: 'ok', schemaVersion: 7, environment: 'staging', release: 'a1b2c3d4'.repeat(5) });
   });
 
   it('reports 503 without details when the database fails', async () => {

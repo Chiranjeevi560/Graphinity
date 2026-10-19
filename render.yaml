@@ -19,6 +19,9 @@ services:
         value: "24"
       - key: NODE_ENV
         value: production
+      # staging or production (docs/adr/0002); the server refuses anything else.
+      - key: APP_ENV
+        sync: false
       - key: WEB_ORIGIN
         sync: false
       - key: DATABASE_URL

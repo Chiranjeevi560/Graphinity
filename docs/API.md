@@ -55,7 +55,9 @@ Base URL: `http://localhost:3000` locally; the Render URL in production.
 ### `GET /health`
 Checks that the server can reach the database as its restricted role. Used by the keep-awake worker
 and to confirm a deploy reached the database.
-`200 {"status":"ok","schemaVersion":2}` · `503 {"status":"unavailable"}`
+`200 {"status":"ok","schemaVersion":16,"environment":"staging","release":"<commit>"}` · `503 {"status":"unavailable"}`.
+`environment` is `development`, `staging` or `production`; `release` is the commit the running image
+was built from (`null` on your computer). The pipeline waits until `release` is the commit it deployed.
 
 ### `GET /meta`
 The 20 fields and 250 countries for the profile form. Public. `Cache-Control: public, max-age=3600`.

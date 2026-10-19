@@ -4,8 +4,14 @@
 import { createECDH } from 'node:crypto';
 import type { VapidKeys } from './push.ts';
 
+/** Where this server runs. Each has its own database, sign-in and secrets (docs/adr/0002). */
+export type Environment = 'development' | 'staging' | 'production';
+
 export interface Config {
   production: boolean;
+  environment: Environment;
+  /** The commit this build came from (set when the image is built); null on your computer. */
+  release: string | null;
   host: string;
   port: number;
   databaseUrl: string;
@@ -43,6 +49,14 @@ export class ConfigError extends Error {
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const problems: string[] = [];
   const production = env.NODE_ENV === 'production';
+
+  // A deployed server names its environment; nothing defaults to production.
+  const environment = env.APP_ENV ?? (production ? '' : 'development');
+  if (production ? environment !== 'staging' && environment !== 'production' : environment !== 'development') {
+    problems.push(production ? 'APP_ENV must be staging or production' : 'APP_ENV must be development (or unset) outside NODE_ENV=production');
+  }
+  const release = env.RELEASE ?? null;
+  if (release !== null && !/^[0-9a-f]{40}$/.test(release)) problems.push('RELEASE must be a full commit hash');
 
   const port = Number(env.PORT ?? 3000);
   if (!Number.isInteger(port) || port < 1 || port > 65535) problems.push('PORT must be a port number');
@@ -103,6 +117,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 
   return {
     production,
+    environment: environment as Environment,
+    release,
     host: env.HOST ?? (production ? '0.0.0.0' : '127.0.0.1'),
     port,
     databaseUrl,

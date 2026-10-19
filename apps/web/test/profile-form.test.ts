@@ -1,10 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The module signs requests through the app's one session, which reads the
-// page's address when it loads.
+// page's address and its stamped settings when it loads.
+const settings = JSON.stringify({
+  apiOrigin: 'https://graphinity-api.onrender.com', siteOrigin: 'https://graphinity.pages.dev',
+  supabaseUrl: 'https://abcd.supabase.co', supabasePublishableKey: 'sb_publishable_test',
+  googleClientId: 'test.apps.googleusercontent.com', googleAuthorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+});
 beforeEach(() => {
   vi.resetModules();
   vi.stubGlobal('location', { origin: 'https://graphinity.pages.dev', assign: vi.fn() });
+  vi.stubGlobal('document', { querySelector: (q: string) => (q === 'meta[name="graphinity-settings"]' ? { getAttribute: () => settings } : null) });
 });
 afterEach(() => { vi.unstubAllGlobals(); });
 

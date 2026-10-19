@@ -17,7 +17,7 @@ export async function startApp(now: () => number, opts: { vapidPublicKey?: strin
   const admin = fakeAuthAdmin();
   const events = createEvents();
   const app = await buildServer({
-    config: { production: true, webOrigin: 'https://graphinity.pages.dev', trustProxyHops: 0, ipHashKey: IP_HASH_KEY },
+    config: { production: true, environment: 'production', release: null, webOrigin: 'https://graphinity.pages.dev', trustProxyHops: 0, ipHashKey: IP_HASH_KEY },
     db: t.database,
     clock: { now },
     auth: createTokenVerifier({ issuer: TEST_ISSUER, keys: issuer.keys }),

@@ -5,6 +5,7 @@ import { LoadFailed } from './components/Message.tsx';
 import { applyMeta, pageMeta } from './lib/meta.ts';
 import { Link, navigate, usePath } from './lib/router.ts';
 import { auth, retrySession, useSession, type SessionState } from './session.tsx';
+import { site } from './site-settings.ts';
 
 // Each screen is its own chunk, so a phone downloads only what it shows.
 const Home = lazy(() => import('./routes/Home.tsx'));
@@ -81,7 +82,7 @@ function safeDecode(part: string): string | null {
 export function App() {
   const path = usePath();
   const { state } = useSession();
-  useEffect(() => { applyMeta(pageMeta(path), path, import.meta.env.VITE_SITE_ORIGIN); }, [path]);
+  useEffect(() => { applyMeta(pageMeta(path), path, site.siteOrigin); }, [path]);
   // Live updates for as long as someone is signed in with a profile.
   const live = state.status === 'ready';
   useEffect(() => {
@@ -90,7 +91,7 @@ export function App() {
     let cancelled = false;
     void import('./lib/live.ts').then(({ announce, startLive }) => {
       if (cancelled) return;
-      stop = startLive({ origin: import.meta.env.VITE_API_ORIGIN, auth, fetch: (...args) => fetch(...args), onEvent: announce });
+      stop = startLive({ origin: site.apiOrigin, auth, fetch: (...args) => fetch(...args), onEvent: announce });
     });
     return () => { cancelled = true; stop?.(); };
   }, [live]);

@@ -18,6 +18,7 @@ import { routingLine } from '../lib/graph-words.ts';
 import { takeJustAsked } from '../lib/just-asked.ts';
 import { Link } from '../lib/router.ts';
 import { api, useSession } from '../session.tsx';
+import { site } from '../site-settings.ts';
 import { useLoad } from '../use-load.ts';
 
 interface WhyYou { sameCountry: boolean | null; fieldPoints: number | null; trustPct: number | null; answeredPct: number | null; newcomer: boolean | null }
@@ -66,7 +67,7 @@ function present(page: Page) {
   const path = questionPath(page.question);
   if (location.pathname !== path) history.replaceState(history.state, '', path);
   // Spec §19.2: only once someone has answered does it belong in search results.
-  applyMeta({ title: `${page.question.title} – Graphinity`, index: page.answers.some(a => !a.hidden) }, path, import.meta.env.VITE_SITE_ORIGIN);
+  applyMeta({ title: `${page.question.title} – Graphinity`, index: page.answers.some(a => !a.hidden) }, path, site.siteOrigin);
 }
 
 export default function Question({ id }: { id: string }) {

@@ -24,9 +24,11 @@ for (const url of ['http://localhost:4174/', 'http://localhost:3000/health']) {
   }
 }
 
-// Built for the address it is measured at, so canonical links point home.
-execFileSync('npm', ['--workspace', 'apps/web', 'run', 'build'], { stdio: 'ignore', env: { ...process.env, VITE_SITE_ORIGIN: 'http://localhost:4174' } });
-const preview = spawn('npx', ['vite', 'preview', '--port', '4174', '--strictPort'], { cwd: 'apps/web', stdio: 'ignore' });
+// The same neutral build as any deploy, stamped for the address it is
+// measured at, so canonical links point home.
+execFileSync('npm', ['--workspace', 'apps/web', 'run', 'build'], { stdio: 'ignore' });
+execFileSync('node', ['stamp-dist.ts', 'dist', 'dist-local', '--local'], { cwd: 'apps/web', stdio: 'inherit', env: { ...process.env, VITE_SITE_ORIGIN: 'http://localhost:4174' } });
+const preview = spawn('npx', ['vite', 'preview', '--outDir', 'dist-local', '--port', '4174', '--strictPort'], { cwd: 'apps/web', stdio: 'ignore' });
 // The real API too (it needs the local database, or CI's): the home page
 // loads recent questions, and a page measured without its API logs errors
 // no visitor would see.

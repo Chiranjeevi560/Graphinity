@@ -69,7 +69,8 @@ CI uses the pgvector project's own Postgres 17 image.
 To try sign-in locally, run `db:start`, then `dev:auth`, `dev:api:local` and `dev:web` in three
 terminals, and open http://localhost:5173. "Continue with Google" opens a local page where you pick
 a test person. To try the production build with its strict security headers, run
-`npm --workspace apps/web run build`, then `preview`, and start the API with
+`npm --workspace apps/web run build`, then `preview` (it stamps this computer's settings into
+`dist-local` and serves that), and start the API with
 `WEB_ORIGIN=http://localhost:4173`. Restart `preview` after changing headers: it computes them once
 at startup.
 
@@ -133,13 +134,16 @@ this is the order and what to check.
 4. Check `GET /health` returns `{"status":"ok","schemaVersion":N}` with the version from step 1.
 5. **Measure the proxy hops** (SECURITY.md) and set `TRUST_PROXY_HOPS` to that number. Until then
    every visitor shares one rate-limit allowance.
-6. **Website on Cloudflare Pages**, from the repository root, built with
-   `npm ci && npm --workspace apps/web run build`, output `apps/web/dist`. Functions come from
+6. **Website on Cloudflare Pages**, from the repository root: build once with
+   `npm ci && npm --workspace apps/web run build` (output `apps/web/dist`, which names no
+   environment), then stamp a copy for the environment with its `VITE_*` values set:
+   `node apps/web/stamp-dist.ts apps/web/dist <out>` (docs/adr/0002). Upload `<out>`. The same
+   `dist` is stamped again for production after staging is verified. Functions come from
    `/functions` (question link previews and the sitemap; only `/q/*` and `/sitemap.xml` run them,
    per the built `_routes.json`). In the Pages project's settings choose **Fail open**, so pages
    still load if the free daily allowance of 100,000 Function requests is ever used up. Variables and `VITE_SITE_ORIGIN`, `VITE_API_ORIGIN`, `VITE_SUPABASE_URL`,
-   `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_GOOGLE_CLIENT_ID` (the build refuses http or missing
-   values). Add `<site>/auth/callback` to the Google client's redirect URIs and `<site>` to its
+   `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_GOOGLE_CLIENT_ID` (the stamp refuses http or missing
+   values; the Functions read the same names at request time). Add `<site>/auth/callback` to the Google client's redirect URIs and `<site>` to its
    JavaScript origins.
 7. **Keep-awake**: a Cloudflare Worker from `workers/keep-awake.js` with a Cron Trigger every 10
    minutes and `API_HEALTH_URL` set.

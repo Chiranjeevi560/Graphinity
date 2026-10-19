@@ -6,6 +6,7 @@ import { privateKeyText } from '../src/push.ts';
 const key = 'ab'.repeat(32);
 const prod = {
   NODE_ENV: 'production',
+  APP_ENV: 'production',
   DATABASE_URL: 'postgres://u:p@db.example:5432/x',
   WEB_ORIGIN: 'https://graphinity.pages.dev',
   TRUST_PROXY_HOPS: '1',
@@ -36,6 +37,26 @@ describe('loadConfig', () => {
   it('has safe development defaults: no proxies trusted, local origin', () => {
     const c = loadConfig({ DATABASE_URL: prod.DATABASE_URL, IP_HASH_KEY: key, SUPABASE_SECRET_KEY: prod.SUPABASE_SECRET_KEY });
     expect(c).toMatchObject({ production: false, host: '127.0.0.1', trustProxyHops: 0, webOrigin: 'http://localhost:5173', supabaseUrl: 'http://localhost:54321' });
+  });
+
+  it('knows which environment it is: a deployed server must say staging or production', () => {
+    expect(loadConfig(prod).environment).toBe('production');
+    expect(loadConfig({ ...prod, APP_ENV: 'staging' }).environment).toBe('staging');
+    const { APP_ENV: _, ...unnamed } = prod;
+    expect(() => loadConfig(unnamed)).toThrow(/APP_ENV/);
+    expect(() => loadConfig({ ...prod, APP_ENV: 'development' })).toThrow(/APP_ENV/);
+    expect(() => loadConfig({ ...prod, APP_ENV: 'Production' })).toThrow(/APP_ENV/);
+    // On your computer it is development, and can't claim to be anything else.
+    const dev = { DATABASE_URL: prod.DATABASE_URL, IP_HASH_KEY: key, SUPABASE_SECRET_KEY: prod.SUPABASE_SECRET_KEY };
+    expect(loadConfig(dev).environment).toBe('development');
+    expect(() => loadConfig({ ...dev, APP_ENV: 'production' })).toThrow(/APP_ENV/);
+  });
+
+  it('carries the commit it was built from, when the build says, and checks its shape', () => {
+    const sha = 'a1b2c3d4'.repeat(5);
+    expect(loadConfig(prod).release).toBeNull();
+    expect(loadConfig({ ...prod, RELEASE: sha }).release).toBe(sha);
+    expect(() => loadConfig({ ...prod, RELEASE: 'main' })).toThrow(/RELEASE/);
   });
 
   it('refuses production without a measured proxy count', () => {

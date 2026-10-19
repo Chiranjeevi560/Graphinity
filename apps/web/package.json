@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview",
+    "stamp:local": "node stamp-dist.ts dist dist-local --local",
+    "preview": "npm run stamp:local && vite preview --outDir dist-local",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

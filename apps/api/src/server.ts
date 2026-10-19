@@ -53,7 +53,7 @@ export const defaultLimits: Limits = {
 
 /** Everything the server needs from outside, so tests can swap any of it. */
 export interface Deps {
-  config: Pick<Config, 'production' | 'webOrigin' | 'trustProxyHops' | 'ipHashKey'>;
+  config: Pick<Config, 'production' | 'environment' | 'release' | 'webOrigin' | 'trustProxyHops' | 'ipHashKey'>;
   db: Database;
   clock: Clock;
   auth: TokenVerifier;
@@ -240,7 +240,7 @@ export async function buildServer(deps: Deps) {
   app.get('/health', async (req, reply) => {
     try {
       const { schemaVersion } = await withTimeout(db.ping(), 3_000);
-      return { status: 'ok', schemaVersion };
+      return { status: 'ok', schemaVersion, environment: config.environment, release: config.release };
     } catch (err) {
       req.log.warn({ kind: (err as Error).name }, 'health check failed');
       return reply.code(503).send({ status: 'unavailable' });

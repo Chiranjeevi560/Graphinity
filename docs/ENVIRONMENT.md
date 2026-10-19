@@ -6,7 +6,9 @@ Every setting, where it lives, and the free-tier limits it runs under.
 
 | Variable | Required | Example | Notes |
 |---|---|---|---|
-| `NODE_ENV` | production | `production` | Turns on the strict checks below |
+| `NODE_ENV` | production | `production` | Turns on the strict checks below. Staging runs with `production` too: the same code paths as production, no test switches |
+| `APP_ENV` | production | `staging` or `production` | Which environment this server is (docs/adr/0002). Required when `NODE_ENV=production`; anything else is refused. Unset (development) on your computer, which can't claim another environment. Reported by `/health` |
+| `RELEASE` | no | 40-hex commit hash | The commit the image was built from, written in at build time so it is the same wherever that image runs. Reported by `/health`, so a deploy can wait until its own commit answers. Must be a full hash |
 | `PORT` | no | `3000` | Render sets this itself |
 | `HOST` | no | `0.0.0.0` in production, `127.0.0.1` locally | |
 | `DATABASE_URL` | yes | `postgres://graphinity_api:…@…/postgres` | The **restricted** login role, never the owner. Secret |
@@ -24,6 +26,13 @@ random dev `SUPABASE_SECRET_KEY` into `.local/api.env`.
 
 ## Website (`apps/web`)
 
+The build compiles in **none** of these: one build is promoted from staging to production. The
+deploy writes them into a copy of the build (`node apps/web/stamp-dist.ts dist <out>`), as a
+`<meta name="graphinity-settings">` tag in `index.html`, the CSP in `_headers`, `robots.txt` and
+`sitemap.xml`. It refuses a build that names any environment, http addresses, a key that isn't the
+publishable one, or Google sign-in pointing anywhere but Google. The link-preview Functions read the
+same names from the Pages project's settings at request time.
+
 | Variable | Required | Example | Notes |
 |---|---|---|---|
 | `VITE_SITE_ORIGIN` | for deploys | `https://graphinity.pages.dev` | The site's own address: canonical links, sitemap, robots.txt, link previews. Cloudflare builds refuse http |
@@ -32,9 +41,10 @@ random dev `SUPABASE_SECRET_KEY` into `.local/api.env`.
 | `VITE_GOOGLE_CLIENT_ID` | with the real Supabase | `1234-abc.apps.googleusercontent.com` | The Google OAuth client. Public by design: it appears in every sign-in address. Builds against a real Supabase refuse to start without it |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | for deploys | `sb_publishable_…` | Public by design: identifies the project, grants nothing (our tables aren't exposed). Cloudflare builds refuse anything else |
 
-Locally these default to the local API and the sign-in stand-in.
+Locally these default to the local API and the sign-in stand-in: `npm run dev` stamps them into
+the page it serves, and `npm --workspace apps/web run preview` serves a stamped copy, `dist-local`.
 
-`VITE_` variables are baked into the public website. **Never put a secret in one.**
+These values end up in every visitor's page. **Never put a secret in one.**
 
 ## Tests
 
