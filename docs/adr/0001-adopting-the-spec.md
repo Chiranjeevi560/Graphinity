@@ -49,7 +49,7 @@ Status: ✅ built and tested · ◐ in progress · ○ planned · ⤳ bent (reas
 | §10.2 Edge weight evolution | Equation built and tested (clip [0.01, 0.999]); next: stored per person and field | ◐ |
 | §12.2 AI only as plumbing, never authoring | Already a rule; kept | ✅ |
 | §13/§14 FSD folders, hexagonal modules, CQRS outbox, BullMQ | ⤳ Kept the current structure (decision 1); new domain maths goes in pure, tested modules | ⤳ |
-| §15 Postgres schema, HNSW, RLS, fillfactor | RLS forced everywhere; pgvector HNSW on question embeddings; fillfactor on hot tables still to do | ✅ / ○ |
+| §15 Postgres schema, HNSW, RLS, fillfactor | RLS forced everywhere; pgvector HNSW on question embeddings. Fillfactor: no table today is updated often (routes get `seen_at` once; profiles and picks rarely), so it would only waste space; it comes with the expertise-weight table (§10.2), which is updated on every answer | ✅ / ○ |
 | §15 UUIDv7 keys | ⤳ Bigint ids stay: changing every key breaks every link and test for no user benefit today | ⤳ |
 | §16 Threat model | Built and documented in SECURITY.md; cookie sign-in waits for a domain (decision 3) | ✅ / ⤳ |
 | §17 Cloudflare + Render + Supabase | Same providers, free tiers (PLAN.md cost rule) | ✅ |
@@ -58,7 +58,7 @@ Status: ✅ built and tested · ◐ in progress · ○ planned · ⤳ bent (reas
 | §20 Accessible graph (shadow DOM nav, keyboard traversal, live region) | Built: `<nav aria-label="Fields in the graph">` over the canvas, a button per field on its cluster, one Tab stop, arrows by size, Enter opens the field's neighbourhood in words from exact pair counts (`/graph` `links`); routing milestones in a polite live region. Bent: nodes are fields, not individual experts, since who was asked is never shown. RTL (logical properties everywhere) still to do | ◐ |
 | §21.2 Anti-abuse: scam filter, vote dampening | Built: answers with phone numbers, emails or messaging invitations are refused (API and database). Bent: refused with a reason rather than silently stripped, so nobody's words change without them knowing. Shared-network flags exist; vote dampening by /24 not built | ✅ / ○ |
 | §22.1 Delete means delete | Built and tested | ✅ |
-| §22.3 #12 offline drafts, #13 7-second undo, #14 optimistic versions | Drafts in IndexedDB, undo on pass/revoke, `version` checks where edits exist | ○ |
+| §22.3 #12 offline drafts, #13 7-second undo, #14 optimistic versions | #12 built, bent: questions and answers in progress survive a reload, a crash, going offline and a failed post, in the tab's sessionStorage rather than IndexedDB, because the privacy page promises closing the tab forgets you (a draft about someone's health or visa must not stay on a shared computer); no mutation queue, since posting needs the server and the draft waits for it. #13 undo and #14 `version` checks still to do | ◐ |
 | §2.3 Bounties via Stripe (months 18–36) | Not now: needs money and legal decisions | ⤳ |
 | §17.2 SLOs, PagerDuty, k6, Toxiproxy, chaos, GameDays | ⤳ Out of scope on free tiers with one server; revisit with real traffic | ⤳ |
 

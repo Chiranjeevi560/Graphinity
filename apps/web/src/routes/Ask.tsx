@@ -5,6 +5,7 @@ import { SelectField, TextArea, TextField } from '../components/Form.tsx';
 import { LoadFailed } from '../components/Message.tsx';
 import { ApiError } from '../lib/api.ts';
 import { charCount, DETAILS_MAX, questionPath, TITLE } from '../lib/questions.ts';
+import { drafts } from '../lib/drafts.ts';
 import { markJustAsked } from '../lib/just-asked.ts';
 import { Link, navigate } from '../lib/router.ts';
 import { api, type Profile } from '../session.tsx';
@@ -12,9 +13,8 @@ import { useMeta } from './profile-form.ts';
 
 interface Draft { title: string; details: string; field: string; country: string }
 
-// Kept while the app is open, so opening a similar question and coming back
-// doesn't lose what was typed. Gone on reload or once posted.
-let draft: Draft | null = null;
+const isDraft = (v: unknown): v is Draft =>
+  typeof v === 'object' && v !== null && (['title', 'details', 'field', 'country'] as const).every(k => typeof (v as Record<string, unknown>)[k] === 'string');
 
 interface Similar { id: string; title: string; answerCount: number }
 interface Precheck { verdict: 'duplicate' | 'related' | 'clear'; questions: Similar[] }
@@ -46,11 +46,13 @@ function usePrecheck(title: string, field: string): Precheck {
 
 export default function Ask({ profile }: { profile: Profile }) {
   const { meta, error: metaError, retry: retryMeta } = useMeta();
-  const [title, setTitle] = useState(draft?.title ?? '');
-  const [details, setDetails] = useState(draft?.details ?? '');
+  // Whatever was typed before a reload, a crash or a failed post (lib/drafts.ts).
+  const [saved] = useState(() => drafts.load('ask', isDraft));
+  const [title, setTitle] = useState(saved?.title ?? '');
+  const [details, setDetails] = useState(saved?.details ?? '');
   // No topic chosen for them: a wrong guess would send the question to the wrong people.
-  const [field, setField] = useState(draft?.field ?? '');
-  const [country, setCountry] = useState(draft?.country ?? '');
+  const [field, setField] = useState(saved?.field ?? '');
+  const [country, setCountry] = useState(saved?.country ?? '');
   const [posting, setPosting] = useState(false);
   const [error, setError] = useState<{ on: 'title' | 'details' | 'form'; text: string } | null>(null);
   const precheck = usePrecheck(title, field);
@@ -60,7 +62,9 @@ export default function Ask({ profile }: { profile: Profile }) {
   const intercepted = match !== undefined && differentFrom !== match.id;
   const similar = intercepted ? precheck.questions.slice(1) : precheck.questions;
 
-  useEffect(() => { draft = { title, details, field, country }; }, [title, details, field, country]);
+  useEffect(() => {
+    drafts.save('ask', { title, details, field, country }, d => d.title.trim() === '' && d.details.trim() === '');
+  }, [title, details, field, country]);
 
   if (metaError) return <LoadFailed error={metaError} onRetry={retryMeta} />;
   if (!meta) return <main className="page stack-message"><p className="text-body status" role="status">Loading…</p></main>;
@@ -86,7 +90,7 @@ export default function Ask({ profile }: { profile: Profile }) {
         method: 'POST', signedIn: true,
         body: { title, details, field, country: country || null },
       });
-      draft = null;
+      drafts.save('ask', null);
       markJustAsked(res.question.id);
       navigate(questionPath({ id: res.question.id, title }), { replace: true });
     } catch (err) {

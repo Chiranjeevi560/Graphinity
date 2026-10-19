@@ -25,6 +25,7 @@ export default function Privacy() {
         <li><strong>Points and trust,</strong> worked out from the above.</li>
         <li><strong>Which questions were put to you,</strong> and whether you opened them.</li>
         <li><strong>Notifications,</strong> if you turn them on: an address from your browser’s notification service for each device. Signing out or deleting your account turns them off for that device. Closing the tab doesn’t, since they are for when Graphinity is closed.</li>
+        <li><strong>Drafts, on your device only.</strong> What you’ve typed but not posted is kept in this browser tab, so a reload or a lost connection doesn’t lose it. It never reaches us until you post it. Closing the tab, signing out or deleting your account forgets it.</li>
         <li><strong>Network checks.</strong> To spot one person using several accounts, we keep a scrambled, one-way code made from the network you use whenever you ask, answer, pick, mark or report something (not the address itself), for 30 days. Only moderators see which accounts share one, and it never blocks anyone by itself.</li>
       </ul>
 

@@ -317,10 +317,14 @@ test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
   await expect(page.getByRole('heading', { name: '1 answer' })).toBeVisible();
   await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /^index/);
 
+  // A question half-written, then the account deleted: nothing is left behind in the tab.
+  await page.goto('/ask');
+  await page.getByLabel('Your question').fill('Something I started and never sent');
   await page.goto('/me');
   await page.getByRole('button', { name: 'Delete account…' }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Delete account' }).click();
   await expect(page.getByRole('heading', { name: 'Your account is deleted' })).toBeVisible();
+  expect(await page.evaluate(() => Object.keys(sessionStorage).filter(k => k.startsWith('graphinity.draft.')))).toEqual([]);
   await audit(page, 'goodbye');
 
   // CSP violations surface as console errors in every engine.
@@ -657,6 +661,56 @@ test('the home graph is alive, and holds still for people who turn motion off', 
   const still = await drawn();
   await page.waitForTimeout(800);
   expect((await drawn()).h).toBe(still.h);
+});
+
+test('what you type survives a reload and a failed post, and is forgotten when you sign out', async ({ page, browserName }) => {
+  const run = `${browserName}${String(Date.now() % 1_000_000)}`;
+  const title = `Can I bring two laptops through Delhi customs, draft ${run}?`;
+  const answer = `I brought two through Delhi in March, draft ${run}. Nobody asked about the second one.`;
+  await signIn(page, 'Test person A');
+  await establishTestPersonA();
+
+  await page.goto('/ask');
+  await page.getByLabel('Topic').selectOption('imports-customs');
+  await page.getByLabel('Your question').fill(title);
+  await page.reload();
+  await expect(page.getByLabel('Your question')).toHaveValue(title);
+  await expect(page.getByLabel('Topic')).toHaveValue('imports-customs');
+
+  // The connection drops as it's posted: an error, and the words stay.
+  const questions = 'http://localhost:3000/questions';
+  await page.route(questions, route => route.request().method() === 'POST' ? route.abort('internetdisconnected') : route.continue());
+  const earlier = page.getByRole('button', { name: 'Mine is different' });
+  await expect(page.getByRole('button', { name: 'Post question' }).or(earlier)).toBeVisible();
+  if (await earlier.isVisible()) await earlier.click();
+  await page.getByRole('button', { name: 'Post question' }).click();
+  await expect(page.getByRole('alert').filter({ hasText: 'Graphinity isn’t responding' })).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel('Your question')).toHaveValue(title);
+  await page.unroute(questions);
+
+  // Back online it posts, and the draft is gone.
+  if (await earlier.isVisible()) await earlier.click();
+  await page.getByRole('button', { name: 'Post question' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
+  const questionUrl = new URL(page.url()).pathname;
+  await page.goto('/ask');
+  await expect(page.getByLabel('Your question')).toHaveValue('');
+
+  // Someone else's answer in progress is kept per question, the same way.
+  await signOut(page);
+  await signIn(page, 'A brand-new person');
+  await setUpIfNeeded(page, `drafter.${run}`);
+  await page.goto(questionUrl);
+  await page.getByLabel('Your answer').fill(answer);
+  await page.reload();
+  await expect(page.getByLabel('Your answer')).toHaveValue(answer);
+
+  // Signing out forgets every draft in the tab.
+  await page.goto('/ask');
+  await page.getByLabel('Your question').fill('A question I never sent');
+  await signOut(page);
+  expect(await page.evaluate(() => Object.keys(sessionStorage).filter(k => k.startsWith('graphinity.draft.')))).toEqual([]);
 });
 
 test('the graph can be explored from the keyboard, field by field', async ({ page }) => {

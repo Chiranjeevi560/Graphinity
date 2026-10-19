@@ -6,6 +6,7 @@ import { GoogleButton } from '../components/GoogleButton.tsx';
 import { LoadFailed, MessageScreen, splitMessage } from '../components/Message.tsx';
 import { ReportButton } from '../components/ReportButton.tsx';
 import { ApiError } from '../lib/api.ts';
+import { drafts } from '../lib/drafts.ts';
 import { onLive } from '../lib/live.ts';
 import { applyMeta } from '../lib/meta.ts';
 import { ANSWER, charCount, MEDAL_NAMES, questionPath, timeAgo, type Answer, type Consensus, type QuestionSummary, type Selection } from '../lib/questions.ts';
@@ -191,8 +192,13 @@ export default function Question({ id }: { id: string }) {
   );
 }
 
+const isAnswerDraft = (v: unknown): v is { body: string } => typeof v === 'object' && v !== null && typeof (v as { body?: unknown }).body === 'string';
+
 function AnswerForm({ questionId, onAnswered }: { questionId: string; onAnswered: () => Promise<void> }) {
-  const [body, setBody] = useState('');
+  // Whatever was typed before a reload, a crash or a failed post (lib/drafts.ts).
+  const key = `answer.${questionId}`;
+  const [body, setBody] = useState(() => drafts.load(key, isAnswerDraft)?.body ?? '');
+  useEffect(() => { drafts.save(key, { body }, d => d.body.trim() === ''); }, [key, body]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [posted, setPosted] = useState(false);
@@ -206,6 +212,7 @@ function AnswerForm({ questionId, onAnswered }: { questionId: string; onAnswered
     setError(null);
     try {
       await api(`/questions/${questionId}/answers`, { method: 'POST', signedIn: true, body: { body } });
+      drafts.save(key, null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Your answer couldn’t be posted. Try again in a minute.');
       setSending(false);

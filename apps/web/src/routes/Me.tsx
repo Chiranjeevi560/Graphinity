@@ -6,6 +6,7 @@ import { Notifications } from '../components/Notifications.tsx';
 import { Standing, useStanding } from '../components/Standing.tsx';
 import { turnPushOff } from '../lib/push.ts';
 import { ApiError } from '../lib/api.ts';
+import { drafts } from '../lib/drafts.ts';
 import { navigate } from '../lib/router.ts';
 import { api, auth, type Profile } from '../session.tsx';
 
@@ -23,6 +24,7 @@ export default function Me({ profile }: { profile: Profile }) {
       await turnPushOff(api).catch(() => {});
       await api('/me', { method: 'DELETE', signedIn: true, body: { confirm: true } });
       auth.clear();
+      drafts.clear();
       navigate('/goodbye', { replace: true });
     } catch (err) {
       setDeleteError(err instanceof ApiError ? err.message : 'Something went wrong. Try again in a minute.');
@@ -61,7 +63,7 @@ export default function Me({ profile }: { profile: Profile }) {
       {profile.moderator && <LinkButton to="/review" variant="secondary" className="btn-block">Review reports</LinkButton>}
 
       <section className="profile-footer">
-        <button type="button" className="btn btn-plain" onClick={() => { void turnPushOff(api).catch(() => {}).then(() => auth.signOut()).then(() => { navigate('/', { replace: true }); }); }}>
+        <button type="button" className="btn btn-plain" onClick={() => { void turnPushOff(api).catch(() => {}).then(() => auth.signOut()).then(() => { drafts.clear(); navigate('/', { replace: true }); }); }}>
           Sign out
         </button>
         <button type="button" className="btn btn-plain danger" onClick={() => { setConfirming(true); }}>Delete account…</button>
