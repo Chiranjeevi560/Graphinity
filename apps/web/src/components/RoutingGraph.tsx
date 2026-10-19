@@ -33,7 +33,8 @@ export function RoutingGraph(props: Props) {
   return (
     <figure className="routing-graph">
       <canvas ref={canvasRef} className="routing-graph-canvas" aria-hidden="true" />
-      <figcaption className="text-subhead secondary">{props.caption}</figcaption>
+      {/* Spec §20.1: each milestone (a wave going out, an answer arriving) is read out as it happens. */}
+      <figcaption className="text-subhead secondary" aria-live="polite">{props.caption}</figcaption>
     </figure>
   );
 }

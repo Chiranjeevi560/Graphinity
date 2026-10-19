@@ -13,8 +13,13 @@ export interface GraphData {
   /** Everyone with a profile, once. */
   members: number;
   fields: GraphField[];
-  /** Each person as positions in `fields`. */
+  /** A sample of people, each as positions in `fields`: for drawing only. */
   people: number[][];
+  /**
+   * Exact counts of people who know both of two fields (a < b); null under 5.
+   * Absent from a server older than the site, for the minutes a deploy takes.
+   */
+  links?: Array<{ a: number; b: number; shared: number | null }>;
   activity: { lastDay: { questions: number; answers: number }; recent: Array<{ field: number; kind: 'question' | 'answer' }> };
 }
 
@@ -52,22 +57,26 @@ export function seededRandom(seed: number): () => number {
   };
 }
 
+/** Fields with someone in them, biggest first: the order clusters are placed and visited in. */
+export function fieldOrder(fields: readonly GraphField[]): number[] {
+  return fields.map((f, i) => ({ i, members: f.members })).filter(f => f.members > 0).sort((a, b) => b.members - a.members || a.i - b.i).map(f => f.i);
+}
+
 /**
- * Lays out the graph in a width × height box (CSS pixels). `you`, when
- * given, adds the viewer as one more node in their fields, drawn brighter.
+ * Where each field's cluster sits, by position in `fields`. Biggest nearest
+ * the middle. Only fields with someone in them take a place, so a young
+ * graph sits centred instead of where empty fields left room. Shared by the
+ * drawing and the keyboard layer over it, so the two never disagree.
  */
-export function layout(data: Pick<GraphData, 'fields' | 'people'>, width: number, height: number, options: { you?: number[]; seed?: number } = {}): Layout {
-  const random = seededRandom(options.seed ?? 1);
+export function clustersFor(fields: readonly GraphField[], width: number, height: number): Cluster[] {
   const cx = width / 2;
   const cy = height / 2;
   const short = Math.min(width, height);
-  const allMembers = Math.max(1, data.fields.reduce((sum, f) => sum + f.members, 0));
-
-  // Biggest fields nearest the middle. Only fields with someone in them take
-  // a place, so a young graph sits centred instead of where empty fields left room.
-  const order = data.fields.map((f, i) => ({ i, members: f.members })).filter(f => f.members > 0).sort((a, b) => b.members - a.members || a.i - b.i);
-  const clusters: Cluster[] = data.fields.map(() => ({ x: cx, y: cy, r: 0, members: 0 }));
-  order.forEach(({ i, members }, rank) => {
+  const allMembers = Math.max(1, fields.reduce((sum, f) => sum + f.members, 0));
+  const order = fieldOrder(fields);
+  const clusters: Cluster[] = fields.map(() => ({ x: cx, y: cy, r: 0, members: 0 }));
+  order.forEach((i, rank) => {
+    const members = fields[i]?.members ?? 0;
     // The biggest exactly in the middle; the rest spiral outwards to the edge.
     const spread = order.length > 1 ? Math.sqrt(rank / (order.length - 1)) : 0;
     const angle = rank * GOLDEN_ANGLE;
@@ -80,6 +89,16 @@ export function layout(data: Pick<GraphData, 'fields' | 'people'>, width: number
       members,
     };
   });
+  return clusters;
+}
+
+/**
+ * Lays out the graph in a width × height box (CSS pixels). `you`, when
+ * given, adds the viewer as one more node in their fields, drawn brighter.
+ */
+export function layout(data: Pick<GraphData, 'fields' | 'people'>, width: number, height: number, options: { you?: number[]; seed?: number } = {}): Layout {
+  const random = seededRandom(options.seed ?? 1);
+  const clusters = clustersFor(data.fields, width, height);
 
   const people = options.you ? [...data.people, options.you] : data.people;
   const nodes: GraphNode[] = [];

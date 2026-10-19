@@ -24,6 +24,13 @@ This records what we build, and where the original vision bends for honesty, pri
 
 Reduced motion: the same graph, still. A text summary is always there for screen readers.
 
+Keyboard and screen readers (spec §20.1): the picture is hidden from them, and over it sits a list of
+the fields, one button on each cluster, unseen until focused. Tab reaches the biggest field; the arrow
+keys move between fields from biggest to smallest (Home and End jump to the ends); Enter opens one and
+says in words who knows it and where else they reach ("40 people know Imports & Customs. 12 also know
+Travel, and a few also know Fitness."), from exact counts the server sends, "a few" under 5. The
+asker's routing line is a polite live region, so each wave and answer is read out as it happens.
+
 ## Routing that learns
 
 A question goes only to people who list its field, in waves of 5, 5 and 5 at 0, 20 and 60 minutes

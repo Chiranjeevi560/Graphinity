@@ -1,6 +1,6 @@
 // The graph in words: the caption under every graph, and what screen
 // readers get instead of the picture.
-import type { GraphData } from './graph-layout.ts';
+import type { GraphData, GraphField } from './graph-layout.ts';
 
 const n = (count: number, one: string, many: string) => `${count.toLocaleString('en')} ${count === 1 ? one : many}`;
 
@@ -19,4 +19,32 @@ export function routingLine(r: { asked: number | null; inCountry: number | null 
   const who = r.asked === null ? 'a few people' : n(r.asked, 'person', 'people');
   const local = r.inCountry !== null && country ? ` · ${r.inCountry.toLocaleString('en')} in ${country}` : '';
   return `Sent to ${who} who know ${field}${local}`;
+}
+
+/** Under 5, an exact count set against public profiles could point at who. */
+const few = (count: number, one: string, many: string) => (count < 5 ? `a few ${many}` : n(count, one, many));
+
+/** A field as a keyboard or screen-reader stop: "Imports & Customs, 40 people". */
+export function fieldLabel(field: GraphField): string {
+  return `${field.name}, ${few(field.members, 'person', 'people')}`;
+}
+
+/** The other fields a field's people also know, most shared first ("a few", null, last). */
+export function neighbours(data: Pick<GraphData, 'fields' | 'links'>, index: number): Array<{ index: number; shared: number | null }> {
+  return (data.links ?? [])
+    .filter(l => (l.a === index || l.b === index) && data.fields[l.a === index ? l.b : l.a])
+    .map(l => ({ index: l.a === index ? l.b : l.a, shared: l.shared }))
+    .sort((x, y) => (y.shared ?? 0) - (x.shared ?? 0) || x.index - y.index);
+}
+
+/** What opening a field says: who knows it, and where else they reach. */
+export function fieldNeighbourhood(data: Pick<GraphData, 'fields' | 'links'>, index: number): string {
+  const field = data.fields[index];
+  if (!field) return '';
+  const who = few(field.members, 'person', 'people');
+  const opening = `${who.charAt(0).toUpperCase()}${who.slice(1)} know ${field.name}.`;
+  const near = neighbours(data, index).slice(0, 3).map(({ index: i, shared }) => `${shared === null || shared < 5 ? 'a few' : shared.toLocaleString('en')} also know ${data.fields[i]?.name ?? ''}`);
+  if (near.length === 0) return `${opening} None of them list another field yet.`;
+  const list = near.length === 1 ? near[0] : `${near.slice(0, -1).join(', ')}, and ${near[near.length - 1] ?? ''}`;
+  return `${opening} ${(list ?? '').charAt(0).toUpperCase()}${(list ?? '').slice(1)}.`;
 }
