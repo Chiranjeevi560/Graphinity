@@ -249,7 +249,8 @@ test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
   await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
   await expect(page).toHaveURL(/\/q\/\d+\/how-do-i-import-a-vintage-watch-into-the-uae-case-/);
   await expect(page).toHaveTitle(`${title} – Graphinity`);
-  await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /^index/);
+  // Spec §19.2: unanswered, it stays out of search (indexed once answered, below).
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', 'noindex');
   await expect(page.getByText('This is your question.')).toBeVisible();
   await audit(page, 'question (yours)');
   const questionUrl = new URL(page.url()).pathname;
@@ -311,6 +312,10 @@ test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
   await expect(page.getByRole('link', { name: `@${answerer}`, exact: true })).toBeVisible();
   await expect(page.getByLabel('Your answer')).toHaveCount(0);
   await audit(page, 'question (answered)');
+  // Loaded fresh, the way a search engine sees it, an answered question is indexed.
+  await page.goto(questionUrl);
+  await expect(page.getByRole('heading', { name: '1 answer' })).toBeVisible();
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /^index/);
 
   await page.goto('/me');
   await page.getByRole('button', { name: 'Delete account…' }).click();
@@ -696,8 +701,14 @@ test('asking something already answered offers those answers first, and never fo
   await signIn(page, 'A brand-new person');
   await setUpIfNeeded(page, `first.${run}`);
   await page.goto('/ask');
-  await page.getByLabel('Your question').fill(title);
   await page.getByLabel('Topic').selectOption('imports-customs');
+  const checked = page.waitForResponse(r => r.url().endsWith('/questions/precheck'));
+  await page.getByLabel('Your question').fill(title);
+  await checked;
+  // Earlier runs leave the same question, answered, in the local database:
+  // this person's situation is their own, so they say so, as anyone could.
+  const earlier = page.getByRole('button', { name: 'Mine is different' });
+  if (await earlier.isVisible()) await earlier.click();
   await page.getByRole('button', { name: 'Post question' }).click();
   await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
   const questionUrl = new URL(page.url()).pathname;
