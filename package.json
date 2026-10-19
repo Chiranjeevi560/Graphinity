@@ -24,13 +24,14 @@
     "test:coverage": "npm --workspaces run test -- --coverage --coverage.reporter=text-summary --coverage.reporter=json-summary --coverage.include=src/**",
     "check:secrets": ".local/tools/gitleaks git --redact --no-banner . && .local/tools/gitleaks git --pre-commit --redact --no-banner .",
     "check:deps": ".local/tools/osv-scanner scan source --lockfile package-lock.json && npm audit --audit-level=high",
+    "check:licenses": ".local/tools/osv-scanner scan source --lockfile package-lock.json --licenses=MIT,Apache-2.0,ISC,MPL-2.0,BSD-3-Clause,BSD-2-Clause,0BSD,BlueOak-1.0.0,CC-BY-4.0,CC0-1.0,Python-2.0",
     "check:size": "size-limit",
     "check:perf": "node scripts/lighthouse.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check:fast": "npm run typecheck && npm run lint && npm run format:check && node scripts/floor-guard.mjs",
     "check:task": "npm run check:fast && npm run test:coverage && npm run build && npm run check:size",
-    "check:full": "npm run check:task && npm run check:secrets && npm run check:deps && npm run test:e2e && npm run check:perf",
+    "check:full": "npm run check:task && npm run check:secrets && npm run check:deps && npm run check:licenses && npm run test:e2e && npm run check:perf",
     "dev:api:local": "npm --workspace apps/api run dev:local"
   },
   "devDependencies": {

@@ -42,6 +42,7 @@ Checked by `node scripts/floor-guard.mjs` on everything changed since `origin/ma
 | Bundle size (brotli) | Main script ≤ 61.80 kB, styles ≤ 5.95 kB, all scripts ≤ 95.99 kB | Ratchet: today + 0.5%. Growth must be a decision | `npm run check:size` | task end, CI |
 | Secrets | No findings in git history or uncommitted changes (values always redacted) | External judge | `npm run check:secrets` | task end, CI |
 | Dependencies | Nothing known-vulnerable at high or above | External database (OSV) | `npm run check:deps` | task end, CI |
+| Licences | Every dependency under one of: MIT, Apache-2.0, ISC, MPL-2.0, BSD-3-Clause, BSD-2-Clause, 0BSD, BlueOak-1.0.0, CC-BY-4.0, CC0-1.0, Python-2.0 | Today's list (2026-10-20): all permissive or file-level copyleft. A new licence (above all GPL or AGPL, which could oblige us to publish more than we choose) must be a decision | `npm run check:licenses` | task end, CI |
 | Code security | No Semgrep findings at ERROR (p/default, p/owasp-top-ten, p/typescript, p/react) | External rules | CI only (`semgrep`) | CI |
 | Supply chain | Exact versions, lockfile, install scripts off, nothing published in the last 2 weeks, CI actions pinned to commits | Owner's brief | review, `.npmrc`, CI | every change |
 
