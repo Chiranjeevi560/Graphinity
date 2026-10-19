@@ -50,6 +50,8 @@ step lint npm run lint
 step test npm run test:coverage
 step build npm run build
 step size npm run check:size
+# The whole history, as CI scans it: a fake key in a test once passed here and failed there.
+step secrets npm run check:secrets
 echo "SHIP: checks passed ($(grep -E 'Tests ' "$logs/test.log" | tr -s ' ' | tr '\n' ';'))"
 
 # main changes only through pull requests: start a branch for this one.
