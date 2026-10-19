@@ -29,14 +29,14 @@ Status: ✅ built and tested · ◐ in progress · ○ planned · ⤳ bent (reas
 | §1.3 Anti-goals (no feed, no follows, no global score, no threads, no ad-tech) | Already true; kept as hard rules in CLAUDE.md | ✅ |
 | §3.1 Hick/Fitts/Miller | 44px targets enforced by the browser audit; answer header ≤ 6 tokens when the consensus screen lands | ✅ / ○ |
 | §4.1 "Living Nexus" logo geometry | ⤳ The owner kept the current mark (three connected people); it keeps its own indigo (`--brand`) while the interface uses the spec's blue | ⤳ |
-| §5 Typography tokens, tracking formula | Tokens from §5.1 with the formula; fonts: system stack first (see bends) | ○ |
-| §6 OKLCH colour tokens, elevation, focus ring | Replace `tokens.css` values with §6.1; the contrast test re-checks every pair | ○ |
+| §5 Typography tokens, tracking formula | Built: every size tracks at −0.032 + 0.42/size em (`test/type.test.ts`); fonts: system stack first (see bends) | ✅ |
+| §6 OKLCH colour tokens, elevation, focus ring | Built: §6.1 tokens in `tokens.css`, double focus ring. Where the spec's colour fails 4.5:1 as text (accent on grey fills, amber, green on the picked card), a deeper text-only variant; fills keep the spec's value. The contrast test checks every pair | ✅ |
 | §7.1 Two layers (graph behind, sheets above) | Home graph built (docs/GRAPH.md); full-screen Layer 0 to follow | ◐ |
 | §7.2 Screen 1 onboarding | Built (name, country, fields); "tether to cluster" animation | ✅ / ○ |
 | §7.2 Screen 2 composer + semantic intercept | Built: precheck at a 250 ms pause; "asked and answered recently" card first, "Mine is different" to ask anyway | ✅ |
 | §7.2 Screen 3 live routing view | Built: the asker watches it travel, counts in words, "a few" under 5 | ✅ |
 | §7.2 Screen 4 answers + consensus bar + 5-star | Built: consensus bar and words, "Different outcome · kept visible" pins, credibility row (medal, reputation, picks in field), 5-star radio group after picking | ✅ |
-| §8.1 Springs as m·x″ + c·x′ + k·x | `spring.ts` gains the §8.1 tokens (mass, stiffness, damping) | ○ |
+| §8.1 Springs as m·x″ + c·x′ + k·x | Built: `spring.ts` holds the table as written and converts it exactly (ω = √(k/m), ζ = c/2√(mk)). Snappy: presses, toggles. Fluid: dialogs, screens, the live banner. Spatial: a question travelling on the graph. Pulse: a person swelling as it reaches them | ✅ |
 | §8.3 WebGPU/WebGL2 in a worker | ⤳ Canvas 2D on the main thread: at our node counts it draws in well under a millisecond, and a GPU path is a large dependency-free rewrite to justify later with measurements | ⤳ |
 | §9.2 Canonical `/q/{field}/{country}/{slug}-{id}` with 301 | Today `/q/{id}/{slug}` with the address fixed in place; move with redirects | ○ |
 | §11.1 Semantic dedup (≥ 0.88 intercept, 0.72 related) | Built: Workers AI `bge-base-en-v1.5` (768, cls) into pgvector `halfvec` with HNSW (m 24, ef 200), RRF with words, thresholds as written. Bent: no cross-encoder rerank yet (another model call per keystroke pause on the free allowance); the thresholds need checking against real Cloudflare vectors once the owner adds the token | ◐ |

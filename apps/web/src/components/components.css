@@ -40,7 +40,7 @@
   user-select: none;
   touch-action: manipulation;
   /* Release springs back; the press itself is near-instant (below). */
-  transition: transform var(--spring-smooth-duration) var(--spring-smooth), opacity 150ms ease;
+  transition: transform var(--spring-snappy-duration) var(--spring-snappy), opacity 150ms ease;
 }
 .btn:active:not(:disabled) {
   transform: scale(0.97);
@@ -96,7 +96,7 @@
 
 /* Route changes cross-fade in; content never slides under a reduced-motion setting. */
 .route {
-  animation: route-in var(--spring-smooth-duration) var(--spring-smooth) both;
+  animation: route-in var(--spring-fluid-duration) var(--spring-fluid) both;
 }
 @keyframes route-in {
   from { opacity: 0; transform: translateY(0.5rem); }
@@ -129,6 +129,6 @@
 }
 .live-banner:hover { text-decoration: none; }
 @media (prefers-reduced-motion: no-preference) {
-  .live-banner { animation: live-in var(--spring-move-duration, 0.4s) var(--spring-move, ease-out); }
+  .live-banner { animation: live-in var(--spring-fluid-duration) var(--spring-fluid); }
 }
 @keyframes live-in { from { opacity: 0; transform: translateY(0.75rem); } }

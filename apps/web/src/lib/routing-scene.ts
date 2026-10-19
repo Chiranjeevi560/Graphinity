@@ -5,7 +5,7 @@
 // field lighting up, never as single people. Drawing only: the component
 // mounts it, so it can be tested with a recording canvas.
 import type { CanvasScene } from './canvas-loop.ts';
-import { along, bendFor, MAX_DRAWN, routingLayout, stagger, travel, type RoutingLayout } from './routing-layout.ts';
+import { along, ARRIVAL, arrivalSwell, bendFor, MAX_DRAWN, routingLayout, stagger, travel, type RoutingLayout } from './routing-layout.ts';
 
 export interface RoutingInputs {
   /** People it reached; null: "a few" (under 5); undefined: not sent yet. */
@@ -112,8 +112,10 @@ export function routingScene(read: () => RoutingInputs): CanvasScene {
         const glow = still || k < 1 ? 1 : 0.8 + 0.2 * Math.sin(t * 1.6 + i * 1.7);
         ctx.globalAlpha = (0.25 + 0.7 * k) * glow;
         ctx.fillStyle = k >= 1 ? colors.accent : colors.ink;
+        // Swells as the question reaches them, only when that happens on screen.
+        const swell = still || leftAt === null || leftAt === undefined ? 1 : arrivalSwell(t - leftAt - ARRIVAL);
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 2.6, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, 2.6 * swell, 0, Math.PI * 2);
         ctx.fill();
       });
 

@@ -54,14 +54,13 @@
   /* One device pixel on high-density screens, one CSS pixel elsewhere. */
   --hairline: 1px;
 
-  /* Springs, sampled from src/lib/spring.ts. A test fails if these drift
-     from the physics; regenerate them rather than editing by hand. */
-  --spring-smooth: linear(0, 0.043, 0.1397, 0.2568, 0.3755, 0.4857, 0.583, 0.666, 0.7351, 0.7917, 0.8372, 0.8736, 0.9023, 0.9249, 0.9424, 0.956, 0.9665, 0.9746, 0.9808, 0.9855, 0.989, 0.9917, 0.9938, 0.9953, 0.9965, 0.9974, 0.9981, 0.9985, 0.9989, 0.9992, 1);
-  --spring-smooth-duration: 546ms;
-  --spring-move: linear(0, 0.0422, 0.1372, 0.2527, 0.3702, 0.4797, 0.5768, 0.6599, 0.7293, 0.7864, 0.8325, 0.8695, 0.8988, 0.9219, 0.9399, 0.9539, 0.9648, 0.9732, 0.9796, 0.9845, 0.9883, 0.9912, 0.9933, 0.995, 0.9962, 0.9972, 0.9979, 0.9984, 0.9988, 0.9991, 1);
-  --spring-move-duration: 617ms;
-  --spring-sheet: linear(0, 0.0424, 0.1428, 0.2703, 0.4041, 0.5313, 0.6445, 0.7405, 0.8185, 0.8797, 0.926, 0.9596, 0.983, 0.9985, 1.0079, 1.0129, 1.0149, 1.015, 1.0139, 1.0121, 1.0101, 1.0081, 1.0062, 1.0046, 1.0033, 1.0023, 1.0015, 1.0009, 1.0004, 1.0001, 1);
-  --spring-sheet-duration: 454ms;
+  /* Spec §8.1 springs, sampled from src/lib/spring.ts. A test fails if
+     these drift from the physics; regenerate them rather than editing by
+     hand. Spatial and pulse move the graph on its canvas, not in CSS. */
+  --spring-snappy: linear(0, 0.0417, 0.139, 0.2608, 0.3875, 0.5072, 0.6137, 0.7046, 0.7795, 0.8394, 0.8862, 0.9218, 0.9483, 0.9675, 0.981, 0.9903, 0.9963, 1.0001, 1.0023, 1.0033, 1.0037, 1.0036, 1.0033, 1.0029, 1.0024, 1.0019, 1.0015, 1.0012, 1.0009, 1.0006, 1);
+  --spring-snappy-duration: 487ms;
+  --spring-fluid: linear(0, 0.0405, 0.1353, 0.2547, 0.3796, 0.4984, 0.6049, 0.6962, 0.772, 0.833, 0.881, 0.9178, 0.9453, 0.9654, 0.9796, 0.9895, 0.996, 1.0001, 1.0024, 1.0036, 1.0041, 1.004, 1.0037, 1.0032, 1.0027, 1.0022, 1.0018, 1.0014, 1.001, 1.0008, 1);
+  --spring-fluid-duration: 579ms;
   /* Press feedback must land within a frame or two of touch-down. */
   --press-duration: 90ms;
 
@@ -179,12 +178,10 @@
    cross-fade timing so state changes stay visible but nothing moves. */
 @media (prefers-reduced-motion: reduce) {
   :root {
-    --spring-smooth: ease;
-    --spring-move: ease;
-    --spring-sheet: ease;
-    --spring-smooth-duration: 150ms;
-    --spring-move-duration: 150ms;
-    --spring-sheet-duration: 150ms;
+    --spring-snappy: ease;
+    --spring-fluid: ease;
+    --spring-snappy-duration: 150ms;
+    --spring-fluid-duration: 150ms;
     --press-duration: 0ms;
   }
 }

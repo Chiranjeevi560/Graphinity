@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { along, bendFor, MAX_DRAWN, routingLayout, stagger, travel } from '../src/lib/routing-layout.ts';
+import { along, ARRIVAL, arrivalSwell, bendFor, MAX_DRAWN, routingLayout, stagger, travel } from '../src/lib/routing-layout.ts';
 import { must } from './must.ts';
 
 describe('the picture of a question travelling', () => {
@@ -40,5 +40,23 @@ describe('the picture of a question travelling', () => {
       last = k;
     }
     expect(travel(3)).toBeCloseTo(1, 3);
+  });
+
+  it('reaches each person in well under a second, on the spatial spring', () => {
+    expect(ARRIVAL).toBeGreaterThan(0.3);
+    expect(ARRIVAL).toBeLessThan(1);
+    expect(travel(ARRIVAL)).toBe(1);
+    expect(travel(ARRIVAL - 0.01)).toBeLessThan(1);
+  });
+
+  it('swells a reached person and lets them settle with a little give', () => {
+    expect(arrivalSwell(-0.1)).toBe(1);
+    expect(arrivalSwell(0)).toBeCloseTo(1.8, 6);
+    let low = Infinity;
+    for (let t = 0; t < 2; t += 0.005) low = Math.min(low, arrivalSwell(t));
+    // Dips just below its size once (the pulse's resonance), never far.
+    expect(low).toBeLessThan(1);
+    expect(low).toBeGreaterThan(0.9);
+    expect(arrivalSwell(3)).toBeCloseTo(1, 3);
   });
 });

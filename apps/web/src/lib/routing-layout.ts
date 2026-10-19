@@ -49,8 +49,30 @@ export function stagger(count: number): number {
   return count > 1 ? Math.min(0.06, 1 / count) : 0;
 }
 
-/** How far along its path a travelling question is, 0 to 1, `age` seconds after it set off. */
+/** Seconds from setting off to reaching the person: the spatial spring's first touch of its target. */
+export const ARRIVAL = (() => {
+  let age = 0;
+  while (springPosition(springs.spatial, age) < 1 && age < 5) age += 1 / 240;
+  return age;
+})();
+
+/**
+ * How far along its path a travelling question is, 0 to 1, `age` seconds
+ * after it set off. Arriving is final: the spring's faint swing back after
+ * touching its target would otherwise slide the question backwards.
+ */
 export function travel(age: number): number {
   if (age <= 0) return 0;
-  return Math.min(1, springPosition(springs.move, age * 0.6));
+  if (age >= ARRIVAL) return 1;
+  return Math.min(1, springPosition(springs.spatial, age));
+}
+
+/**
+ * How large a person's dot is, `since` seconds after the question reached
+ * them: it swells and settles with a little give (spec §8.1, the pulse
+ * spring). 1 before arrival and once settled.
+ */
+export function arrivalSwell(since: number): number {
+  if (since < 0) return 1;
+  return 1 + 0.8 * (1 - springPosition(springs.pulse, since));
 }

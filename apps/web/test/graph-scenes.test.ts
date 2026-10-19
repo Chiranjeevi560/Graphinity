@@ -3,6 +3,7 @@ import { runCanvas, type Frame } from '../src/lib/canvas-loop.ts';
 import type { GraphData } from '../src/lib/graph-layout.ts';
 import { livingScene } from '../src/lib/living-scene.ts';
 import { routingScene, type RoutingInputs } from '../src/lib/routing-scene.ts';
+import { ARRIVAL } from '../src/lib/routing-layout.ts';
 
 /** A 2D context that records what was drawn, enough to tell what's on screen. */
 function recorder() {
@@ -52,6 +53,27 @@ describe('the asker’s routing picture', () => {
     expect(travelling(rec.arcs)).toBeGreaterThan(0);
     draw(10);
     expect(travelling(rec.arcs)).toBe(0);
+  });
+
+  it('swells each person as the question reaches them, on the pulse spring, not with motion off', () => {
+    // People's dots only: larger than resting, at most the swell's peak, not the answer pulse (3).
+    const swollen = (arcs: Array<{ r: number }>) => arcs.filter(a => a.r > 2.6 && a.r <= 2.6 * 1.8 + 1e-9 && a.r !== 3).length;
+    const { rec, draw } = scene({ asked: 5, answers: 0, fresh: true });
+    draw(0);
+    draw(ARRIVAL + 0.02);
+    expect(swollen(rec.arcs)).toBeGreaterThan(0);
+    draw(10);
+    expect(swollen(rec.arcs)).toBe(0);
+    expect(people(rec.arcs)).toBe(5);
+    const still = scene({ asked: 5, answers: 0, fresh: true });
+    still.draw(0, true);
+    still.draw(ARRIVAL + 0.02, true);
+    expect(swollen(still.rec.arcs)).toBe(0);
+    // Motion turned off while the question is on its way: it arrives without swelling.
+    const midway = scene({ asked: 5, answers: 0, fresh: true });
+    midway.draw(0);
+    midway.draw(ARRIVAL + 0.02, true);
+    expect(swollen(midway.rec.arcs)).toBe(0);
   });
 
   it('sends a new wave out while you watch', () => {

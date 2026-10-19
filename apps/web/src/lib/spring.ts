@@ -12,15 +12,36 @@ export interface SpringParams {
   dampingFraction: number;
 }
 
-/** Presets. Critically damped by default; bounce only after a flick. */
-export const springs = {
-  /** Default UI motion: presses, reveals, route changes. */
-  smooth: { response: 0.35, dampingFraction: 1 },
-  /** Moving or repositioning something. */
-  move: { response: 0.4, dampingFraction: 1 },
-  /** Sheets and drawers released with momentum. */
-  sheet: { response: 0.3, dampingFraction: 0.8 },
-} as const satisfies Record<string, SpringParams>;
+/** A spring as the spec writes it: m x'' + c x' + k x = 0. */
+export interface SpringPhysics {
+  mass: number;
+  stiffness: number;
+  damping: number;
+}
+
+/** The same spring in Apple's terms: ω = √(k/m), response = 2π/ω, ζ = c / 2√(mk). */
+export function fromPhysics({ mass, stiffness, damping }: SpringPhysics): SpringParams {
+  return { response: (2 * Math.PI) / Math.sqrt(stiffness / mass), dampingFraction: damping / (2 * Math.sqrt(mass * stiffness)) };
+}
+
+/** docs/SPEC.md §8.1, exactly as the table gives them. */
+export const physics = {
+  /** Presses, toggles, checkboxes: micro-interactions. */
+  snappy: { mass: 1, stiffness: 380, damping: 34 },
+  /** Sheets, dialogs, cards and screens arriving: panel morphs. */
+  fluid: { mass: 1, stiffness: 260, damping: 28 },
+  /** Gliding across the graph. */
+  spatial: { mass: 1.2, stiffness: 140, damping: 24 },
+  /** A person lighting up as a question reaches them. */
+  pulse: { mass: 0.8, stiffness: 180, damping: 16 },
+} as const satisfies Record<string, SpringPhysics>;
+
+export const springs: Record<keyof typeof physics, SpringParams> = {
+  snappy: fromPhysics(physics.snappy),
+  fluid: fromPhysics(physics.fluid),
+  spatial: fromPhysics(physics.spatial),
+  pulse: fromPhysics(physics.pulse),
+};
 
 const SETTLE_DISTANCE = 0.001; // of the total distance
 const SETTLE_VELOCITY = 0.01; // total distances per second
@@ -32,7 +53,7 @@ const SETTLE_VELOCITY = 0.01; // total distances per second
 export function springPosition({ response, dampingFraction: zeta }: SpringParams, t: number): number {
   const omega = (2 * Math.PI) / response; // natural frequency
   if (zeta >= 1) {
-    // Critically damped (over-damped is treated the same; we don't use it).
+    // Critically damped (over-damped is treated the same; the spec has none).
     return 1 - Math.exp(-omega * t) * (1 + omega * t);
   }
   const omegaD = omega * Math.sqrt(1 - zeta * zeta);

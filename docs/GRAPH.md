@@ -54,6 +54,8 @@ Each route stores why it was made, at that moment, for "Why you got this".
 - Only what really happens while a page is open is animated: a question asked from this tab, a wave
   going out (`sent` event), an answer arriving (`answered` event). A later visit shows the settled
   picture, not a replay.
+- Motion uses the spec's springs (§8.1): a question glides along its path on the spatial spring and
+  stops there for good on arrival; the person it reaches swells and settles on the pulse spring.
 
 ## Bent or left for later, and why
 
