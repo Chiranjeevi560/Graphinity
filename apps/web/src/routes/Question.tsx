@@ -64,7 +64,8 @@ function routingCaption(page: Page, now: number): string {
 function present(page: Page) {
   const path = questionPath(page.question);
   if (location.pathname !== path) history.replaceState(history.state, '', path);
-  applyMeta({ title: `${page.question.title} – Graphinity`, index: true }, path, import.meta.env.VITE_SITE_ORIGIN);
+  // Bible §19.2: only once someone has answered does it belong in search results.
+  applyMeta({ title: `${page.question.title} – Graphinity`, index: page.answers.some(a => !a.hidden) }, path, import.meta.env.VITE_SITE_ORIGIN);
 }
 
 export default function Question({ id }: { id: string }) {
@@ -149,7 +150,7 @@ export default function Question({ id }: { id: string }) {
           <ol className="answer-list">
             {/* The answer that helped comes first; the rest in the server's order (Bible §11.5). */}
             {[...answers].sort((x, y) => Number(y.id === selection?.answerId) - Number(x.id === selection?.answerId)).map(a => (
-              <li key={a.id} className={`answer${selection?.answerId === a.id ? ' is-picked' : ''}`}>
+              <li key={a.id} id={`answer-${a.id}`} className={`answer${selection?.answerId === a.id ? ' is-picked' : ''}`}>
                 <AnswerLabels answer={a} picked={selection?.answerId === a.id} correct={selection?.answerId === a.id ? selection.correct : null} />
                 {a.minorityPinned && <p className="minority-badge text-footnote">Different outcome · kept visible</p>}
                 <p className="text-body post-body">{a.body}</p>

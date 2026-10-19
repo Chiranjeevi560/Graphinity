@@ -1,11 +1,16 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { questionHead, questionPage, sitemap, type ShareEnv } from '../share.ts';
+import { questionHead, questionPage, sitemap, type QuestionPage, type ShareEnv } from '../share.ts';
 
 const SITE = 'https://graphinity.pages.dev';
 // The real page head, as the build makes it.
 const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8').replaceAll('%SITE_ORIGIN%', SITE);
-const question = { id: '42', title: 'How do I import a watch into the UAE?', body: 'Bought in Geneva.\nShipping to Dubai.', field: { name: 'Imports & Customs' }, answerCount: 2 };
+const question = { id: '42', title: 'How do I import a watch into the UAE?', body: 'Bought in Geneva.\nShipping to Dubai.', field: { name: 'Imports & Customs' }, answerCount: 2, createdAt: '2026-10-19T04:00:00.000Z', asker: { handle: 'arjun' } };
+const page = (q: QuestionPage['question'] = question, answers: QuestionPage['answers'] = [], selection: QuestionPage['selection'] = null): QuestionPage => ({ question: q, answers, selection });
+const answers = [
+  { id: '7', body: 'Paid AED 1,200 at Dubai airport customs.', createdAt: '2026-10-19T05:00:00.000Z', answerer: { handle: 'vikram' } },
+  { id: '8', body: 'Mine cleared with no duty under the allowance.', createdAt: '2026-10-19T06:00:00.000Z', answerer: { handle: 'sara' } },
+];
 
 const env: ShareEnv = {
   ASSETS: { fetch: (r: Request) => Promise.resolve(new Response(new URL(r.url).pathname === '/sitemap.xml' ? 'STATIC SITEMAP' : html, { headers: { 'content-type': 'text/html' } })) },
@@ -15,7 +20,7 @@ const api = (answer: (url: string) => Response | Promise<Response>) => ((url: st
 
 describe('a question’s page head', () => {
   it('names the question for search engines and chat apps', () => {
-    const out = questionHead(html, question, SITE);
+    const out = questionHead(html, page(), SITE);
     expect(out).toContain('<title>How do I import a watch into the UAE? – Graphinity</title>');
     expect(out).toContain('<meta name="description" content="Bought in Geneva. Shipping to Dubai.">');
     expect(out).toContain('<meta property="og:title" content="How do I import a watch into the UAE?">');
@@ -25,24 +30,55 @@ describe('a question’s page head', () => {
   });
 
   it('takes titles literally, even ones with $ signs in them', () => {
-    const out = questionHead(html, { ...question, title: "Is it $' or $& in the price?" }, SITE);
+    const out = questionHead(html, page({ ...question, title: "Is it $' or $& in the price?" }), SITE);
     expect(out).toContain("<title>Is it $&#39; or $&amp; in the price? – Graphinity</title>");
     expect(out.match(/<title>/g)).toHaveLength(1);
   });
 
   it('escapes everything it inserts', () => {
-    const out = questionHead(html, { ...question, title: '"><script>alert(1)</script>', body: '<img src=x onerror=alert(1)>' }, SITE);
+    const out = questionHead(html, page({ ...question, title: '"><script>alert(1)</script>', body: '<img src=x onerror=alert(1)>' }), SITE);
     expect(out).not.toContain('<script>alert');
     expect(out).not.toContain('<img src=x');
     expect(out).toContain('&lt;script&gt;');
   });
 
   it('describes a question without details by its answers and field, and shortens long details at a word', () => {
-    expect(questionHead(html, { ...question, body: '' }, SITE)).toContain('content="2 answers from people who know Imports &amp; Customs.');
-    const long = questionHead(html, { ...question, body: 'word '.repeat(100) }, SITE);
+    expect(questionHead(html, page({ ...question, body: '' }), SITE)).toContain('content="2 answers from people who know Imports &amp; Customs.');
+    const long = questionHead(html, page({ ...question, body: 'word '.repeat(100) }), SITE);
     const description = /<meta name="description" content="([^"]*)">/.exec(long)?.[1] ?? '';
     expect(description.length).toBeLessThanOrEqual(160);
     expect(description.endsWith('word…')).toBe(true);
+  });
+});
+
+/** The QAPage data block in a page, if any (the site's own WebSite block is always there too). */
+function qaPage(out: string): string | undefined {
+  return [...out.matchAll(/<script type="application\/ld\+json">(.*?)<\/script>/gs)].map(m => m[1] ?? '').find(j => j.includes('"QAPage"'));
+}
+
+describe('search engines (Bible §19)', () => {
+  it('keep an unanswered question out of results until someone answers', () => {
+    const out = questionHead(html, page(), SITE);
+    expect(out).toContain('<meta name="robots" content="noindex, follow">');
+    expect(qaPage(out)).toBeUndefined();
+  });
+
+  it('read an answered question as a QAPage: the pick accepted, the others suggested, each linked', () => {
+    const out = questionHead(html, page(question, answers, { answerId: '8' }), SITE);
+    expect(out).toContain('<meta name="robots" content="index, follow, max-image-preview:large">');
+    const data = JSON.parse(qaPage(out) ?? '') as { '@type': string; mainEntity: { name: string; answerCount: number; author: { name: string }; acceptedAnswer: { text: string; url: string }; suggestedAnswer: Array<{ text: string }> } };
+    expect(data['@type']).toBe('QAPage');
+    expect(data.mainEntity).toMatchObject({ name: question.title, answerCount: 2, author: { name: 'arjun' } });
+    expect(data.mainEntity.acceptedAnswer).toMatchObject({ text: 'Mine cleared with no duty under the allowance.', url: `${SITE}/q/42/how-do-i-import-a-watch-into-the-uae#answer-8` });
+    expect(data.mainEntity.suggestedAnswer.map(a => a.text)).toEqual(['Paid AED 1,200 at Dubai airport customs.']);
+  });
+
+  it('never count hidden answers, and no answer text can end the data block', () => {
+    const hostile = [{ ...answers[0] ?? answers[1], id: '9', body: 'nice </script><script>alert(1)</script>', answerer: { handle: 'x' } }, { ...answers[1] ?? answers[0], id: '10', hidden: true, answerer: { handle: 'y' } }];
+    const out = questionHead(html, page(question, hostile as QuestionPage['answers']), SITE);
+    expect(out).not.toContain('</script><script>alert');
+    expect((JSON.parse(qaPage(out) ?? '') as { mainEntity: { answerCount: number; suggestedAnswer: Array<{ text: string }> } }).mainEntity).toMatchObject({ answerCount: 1, suggestedAnswer: [{ text: 'nice </script><script>alert(1)</script>' }] });
+    expect(questionHead(html, page(question, [{ ...hostile[1], hidden: true } as QuestionPage['answers'][number]]), SITE)).toContain('noindex, follow');
   });
 });
 
@@ -50,7 +86,7 @@ describe('the question page function', () => {
   it('serves the page with the question’s head and the site’s security headers', async () => {
     const res = await questionPage(new Request(`${SITE}/q/42/old-slug`), env, api(url => {
       expect(url).toBe('https://api.example/questions/42');
-      return Response.json({ question });
+      return Response.json(page());
     }));
     expect(res.status).toBe(200);
     expect(await res.text()).toContain('<title>How do I import a watch into the UAE? – Graphinity</title>');

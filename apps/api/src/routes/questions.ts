@@ -135,14 +135,19 @@ export function registerQuestionRoutes(app: FastifyInstance, { db, events, embed
   });
 
   // For the sitemap (built by the website's host): the newest questions anyone may see.
+  // Bible §19.2: only questions with an answer anyone can see go to search
+  // engines (no thin, unanswered pages), dated by their latest answer.
   app.get('/sitemap/questions', async (_req, reply) => {
-    const rows = await db.withUser(null, async q => (await q.query<{ id: string; title: string; created_at: Date }>(
-      'SELECT q.id::text AS id, q.title, q.created_at FROM app.questions q ORDER BY q.id DESC LIMIT 5000')).rows);
+    const rows = await db.withUser(null, async q => (await q.query<{ id: string; title: string; created_at: Date; last_answered_at: Date }>(
+      `SELECT q.id::text AS id, q.title, q.created_at, last.at AS last_answered_at
+       FROM app.questions q
+       CROSS JOIN LATERAL (SELECT max(a.created_at) AS at FROM app.answers a WHERE a.question_id = q.id) last
+       WHERE last.at IS NOT NULL
+       ORDER BY q.id DESC LIMIT 5000`)).rows);
     reply.header('cache-control', 'public, max-age=3600');
-    return { questions: rows.map(r => ({ id: r.id, title: r.title, createdAt: r.created_at.toISOString() })) };
+    return { questions: rows.map(r => ({ id: r.id, title: r.title, createdAt: r.created_at.toISOString(), lastAnsweredAt: r.last_answered_at.toISOString() })) };
   });
 
-  // While someone types a question: has it been asked already?
   // Bible §11.1 and Screen 2: while someone writes a question, has it been
   // asked already? Meaning and words, fused; "duplicate" offers the existing
   // answers first (they can still ask), "related" shows them alongside.

@@ -113,13 +113,18 @@ describe('reading', () => {
 });
 
 describe('the sitemap list', () => {
-  it('lists the newest questions with titles and dates, and nobody’s id', async () => {
-    const m = await member();
-    const id = await ask(m.token, { ...question, title: 'Which bus goes from the airport to the old town?' });
+  it('lists answered questions only, newest first, dated by their latest answer, and nobody’s id', async () => {
+    const m = await member(), helper = await member();
+    const answered = await ask(m.token, { ...question, title: 'Which bus goes from the airport to the old town?' });
+    const unanswered = await ask(m.token, { ...question, title: 'Is the old town walkable from the main station?' });
+    expect((await h.call('POST', `/questions/${answered}/answers`, helper.token, { body: 'The 42 bus, every 20 minutes from stop B.' })).statusCode).toBe(201);
     const res = await h.call('GET', '/sitemap/questions');
     expect(res.headers['cache-control']).toBe('public, max-age=3600');
-    const { questions } = res.json<{ questions: Array<{ id: string; title: string; createdAt: string }> }>();
-    expect(questions[0]).toMatchObject({ id, title: 'Which bus goes from the airport to the old town?' });
+    const { questions } = res.json<{ questions: Array<{ id: string; title: string; createdAt: string; lastAnsweredAt: string }> }>();
+    expect(questions[0]).toMatchObject({ id: answered, title: 'Which bus goes from the airport to the old town?' });
+    expect(Date.parse(must(questions[0]).lastAnsweredAt)).toBeGreaterThanOrEqual(Date.parse(must(questions[0]).createdAt));
+    // Bible §19.2: nothing thin goes to search engines.
+    expect(questions.map(q => q.id)).not.toContain(unanswered);
     expect(res.body).not.toMatch(UUID);
   });
 });

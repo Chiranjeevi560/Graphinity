@@ -14,7 +14,48 @@ export interface ShareEnv {
   VITE_SITE_ORIGIN: string;
 }
 
-interface Question { id: string; title: string; body: string; field: { name: string }; answerCount: number }
+interface Question { id: string; title: string; body: string; field: { name: string }; answerCount: number; createdAt: string; asker: { handle: string } }
+interface PageAnswer { id: string; body: string; createdAt: string; answerer: { handle: string }; hidden?: boolean }
+/** What /questions/:id returns that the head needs. */
+export interface QuestionPage { question: Question; answers: PageAnswer[]; selection: { answerId: string | null } | null }
+
+/** Suggested answers listed for search engines besides the accepted one (Google reads a few). */
+const SUGGESTED_MAX = 5;
+
+/**
+ * Schema.org QAPage (docs/GRAPHINITY_BIBLE.md §19.1): the question, the
+ * answer the asker picked as acceptedAnswer, the others as suggestedAnswer,
+ * each linked to its place on the page. Only for a question with an answer.
+ * "<" is written as \u003c, so no answer text can end the script element.
+ */
+export function qaPageJson(page: QuestionPage, url: string): string | null {
+  const visible = page.answers.filter(a => !a.hidden);
+  if (visible.length === 0) return null;
+  const answer = (a: PageAnswer) => ({
+    '@type': 'Answer',
+    text: a.body,
+    dateCreated: a.createdAt,
+    url: `${url}#answer-${a.id}`,
+    author: { '@type': 'Person', name: a.answerer.handle },
+  });
+  const accepted = visible.find(a => a.id === page.selection?.answerId);
+  const data = {
+    '@context': 'https://schema.org',
+    '@type': 'QAPage',
+    mainEntity: {
+      '@type': 'Question',
+      name: page.question.title,
+      ...(page.question.body ? { text: page.question.body } : {}),
+      answerCount: visible.length,
+      dateCreated: page.question.createdAt,
+      author: { '@type': 'Person', name: page.question.asker.handle },
+      about: { '@type': 'Thing', name: page.question.field.name },
+      ...(accepted ? { acceptedAnswer: answer(accepted) } : {}),
+      suggestedAnswer: visible.filter(a => a !== accepted).slice(0, SUGGESTED_MAX).map(answer),
+    },
+  };
+  return JSON.stringify(data).replace(/</g, '\\u003c');
+}
 
 const escapeHtml = (s: string) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c);
 
@@ -26,8 +67,14 @@ function shorten(text: string, max = 160): string {
   return `${cut.slice(0, Math.max(cut.lastIndexOf(' '), max / 2))}…`;
 }
 
-/** The page's head with this question's title, description and address. Everything inserted is escaped. */
-export function questionHead(html: string, q: Question, siteOrigin: string): string {
+/**
+ * The page's head with this question's title, description and address, and
+ * for an answered question its QAPage data; an unanswered one is kept out
+ * of search results until it has an answer (Bible §19.2). Everything
+ * inserted is escaped.
+ */
+export function questionHead(html: string, page: QuestionPage, siteOrigin: string): string {
+  const q = page.question;
   const url = new URL(questionPath(q), siteOrigin).toString();
   const title = escapeHtml(`${q.title} – Graphinity`);
   const answers = q.answerCount === 1 ? '1 answer' : `${String(q.answerCount)} answers`;
@@ -42,6 +89,9 @@ export function questionHead(html: string, q: Question, siteOrigin: string): str
   out = setMeta(out, 'property', 'og:url', escapeHtml(url));
   out = setMeta(out, 'property', 'og:type', 'article');
   out = out.replace(/(<link rel="canonical" href=")[^"]*(")/, (_m, open: string, close: string) => `${open}${escapeHtml(url)}${close}`);
+  const json = qaPageJson(page, url);
+  out = setMeta(out, 'name', 'robots', json ? 'index, follow, max-image-preview:large' : 'noindex, follow');
+  if (json) out = out.replace('</head>', () => `<script type="application/ld+json">${json}</script>\n</head>`);
   return out;
 }
 
@@ -62,16 +112,16 @@ export async function questionPage(request: Request, env: ShareEnv, fetchFn: typ
   const plain = () => new Response(html, { status: 200, headers: headersFor(env) });
   const id = /^\/q\/([1-9][0-9]{0,15})(?:\/|$)/.exec(new URL(request.url).pathname)?.[1];
   if (!id) return plain();
-  let question: Question;
+  let page: QuestionPage;
   try {
     // Long enough for a free server waking up; previews wait about this long.
     const res = await fetchFn(`${env.VITE_API_ORIGIN}/questions/${id}`, { signal: AbortSignal.timeout(6000) });
     if (!res.ok) return plain();
-    question = (await res.json() as { question: Question }).question;
+    page = await res.json() as QuestionPage;
   } catch {
     return plain();
   }
-  return new Response(questionHead(html, question, env.VITE_SITE_ORIGIN), { status: 200, headers: headersFor(env) });
+  return new Response(questionHead(html, page, env.VITE_SITE_ORIGIN), { status: 200, headers: headersFor(env) });
 }
 
 /** /sitemap.xml: the fixed pages plus the newest questions; the built file if the API can't answer. */
@@ -79,8 +129,8 @@ export async function sitemap(request: Request, env: ShareEnv, fetchFn: typeof f
   try {
     const res = await fetchFn(`${env.VITE_API_ORIGIN}/sitemap/questions`, { signal: AbortSignal.timeout(3000) });
     if (!res.ok) return await env.ASSETS.fetch(request);
-    const { questions } = await res.json() as { questions: Array<{ id: string; title: string; createdAt: string }> };
-    const xml = sitemapXml(env.VITE_SITE_ORIGIN, questions.map(q => ({ path: questionPath(q), lastmod: q.createdAt.slice(0, 10) })));
+    const { questions } = await res.json() as { questions: Array<{ id: string; title: string; createdAt: string; lastAnsweredAt?: string }> };
+    const xml = sitemapXml(env.VITE_SITE_ORIGIN, questions.map(q => ({ path: questionPath(q), lastmod: (q.lastAnsweredAt ?? q.createdAt).slice(0, 10) })));
     return new Response(xml, { headers: { 'content-type': 'application/xml; charset=utf-8', 'cache-control': 'public, max-age=3600' } });
   } catch {
     return await env.ASSETS.fetch(request);

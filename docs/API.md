@@ -123,8 +123,9 @@ following page; `next` is `null` on the last page.
 
 ### `GET /sitemap/questions`
 
-The newest 5,000 questions anyone may see, `{ questions: [{ id, title, createdAt }] }`, for the
-website host's sitemap. Cached for an hour.
+`{ questions: [{ id, title, createdAt, lastAnsweredAt }] }`: questions with at least one answer a visitor
+can see, newest first, up to 5000, for the website host's sitemap (docs/GRAPHINITY_BIBLE.md §19.2: no
+unanswered pages go to search engines). Cached for an hour.
 
 ### `POST /questions/precheck`
 

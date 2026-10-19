@@ -54,7 +54,7 @@ Status: ✅ built and tested · ◐ in progress · ○ planned · ⤳ bent (reas
 | §16 Threat model | Built and documented in SECURITY.md; cookie sign-in waits for a domain (decision 3) | ✅ / ⤳ |
 | §17 Cloudflare + Render + Supabase | Same providers, free tiers (PLAN.md cost rule) | ✅ |
 | §18 Web vitals budgets | Lighthouse 95+/100/100/100 and size ratchet enforced; initial JS < 65 KB holds | ✅ |
-| §19 `QAPage` JSON-LD, noindex until answered, sitemaps | Server-side heads exist (share.ts); add QAPage and answered-only indexing | ○ |
+| §19 `QAPage` JSON-LD, noindex until answered, sitemaps | Built: QAPage (accepted + suggested answers, each linked), `noindex, follow` until a visible answer exists (server head and app), sitemap lists answered questions dated by their latest answer. Not built: per-field sitemap shards and `/fields` hub pages (Field Atlas) | ✅ / ○ |
 | §20 Accessible graph (shadow DOM nav, keyboard traversal, live region) | Captions in words today; add the keyboard-navigable `<nav>` | ○ |
 | §21.2 Anti-abuse: scam filter, vote dampening | Built: answers with phone numbers, emails or messaging invitations are refused (API and database). Bent: refused with a reason rather than silently stripped, so nobody's words change without them knowing. Shared-network flags exist; vote dampening by /24 not built | ✅ / ○ |
 | §22.1 Delete means delete | Built and tested | ✅ |
