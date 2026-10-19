@@ -60,7 +60,7 @@ These must stay true. If one stops being true, revisit everything that depends o
 | Gaming the routing score | Points need a real pick from another person (pair cap applies); trust counts each asker once with their latest word; answering counts only answers moderators haven't removed. Known gap: several fake accounts acting as askers can each raise someone's trust once; trust is 15% of the score, and new-account limits slow this | `routing.integration.test.ts` |
 | Hidden or spoofing characters in posts | Control characters (C0, DEL, C1) and direction overrides and isolates (U+202A-202E, U+2066-2069, which make text display in another order) refused in the API and by database checks on titles, bodies, answers, report notes and block reasons; the marks right-to-left writing needs (U+200E, U+200F, U+061C) stay allowed; titles one line with single spaces. Lookalike letters from other scripts (homoglyphs) are not refused: real names and languages use them | `text.test.ts` and database tests |
 | Getting points that didn't happen | See T8a. Every rule tested by an attack that must fail, and each test proven to fail when its rule is removed | `points.db.integration.test.ts`, `points.integration.test.ts` |
-| Learning who was asked a question | Routes readable only by their recipient (and the server's routing job, which sets its own `app.system` flag; no request does); only the job can create them; never to the asker; 5 a day per person, in the database | `routing.integration.test.ts`; fails when the policy or budget is loosened |
+| Learning who was asked a question | Routes readable only by their recipient (and the server's routing job, which sets its own `app.system` flag; no request does); only the job can create them; never to the asker; 3 a day per person, in the database | `routing.integration.test.ts`; fails when the policy or budget is loosened |
 | Live stream outliving sign-in or flooding the server | Ends a minute before the token expires; 3 per person, 300 in all; carries only an event type and question id; ended first on shutdown | `live.integration.test.ts`; shutdown test fails with the hook on `onClose` |
 | Making the server call other addresses (SSRF) through push | Push only to the browsers' push services over https (Google, Mozilla, Apple, Microsoft), checked when subscribing and again when sending; database requires https | `push.test.ts`, `push.integration.test.ts`; fail when the allowlist is opened |
 | Notifications reaching the wrong person on a shared device | A browser already registered to another account is refused, and the website makes a fresh subscription; the settings screen asks the server whether this browser is the signed-in person's (`POST /me/push/status`) rather than trusting the browser; a subscription the server refused is cancelled; signing out and deleting the account turn push off for that device; at most 10 devices per person | `push.integration.test.ts` |
@@ -102,7 +102,7 @@ Each line answers: *if a hostile researcher spent a day on this, what would they
 
 ## Known gaps
 
-- The daily limit of 5 questions per person is counted without a lock. One server routes one
+- The daily limit of 3 questions per person is counted without a lock. One server routes one
   question at a time, so it holds today; before running two servers, lock per person while routing.
 - Routing scores everyone in the question's field (three indexed lookups each). Fine at today's
   size; at thousands of members per field, narrow the pool first.

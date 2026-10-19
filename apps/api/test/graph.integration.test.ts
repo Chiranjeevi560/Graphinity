@@ -42,6 +42,9 @@ describe('the public graph', () => {
     const graph = res.json<{ fields: Array<{ slug: string; name: string; members: number }>; people: number[][]; activity: { lastDay: { questions: number; answers: number }; recent: Array<{ field: number; kind: string }> } }>();
     const watches = graph.fields.findIndex(f => f.slug === 'watches-luxury');
     expect(must(graph.fields[watches]).members).toBeGreaterThanOrEqual(2);
+    // Each person once, though one of them knows two fields.
+    const { rows } = await h.t.owner.query<{ n: number }>('SELECT count(DISTINCT profile_id)::int AS n FROM app.profile_fields');
+    expect(res.json<{ members: number }>().members).toBe(must(rows[0]).n);
     expect(graph.people.length).toBeLessThanOrEqual(GRAPH_SAMPLE);
     // Every person is just positions in the field list.
     for (const p of graph.people) for (const f of p) expect(graph.fields[f]).toBeDefined();
@@ -89,7 +92,8 @@ describe('how far a question went', () => {
     const view = async (token?: string) => (await h.call('GET', `/questions/${q}`, token)).json<Body>();
 
     const mine = await view(asker.token);
-    expect(mine.routing).toEqual({ waves: 1, asked: 6, inCountry: 5 });
+    // A wave is 5: the five in the question's country rank first.
+    expect(mine.routing).toEqual({ waves: 1, asked: 5, inCountry: 5 });
     expect(mine.whyYou).toBeUndefined();
     // Not for visitors, and not for the people it was put to.
     expect((await view()).routing).toBeUndefined();

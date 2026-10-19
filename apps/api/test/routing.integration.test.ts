@@ -35,85 +35,121 @@ async function routedTo(questionId: string): Promise<Array<{ profile_id: string;
   return (await h.t.owner.query<{ profile_id: string; wave: number }>('SELECT profile_id, wave FROM app.routes WHERE question_id = $1', [questionId])).rows;
 }
 
-async function olderWaves(questionId: string, minutes: number) {
-  await h.t.owner.query("UPDATE app.routes SET routed_at = routed_at - make_interval(mins => $2) WHERE question_id = $1", [questionId, minutes]);
+/** The question was asked this many minutes ago (waves count from asking). */
+async function askedAgo(questionId: string, minutes: number) {
+  await h.t.owner.query("UPDATE app.questions SET created_at = now() - make_interval(mins => $2) WHERE id = $1", [questionId, minutes]);
 }
 
 describe('the first wave', () => {
-  it('goes to up to 10 people who know the field, never the asker or people from other fields', async () => {
+  it('goes to 5 people who know the field, never the asker or people from other fields', async () => {
     const asker = await member({ fields: ['visas-immigration'] });
-    const experts = [];
-    for (let i = 0; i < 12; i++) experts.push(await member({ fields: ['visas-immigration'], joinedDaysAgo: 100 }));
+    for (let i = 0; i < 12; i++) await member({ fields: ['visas-immigration'], joinedDaysAgo: 100 });
     const outsider = await member({ fields: ['food-cooking'] });
     const q = await ask(asker.token, 'visas-immigration');
     await routeDueQuestions(h.t.database);
     const routes = await routedTo(q);
-    expect(routes).toHaveLength(10);
+    expect(routes).toHaveLength(5);
     expect(routes.every(r => r.wave === 1)).toBe(true);
     const ids = routes.map(r => r.profile_id);
     expect(ids).not.toContain(asker.id);
     expect(ids).not.toContain(outsider.id);
   });
 
-  it('prefers people in the question’s country, and keeps places for newcomers', async () => {
+  it('prefers people in the question’s country, and keeps one place in five for a newcomer', async () => {
     const asker = await member({ fields: ['money-tax'] });
     const locals = [await member({ fields: ['money-tax'], country: 'AE', joinedDaysAgo: 100 }), await member({ fields: ['money-tax'], country: 'AE', joinedDaysAgo: 100 })];
-    const veterans = [];
-    for (let i = 0; i < 15; i++) veterans.push(await member({ fields: ['money-tax'], joinedDaysAgo: 200 }));
+    for (let i = 0; i < 15; i++) await member({ fields: ['money-tax'], joinedDaysAgo: 200 });
     const newcomers = [await member({ fields: ['money-tax'] }), await member({ fields: ['money-tax'] })];
     const q = await ask(asker.token, 'money-tax', 'AE');
     await routeDueQuestions(h.t.database);
     const ids = (await routedTo(q)).map(r => r.profile_id);
-    for (const p of [...locals, ...newcomers]) expect(ids).toContain(p.id);
-    expect(veterans.length).toBe(15);
+    for (const p of locals) expect(ids).toContain(p.id);
+    expect(newcomers.filter(n => ids.includes(n.id)).length).toBeGreaterThanOrEqual(1);
   });
 });
 
-describe('later waves', () => {
-  it('reach more people only after 15 minutes without an answer, and stop once answered', async () => {
+describe('later waves (Bible §11.2: 5, 5, 5 at 0, 20 and 60 minutes)', () => {
+  it('send 5 more at 20 minutes and 5 more at 60, counted from asking', async () => {
     const asker = await member({ fields: ['business-startups'] });
-    for (let i = 0; i < 45; i++) await member({ fields: ['business-startups'], joinedDaysAgo: 100 });
+    for (let i = 0; i < 20; i++) await member({ fields: ['business-startups'], joinedDaysAgo: 100 });
     const q = await ask(asker.token, 'business-startups');
     await routeDueQuestions(h.t.database);
-    expect(await routedTo(q)).toHaveLength(10);
-    // Not yet: 14 minutes.
-    await olderWaves(q, 14);
+    expect(await routedTo(q)).toHaveLength(5);
+    await askedAgo(q, 19);
     await routeDueQuestions(h.t.database);
-    expect(await routedTo(q)).toHaveLength(10);
-    await olderWaves(q, 2);
+    expect(await routedTo(q)).toHaveLength(5);
+    await askedAgo(q, 21);
     await routeDueQuestions(h.t.database);
-    const after = await routedTo(q);
-    expect(after.filter(r => r.wave === 2)).toHaveLength(30);
+    expect((await routedTo(q)).filter(r => r.wave === 2)).toHaveLength(5);
+    await askedAgo(q, 59);
+    await routeDueQuestions(h.t.database);
+    expect((await routedTo(q)).filter(r => r.wave === 3)).toHaveLength(0);
+    await askedAgo(q, 61);
+    await routeDueQuestions(h.t.database);
+    expect((await routedTo(q)).filter(r => r.wave === 3)).toHaveLength(5);
+  });
 
-    // Someone answers: no third wave, however long it waits.
-    const answerer = await member({ fields: ['business-startups'] });
-    expect((await h.call('POST', `/questions/${q}/answers`, answerer.token, { body: 'Open it online, it took me ten minutes.' })).statusCode).toBe(201);
-    await olderWaves(q, 120);
+  it('skip wave 2 once 3 of those asked have opened it or answered', async () => {
+    const asker = await member({ fields: ['study-abroad'] });
+    for (let i = 0; i < 12; i++) await member({ fields: ['study-abroad'], joinedDaysAgo: 100 });
+    const q = await ask(asker.token, 'study-abroad');
+    await routeDueQuestions(h.t.database);
+    const first = (await routedTo(q)).map(r => r.profile_id);
+    await h.t.owner.query('UPDATE app.routes SET seen_at = now() WHERE question_id = $1 AND profile_id = ANY($2)', [q, first.slice(0, 3)]);
+    await askedAgo(q, 25);
+    await routeDueQuestions(h.t.database);
+    expect((await routedTo(q)).filter(r => r.wave === 2)).toHaveLength(0);
+  });
+
+  it('skip wave 3 once there are 3 answers, enough for a consensus', async () => {
+    const asker = await member({ fields: ['housing-renting'] });
+    for (let i = 0; i < 12; i++) await member({ fields: ['housing-renting'], joinedDaysAgo: 100 });
+    const q = await ask(asker.token, 'housing-renting');
+    for (let i = 0; i < 3; i++) {
+      const helper = await member({ fields: ['housing-renting'] });
+      expect((await h.call('POST', `/questions/${q}/answers`, helper.token, { body: `Ask the landlord for the deposit receipt, it took me ${String(i + 2)} weeks.` })).statusCode).toBe(201);
+    }
+    await routeDueQuestions(h.t.database);
+    await askedAgo(q, 65);
+    await routeDueQuestions(h.t.database);
     await routeDueQuestions(h.t.database);
     expect((await routedTo(q)).filter(r => r.wave === 3)).toHaveLength(0);
   });
 });
 
 describe('the daily budget', () => {
-  it('puts at most 5 questions a day to one person', async () => {
+  it('puts at most 3 questions a day to one person (Bible §3.2: attention is scarce)', async () => {
     const asker = await member({ fields: ['shopping'], joinedDaysAgo: 100 });
     const only = await member({ fields: ['shopping'], joinedDaysAgo: 100 });
     for (let i = 0; i < 7; i++) await ask(asker.token, 'shopping');
     await routeDueQuestions(h.t.database);
     const { rows } = await h.t.owner.query<{ n: number }>('SELECT count(*)::int AS n FROM app.routes WHERE profile_id = $1', [only.id]);
-    expect(rows).toEqual([{ n: 5 }]);
+    expect(rows).toEqual([{ n: 3 }]);
+  });
+
+  it('is held by the database itself, even if the routing job asked for a fourth', async () => {
+    const asker = await member({ fields: ['government-services'], joinedDaysAgo: 100 });
+    const only = await member({ fields: ['government-services'], joinedDaysAgo: 100 });
+    const made: number[] = [];
+    for (let i = 0; i < 4; i++) {
+      const q = await ask(asker.token, 'government-services');
+      await h.t.owner.query('DELETE FROM app.routes WHERE question_id = $1', [q]);
+      made.push(await h.t.database.asSystem(async qq =>
+        (await qq.query('INSERT INTO app.routes (question_id, profile_id, wave) VALUES ($1, $2, 1)', [q, only.id])).rowCount ?? 0));
+    }
+    expect(made).toEqual([1, 1, 1, 0]);
   });
 });
 
 describe('people already at their daily limit', () => {
   it('don’t take places in a wave: the next people are asked instead', async () => {
     const asker = await member({ fields: ['jobs-careers'], joinedDaysAgo: 100 });
-    // Ten people who would rank first (they live in the question's country)...
+    // Five people who would rank first (they live in the question's country)...
     const busy = [];
-    for (let i = 0; i < 10; i++) busy.push(await member({ fields: ['jobs-careers'], country: 'AE', joinedDaysAgo: 100 }));
-    // ...have each been asked 5 questions today.
+    for (let i = 0; i < 5; i++) busy.push(await member({ fields: ['jobs-careers'], country: 'AE', joinedDaysAgo: 100 }));
+    // ...have each been asked 3 questions today.
     const earlier: string[] = [];
-    for (let i = 0; i < 5; i++) earlier.push(await ask(asker.token, 'cars-vehicles'));
+    for (let i = 0; i < 3; i++) earlier.push(await ask(asker.token, 'cars-vehicles'));
     for (const b of busy) for (const q of earlier) await h.t.owner.query('INSERT INTO app.routes (question_id, profile_id, wave) VALUES ($1, $2, 1)', [q, b.id]);
     const free = [await member({ fields: ['jobs-careers'], joinedDaysAgo: 100 }), await member({ fields: ['jobs-careers'], joinedDaysAgo: 100 })];
     const q = await ask(asker.token, 'jobs-careers', 'AE');

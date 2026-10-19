@@ -196,14 +196,16 @@ still work, but no points move for them.
 
 ## Routing and the inbox
 
-New questions are put to people in waves by a job inside the server (every minute, and straight
-after each new question): 10 people at once, 30 more after 15 minutes without an answer, 100 more
-after another hour. People are chosen from those who know the question's field, by a score
-(docs/GRAPH.md): 35% points in that field, 20% same country, 20% how many questions put to them in
-the last 60 days they answered (one sent in the last day counts only once answered; removed answers
-don't count), 15% how often askers said their picked answers in that field turned
-out right, 10% chance. Two places in every ten are kept for people who joined in the last 14 days. Nobody gets more
-than 5 a day, and never their own question. Who was asked is visible only to them.
+New questions are put to people in staged waves by a job inside the server (every minute, and
+straight after each new question), as docs/GRAPHINITY_BIBLE.md §11.2 sets out: 5 people at once; 5
+more 20 minutes after asking if fewer than 3 of them have opened it or answered; 5 more at 60 minutes
+while it has fewer than 3 answers (the least a consensus needs). People are chosen from those who
+know the question's field, by a score (docs/GRAPH.md): 35% points in that field, 20% same country,
+20% how many questions put to them in the last 60 days they answered (one sent in the last day counts
+only once answered; removed answers don't count), 15% how often askers said their picked answers in
+that field turned out right, 10% chance. One place in each wave of 5 is kept for people who joined in
+the last 14 days. Nobody gets more than 3 a day (enforced by the database too), and never their own
+question. Who was asked is visible only to them.
 
 ### `GET /me/inbox` (signed in)
 
@@ -214,9 +216,10 @@ than 5 a day, and never their own question. Who was asked is visible only to the
 
 ### `GET /graph`
 
-Public, cached 5 minutes. `{ fields: [{ slug, name, members }], people: [[fieldIndex…]], activity:
+Public, cached 5 minutes. `{ members, fields: [{ slug, name, members }], people: [[fieldIndex…]], activity:
 { lastDay: { questions, answers }, recent: [{ field, kind }] } }`. `people` is a random sample of up to
 300 members, each only as the positions in `fields` of the fields they know: no names or ids.
+`members` counts everyone with a profile once.
 `recent` is the last 40 questions (`kind: "question"`) and answers in the last day, newest first,
 by field. Hidden and removed posts are left out.
 

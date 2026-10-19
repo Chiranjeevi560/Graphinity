@@ -8,6 +8,14 @@ The owner is a solo founder and CSE student, not a working engineer. Explain in 
 simply but completely. Ask questions as if to an everyday user. The bar is "as if Apple or Google
 built it": never ship anything that looks or behaves like generic AI output.
 
+**The specification is `docs/GRAPHINITY_BIBLE.md`.** Read the sections a task touches before
+planning it. `docs/adr/0001-adopting-the-bible.md` records how it applies to this codebase (the
+owner chose to evolve the existing app, not rewrite it per `docs/BUILD_PLAYBOOK.md`) and tracks each
+section's status; update that table in the same commit as the work. Bible anti-goals are hard rules:
+no feed or trending, no following or follower counts, no global reputation (per field, per country),
+no AI-written answers (AI only for embeddings, duplicate detection, number extraction, spam), no
+reply threads under answers. No placeholders: no `TODO`, stubs or mocked returns in shipped code.
+
 **For any task, run the `graphinity-build` skill first** (`.claude/skills/graphinity-build`): it
 is every chosen skill combined into one pipeline, with the bar and the lessons this project paid
 for. **Read `CONSTRAINTS.md` before writing code. Do not weaken it to make a change pass.** Run

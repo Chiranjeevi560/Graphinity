@@ -48,14 +48,17 @@ export function registerGraphRoutes(app: FastifyInstance, { db, clock }: { db: D
            SELECT q.field, 'answer', a.created_at FROM app.answers a JOIN app.questions q ON q.id = a.question_id
            WHERE a.created_at > now() - interval '1 day'
          ) e ORDER BY at DESC LIMIT ${String(RECENT_EVENTS)}`)).rows;
-      const counts = (await q.query<{ questions: number; answers: number }>(
-        `SELECT (SELECT count(*) FROM app.questions WHERE created_at > now() - interval '1 day')::int AS questions,
+      const counts = (await q.query<{ members: number; questions: number; answers: number }>(
+        `SELECT (SELECT count(DISTINCT profile_id) FROM app.profile_fields)::int AS members,
+                (SELECT count(*) FROM app.questions WHERE created_at > now() - interval '1 day')::int AS questions,
                 (SELECT count(*) FROM app.answers WHERE created_at > now() - interval '1 day')::int AS answers`)).rows[0];
       return { fields, people, recent, counts };
     });
     const index = new Map(graph.fields.map((f, i) => [f.slug, i]));
     const at = (slug: string) => index.get(slug) ?? -1;
     return {
+      // Everyone with a profile (each person once, however many fields they know).
+      members: graph.counts?.members ?? 0,
       fields: graph.fields.map(f => ({ slug: f.slug, name: f.name, members: f.members })),
       // Each person as the positions (in `fields`) of the fields they know.
       people: graph.people.map(p => p.fields.map(at)),

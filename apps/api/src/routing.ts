@@ -1,16 +1,26 @@
-// Putting a question to the people most likely to have done it, in waves:
-// 10 people at once, 30 more if nobody has answered after 15 minutes, then
-// 100 more after another hour. The database (db/schema.sql, app.routes)
-// enforces the daily budget per person and never routes to the asker.
+// Putting a question to the people most likely to have done it, in staged
+// waves (docs/GRAPHINITY_BIBLE.md §11.2): 5 people at once; 5 more at 20
+// minutes if fewer than 3 of them have opened it or answered; 5 more at 60
+// minutes while there's no consensus yet (fewer than 3 answers: consensus
+// needs at least 3). Experts' attention is scarce: at most 3 a day each.
+// The database (db/schema.sql, app.routes) enforces that limit and never
+// routes to the asker.
 import type { Database, Queryable } from './db.ts';
 import type { Events } from './events.ts';
 import { errorKind } from './jobs.ts';
 
+/** Minutes after asking. */
 export const WAVES = [
-  { wave: 1, size: 10, afterMinutes: 0 },
-  { wave: 2, size: 30, afterMinutes: 15 },
-  { wave: 3, size: 100, afterMinutes: 60 },
+  { wave: 1, size: 5, afterMinutes: 0 },
+  { wave: 2, size: 5, afterMinutes: 20 },
+  { wave: 3, size: 5, afterMinutes: 60 },
 ] as const;
+/** Questions put to one person in any 24 hours (the database holds the same number). */
+export const DAILY_LIMIT = 3;
+/** Wave 2 waits while this many of those asked have opened it or answered. */
+const ENGAGED_ENOUGH = 3;
+/** Wave 3 waits once this many answers exist: enough for a consensus. */
+const ANSWERS_FOR_CONSENSUS = 3;
 /** Part of each wave kept for people who joined in the last two weeks. */
 export const NEWCOMER_SHARE = 0.2;
 /** Questions older than this are no longer routed further. */
@@ -82,7 +92,7 @@ async function candidates(q: Queryable, questionId: string, limit: number, newco
          AND (NOT $3::boolean OR p.created_at > now() - interval '14 days')
          -- Already at today's limit: the database would skip them, wasting the place.
          AND (SELECT count(*) FROM app.routes r
-              WHERE r.profile_id = p.id AND r.routed_at > clock_timestamp() - interval '1 day') < 5
+              WHERE r.profile_id = p.id AND r.routed_at > clock_timestamp() - interval '1 day') < ${String(DAILY_LIMIT)}
      )
      SELECT id, same_country, field_points, newcomer, asked, answered, trust_total, trust_correct
      FROM pool
@@ -127,23 +137,28 @@ export async function routeWave(q: Queryable, questionId: string, wave: number, 
 
 /**
  * Sends every question that is due its next wave: no wave yet (a missed
- * first one), or still unanswered long enough after the last wave.
- * Returns what was routed, for the caller to notify.
+ * first one); wave 2 from 20 minutes after asking, only if fewer than 3 of
+ * those asked have opened it or answered; wave 3 from 60 minutes, only
+ * while it has fewer than 3 answers. Returns what was routed, for the
+ * caller to notify.
  */
 export async function routeDueQuestions(db: Database, log?: { warn(obj: object, msg: string): void }): Promise<Array<{ questionId: string; askerId: string; asked: string[] }>> {
   const due = await db.asSystem(async q => {
-    const { rows } = await q.query<{ id: string; asker_id: string; wave: number | null; minutes_since: number | null; answered: boolean }>(
+    const { rows } = await q.query<{ id: string; asker_id: string; wave: number | null; age_minutes: number; engaged: number; answers: number }>(
       `SELECT q.id::text AS id, q.asker_id, max(r.wave) AS wave,
-              extract(epoch FROM clock_timestamp() - max(r.routed_at)) / 60 AS minutes_since,
-              EXISTS (SELECT 1 FROM app.answers a WHERE a.question_id = q.id) AS answered
+              extract(epoch FROM clock_timestamp() - q.created_at) / 60 AS age_minutes,
+              count(r.profile_id) FILTER (WHERE r.seen_at IS NOT NULL
+                OR EXISTS (SELECT 1 FROM app.answers a WHERE a.question_id = q.id AND a.answerer_id = r.profile_id))::int AS engaged,
+              (SELECT count(*) FROM app.answers a WHERE a.question_id = q.id)::int AS answers
        FROM app.questions q LEFT JOIN app.routes r ON r.question_id = q.id
        WHERE q.created_at > now() - interval '${ROUTING_WINDOW}'
        GROUP BY q.id`);
     const waves: Array<{ questionId: string; askerId: string; wave: number; size: number }> = [];
     for (const row of rows) {
       const next = row.wave === null ? WAVES[0] : WAVES.find(w => w.wave === (row.wave ?? 0) + 1);
-      if (!next) continue;
-      if (row.wave !== null && (row.answered || (row.minutes_since ?? 0) < next.afterMinutes)) continue;
+      if (!next || row.age_minutes < next.afterMinutes) continue;
+      if (next.wave === 2 && row.engaged >= ENGAGED_ENOUGH) continue;
+      if (next.wave === 3 && row.answers >= ANSWERS_FOR_CONSENSUS) continue;
       waves.push({ questionId: row.id, askerId: row.asker_id, wave: next.wave, size: next.size });
     }
     return waves;

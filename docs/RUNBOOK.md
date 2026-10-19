@@ -33,6 +33,11 @@ in the same commit.
 
 `npm run db:start` writes two private files in `.local/` (git-ignored, readable only by you):
 `api.env` (the API's database login and hashing key) and `test.env` (for integration tests).
+The database's own files live in `~/.local/share/graphinity`, outside the project: this project sits
+in an iCloud-synced Documents folder, and iCloud emptied and locked Postgres's files until it
+crashed. If the project's tools ever fail oddly (a package "has no exports", a command hangs), check
+for emptied files with `ls -lO node_modules/vitest/package.json`: `dataless` means iCloud emptied it,
+and `npm ci` rebuilds them in seconds. The lasting fix is to keep the project out of iCloud.
 
 To use the real Supabase project and Google instead of the stand-in, put the project's public
 values in `apps/web/.env.supabase`, put `SUPABASE_URL` and the secret key in `.local/api.env`, and
@@ -94,7 +99,7 @@ list them too, or stash them first.
 
 - Edit `db/schema.sql`. It must stay safe to run twice and additive only: add, never rename or
   drop in the same release as the code that stops using something.
-- Bump the version in the `INSERT INTO app.schema_meta` line (now 10).
+- Bump the version in the `INSERT INTO app.schema_meta` line (now 12).
 - Every new table needs `ENABLE` and `FORCE ROW LEVEL SECURITY`, explicit grants to `app_api`,
   and policies. The integration test fails if RLS is missing.
 

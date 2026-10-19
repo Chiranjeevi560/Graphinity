@@ -1028,7 +1028,8 @@ CREATE TRIGGER verdicts_stamp BEFORE INSERT OR UPDATE ON app.verdicts
 -- Routing: who a question was put to, in waves. Who was asked is private:
 -- each person sees only their own routes. Only the server's routing job
 -- (app.is_system(), set by its own transactions, never by a request) may
--- create them. A person gets at most 5 a day, and never their own question.
+-- create them. A person gets at most 3 a day (docs/GRAPHINITY_BIBLE.md
+-- §3.2: expert attention is scarce), and never their own question.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION app.is_system() RETURNS boolean
   LANGUAGE sql STABLE
@@ -1079,7 +1080,7 @@ BEGIN
   NEW.seen_at := NULL;
   -- The daily budget: past it, the route is quietly not made.
   IF (SELECT count(*) FROM app.routes r
-      WHERE r.profile_id = NEW.profile_id AND r.routed_at > clock_timestamp() - interval '1 day') >= 5 THEN
+      WHERE r.profile_id = NEW.profile_id AND r.routed_at > clock_timestamp() - interval '1 day') >= 3 THEN
     RETURN NULL;
   END IF;
   RETURN NEW;
@@ -1484,7 +1485,7 @@ REVOKE ALL ON FUNCTION app.routing_summary(bigint) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app.routing_summary(bigint) TO app_api;
 
 -- Bump on every change to this file.
-INSERT INTO app.schema_meta (id, version) VALUES (true, 11)
+INSERT INTO app.schema_meta (id, version) VALUES (true, 12)
   ON CONFLICT (id) DO UPDATE SET version = EXCLUDED.version, applied_at = now();
 
 COMMIT;
