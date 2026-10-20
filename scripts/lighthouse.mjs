@@ -88,12 +88,15 @@ try {
       if (lcp > BUDGET.lcpMs) misses.push(`LCP ${Math.round(lcp)}ms > ${BUDGET.lcpMs}ms`);
       if (cls > BUDGET.cls) misses.push(`CLS ${cls.toFixed(3)} > ${BUDGET.cls}`);
       if (tbt > BUDGET.tbtMs) misses.push(`TBT ${Math.round(tbt)}ms > ${BUDGET.tbtMs}ms`);
-      console.log(
-        `${page}  performance ${score('performance')}  accessibility ${score('accessibility')}  best-practices ${score('best-practices')}  seo ${score('seo')}  LCP ${Math.round(lcp)}ms  CLS ${cls.toFixed(3)}  TBT ${Math.round(tbt)}ms`,
-      );
+      const line = `${page}  performance ${score('performance')}  accessibility ${score('accessibility')}  best-practices ${score('best-practices')}  seo ${score('seo')}  LCP ${Math.round(lcp)}ms  CLS ${cls.toFixed(3)}  TBT ${Math.round(tbt)}ms`;
+      console.log(line);
+      // In GitHub Actions, the numbers also show on the run and its pull request, readable
+      // without the run's log (which only the owner can open).
+      if (process.env.GITHUB_ACTIONS) console.log(`::${misses.length ? 'error' : 'notice'} title=Page speed::${line}`);
       if (misses.length) {
         failed = true;
         console.error(`  over budget: ${misses.join('; ')}`);
+        if (process.env.GITHUB_ACTIONS) console.log(`::error title=Page speed over budget::${misses.join('; ')}`);
         // Name the checks that cost points, so the fix doesn't start with a guess.
         for (const key of ['best-practices', 'seo', 'accessibility']) {
           for (const ref of lhr.categories[key].auditRefs) {
