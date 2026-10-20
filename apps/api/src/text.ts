@@ -1,5 +1,5 @@
 // What people type, made tidy without changing what they said, and the
-// rules it must meet. The database repeats every rule (db/schema.sql).
+// rules it must meet. The database repeats every rule (db/migrations).
 
 /**
  * Invisible characters that can disguise text: controls other than the line

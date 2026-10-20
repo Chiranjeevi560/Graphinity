@@ -19,7 +19,7 @@ in the same commit.
 | What | Command |
 |---|---|
 | Start the local database (creates it the first time) | `npm run db:start` |
-| Re-apply the schema after editing `db/schema.sql` | `npm run db:apply` |
+| Apply new migrations to the local database (`db/migrations`) | `npm run db:apply` |
 | Run the local sign-in stand-in (replaces Google + Supabase Auth) | `npm run dev:auth` |
 | Run the API against the local stand-in (no accounts needed) | `npm run dev:api:local` |
 | Run the API against your real Supabase project (values in `.local/api.env`) | `npm run dev:api` |
@@ -127,9 +127,10 @@ skips formatting-only commits.
 
 ## Schema changes
 
-- Edit `db/schema.sql`. It must stay safe to run twice and additive only: add, never rename or
-  drop in the same release as the code that stops using something.
-- Bump the version in the `INSERT INTO app.schema_meta` line (now 16).
+- Add a numbered file to `db/migrations` (how, and the rules, in its README). Never edit one that
+  has shipped; CI refuses it.
+- Removing or renaming takes two releases (expand, then contract); the lint refuses it otherwise.
+- If the API depends on the change, raise the version in `app.schema_meta` (now 16).
 - Every new table needs `ENABLE` and `FORCE ROW LEVEL SECURITY`, explicit grants to `app_api`,
   and policies. The integration test fails if RLS is missing.
 
@@ -139,8 +140,9 @@ Order matters: **database, then server, then website.** A website that needs a n
 go live before that API does. The owner's click-by-click steps are in SETUP-ACCOUNTS.md (Parts G–I);
 this is the order and what to check.
 
-1. **Database.** Apply `db/schema.sql` in the Supabase SQL editor (safe to run again). Check the
-   result says the new version (`SELECT version FROM app.schema_meta`).
+1. **Database.** `npm run db:migrate:remote`, with the owner's connection in
+   `.local/migrate.env` (SETUP-ACCOUNTS.md, Part I). It prints each migration it applied and the
+   schema version. Not the SQL editor any more: the runner keeps the record of what ran.
 2. **API login role**, once per environment, with a password generated on your computer and stored
    only in Render: `CREATE ROLE graphinity_api LOGIN PASSWORD '…' IN ROLE app_api;`
 3. **Server on Render** from `render.yaml` (free plan, Singapore; deploys only after CI passes).

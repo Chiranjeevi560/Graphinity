@@ -9,7 +9,7 @@
 # manages. Override with GRAPHINITY_DATA.
 #
 #   npm run db:start   create (first time) and start the cluster, apply schema
-#   npm run db:apply   apply db/schema.sql again
+#   npm run db:apply   apply any new migrations (db/migrations)
 #   npm run db:stop    stop the cluster
 #
 # Writes .local/api.env with the API's connection string. The API connects as
@@ -65,8 +65,9 @@ apply() {
   # pgvector isn't a "trusted" extension: an administrator turns it on, as
   # Supabase's dashboard does there. Build it once: docs/RUNBOOK.md.
   psql_owner -d "$DB" -c "SET client_min_messages = warning" -c "CREATE SCHEMA IF NOT EXISTS extensions" -c "CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions" >/dev/null
-  psql_owner -d "$DB" -f "$ROOT/db/schema.sql"
-  echo "Applied db/schema.sql (version $(psql_owner -d "$DB" -tAc 'SELECT version FROM app.schema_meta'))"
+  # The same runner as every environment. Locally the owner is this cluster's
+  # superuser, which may skip row-level security as the runner needs.
+  MIGRATION_DATABASE_URL="postgres:///$DB?host=$DATA&port=$PORT&user=$OWNER" node "$ROOT/apps/api/src/migrate-main.ts"
 }
 
 ensure_login_role() {

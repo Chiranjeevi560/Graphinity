@@ -1,6 +1,6 @@
 // Picking the answer that helped, marking others helpful, and saying later
 // whether the pick turned out right. Points move inside the database
-// (db/schema.sql: triggers on selections and helpful_marks), which also
+// (db/migrations: triggers on selections and helpful_marks), which also
 // enforces the pair cap and refuses any points that didn't happen. This
 // code checks each rule first only to explain refusals in plain words.
 import type { FastifyInstance } from 'fastify';
@@ -224,7 +224,7 @@ export function registerPointRoutes(app: FastifyInstance, { db }: { db: Database
           if (!reason) return { kind: 'reason_required' };
           if (current.changes >= MAX_CHANGES) return { kind: 'no_changes_left' };
           // With "turned_out_wrong" the database also records the asker's
-          // verdict on the old pick (db/schema.sql, check_selection).
+          // verdict on the old pick (db/migrations, check_selection).
           await q.query('UPDATE app.selections SET answer_id = $2, change_reason = $3 WHERE question_id = $1', [
             id,
             answerId,
