@@ -95,16 +95,7 @@ jobs:
 
       # Scanners: official release binaries, checked against their published checksums.
       - name: Install gitleaks and osv-scanner
-        run: |
-          mkdir -p .local/tools && cd .local/tools
-          G=https://github.com/gitleaks/gitleaks/releases/download/v8.30.1
-          curl -sfLO $G/gitleaks_8.30.1_linux_x64.tar.gz && curl -sfLO $G/gitleaks_8.30.1_checksums.txt
-          grep " gitleaks_8.30.1_linux_x64.tar.gz$" gitleaks_8.30.1_checksums.txt | sha256sum -c -
-          tar -xzf gitleaks_8.30.1_linux_x64.tar.gz gitleaks
-          O=https://github.com/google/osv-scanner/releases/download/v2.6.0
-          curl -sfLO $O/osv-scanner_linux_amd64 && curl -sfLO $O/osv-scanner_SHA256SUMS
-          grep " osv-scanner_linux_amd64$" osv-scanner_SHA256SUMS | sha256sum -c -
-          mv osv-scanner_linux_amd64 osv-scanner && chmod +x gitleaks osv-scanner
+        run: sh scripts/install-tools.sh
 
       - name: Secrets (whole history, values redacted)
         run: .local/tools/gitleaks git --redact --no-banner .
@@ -132,6 +123,28 @@ jobs:
           MIGRATION_DATABASE_URL="${ADMIN_URL%/postgres}/graphinity" node apps/api/src/migrate-main.ts
           psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c "CREATE ROLE graphinity_api LOGIN PASSWORD 'ci-only-api' IN ROLE app_api" -c "GRANT CONNECT ON DATABASE graphinity TO graphinity_api"
           printf 'DATABASE_URL=postgres://graphinity_api:ci-only-api@localhost:5432/graphinity\nIP_HASH_KEY=%s\nSUPABASE_URL=http://localhost:54321\nSUPABASE_SECRET_KEY=unused_in_ci_0123456789\n' "$(openssl rand -hex 32)" > .local/api.env
+
+      # The image a release would ship, built from this commit: scanned, then started the way
+      # staging starts it (production mode, the API's restricted login, this run's database) and
+      # required to answer /health with this exact commit.
+      - name: API image (build, scan, start in production mode)
+        run: |
+          docker build --build-arg RELEASE="$GITHUB_SHA" -t graphinity-api:ci .
+          .local/tools/osv-scanner scan image --format json --output-file image-vulns.json graphinity-api:ci || true
+          node scripts/image-report.mjs image-vulns.json
+          set -a; . .local/api.env; set +a
+          docker run -d --name api-smoke --network host -e PORT=3100 -e APP_ENV=staging \
+            -e WEB_ORIGIN=https://smoke.example -e SUPABASE_URL=https://smoke.supabase.co -e TRUST_PROXY_HOPS=0 \
+            -e DATABASE_URL -e IP_HASH_KEY -e SUPABASE_SECRET_KEY graphinity-api:ci
+          for i in $(seq 30); do curl -sf http://127.0.0.1:3100/health > health.json && break; sleep 1; done
+          # Its own log says why if it never answered (the server never logs secrets).
+          [ -s health.json ] || docker logs api-smoke
+          docker rm -f api-smoke > /dev/null
+          node -e '
+            const h = JSON.parse(require("fs").readFileSync("health.json", "utf8"));
+            const want = { status: "ok", environment: "staging", release: process.env.GITHUB_SHA };
+            for (const [k, v] of Object.entries(want)) if (h[k] !== v) { console.error(`/health ${k}: ${h[k]}, expected ${v}`); process.exit(1); }
+            console.log(`image answered /health: ${JSON.stringify(h)}`);'
 
       - name: Install browsers (Chromium, WebKit, Firefox)
         run: npx playwright install --with-deps chromium webkit firefox

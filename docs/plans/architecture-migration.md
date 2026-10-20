@@ -346,7 +346,7 @@ Ordered so the riskiest gaps close first and nothing waits on accounts until it 
 | 0 | Repository made public. Branch protection and required checks on `main`. PR-based workflow (`ship.sh` opens PRs). Prettier (one formatting commit, hidden from blame). Licence check. CodeQL, dependency review, secret scanning with push protection, Dependabot alerts | Flip to public (steps given). OK to install the GitHub CLI |
 | 1 | ✅ Done: environments in code, neutral build, stamp step | — |
 | 2 | ✅ Done: migrations (runner, baseline, CI upgrade-equals-fresh check, destructive-change lint; `db/migrations/README.md`). `/questions/similar` removed | — |
-| 3 | API image (pinned, non-root, attested, scanned). Release workflow building website dist, image and migration bundle **once** per `main` commit. Split the E2E file; fresh database per run | — |
+| 3 | ✅ API image (pinned, non-root, attested, scanned, started in CI) and release workflow (`docs/DEPLOYMENT.md`). Still to do: split the E2E file; fresh database per run | — |
 | 4 | Infrastructure as code (Terraform) for GitHub, Cloudflare, Render, Neon and Supabase settings. Staging and production created from it. GitHub Environments with secrets and production approval | Accounts: Supabase production project, two Render workspaces, Google OAuth clients (click-by-click) |
 | 5 | Pipeline: staging auto-deploy, smoke tests, manual-QA checklist, approved production promotion, rollback, release tags. Per-PR previews (Neon branch + preview API slot + Pages preview) | Approve the first promotion |
 | 6 | Scale readiness: Postgres job queue with locks, LISTEN/NOTIFY events, shared rate limits behind interfaces. Feature flags. Shared queries (D4, D5) | — |
