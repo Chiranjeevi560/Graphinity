@@ -316,7 +316,7 @@ force pushes, linear history.
 | D3 | `/questions/similar` kept "for older clients" next to the precheck | Two search paths to secure and keep correct | Remove after checking no client calls it (2) ✅ done |
 | D4 | "Helped" and pick counts written as separate SQL in `points.ts` and `routing.ts` | They can drift and score people differently | One shared query or view (6) |
 | D5 | Contact-details rules written twice (TypeScript and SQL), on purpose | They can drift | One shared case list run against both (6) |
-| D6 | One 851-line Playwright file; test data piles up across runs (it caused flaky tests this week) | Slow, flaky, hard to review | Split by journey; fresh database per run (3) |
+| D6 | One 851-line Playwright file; test data piles up across runs (it caused flaky tests this week) | Slow, flaky, hard to review | Split by journey; fresh database per run (3) ✅ done |
 | D7 | Routing SQL scans every field member with correlated subqueries | Slow in big fields | Precomputed per-person stats (8) |
 | D8 | Hand-written `API.md` | Docs drift from the code | OpenAPI generated from the route schemas; contract test (8) |
 | D9 | Ten documents with overlap (PLAN, BUILD_PLAYBOOK, SPEC, ADRs, GRAPH, RUNBOOK…) | Hard to onboard | Docs structure in 4.1 |
@@ -346,7 +346,7 @@ Ordered so the riskiest gaps close first and nothing waits on accounts until it 
 | 0 | Repository made public. Branch protection and required checks on `main`. PR-based workflow (`ship.sh` opens PRs). Prettier (one formatting commit, hidden from blame). Licence check. CodeQL, dependency review, secret scanning with push protection, Dependabot alerts | Flip to public (steps given). OK to install the GitHub CLI |
 | 1 | ✅ Done: environments in code, neutral build, stamp step | — |
 | 2 | ✅ Done: migrations (runner, baseline, CI upgrade-equals-fresh check, destructive-change lint; `db/migrations/README.md`). `/questions/similar` removed | — |
-| 3 | ✅ API image (pinned, non-root, attested, scanned, started in CI) and release workflow (`docs/DEPLOYMENT.md`). Still to do: split the E2E file; fresh database per run | — |
+| 3 | ✅ Done: API image (pinned, non-root, attested, scanned, started in CI), release workflow (`docs/DEPLOYMENT.md`), browser tests split by journey with a fresh database per run | — |
 | 4 | Infrastructure as code (Terraform) for GitHub, Cloudflare, Render, Neon and Supabase settings. Staging and production created from it. GitHub Environments with secrets and production approval | Accounts: Supabase production project, two Render workspaces, Google OAuth clients (click-by-click) |
 | 5 | Pipeline: staging auto-deploy, smoke tests, manual-QA checklist, approved production promotion, rollback, release tags. Per-PR previews (Neon branch + preview API slot + Pages preview) | Approve the first promotion |
 | 6 | Scale readiness: Postgres job queue with locks, LISTEN/NOTIFY events, shared rate limits behind interfaces. Feature flags. Shared queries (D4, D5) | — |

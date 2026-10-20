@@ -55,7 +55,8 @@ Points, trust, routing, sign-in, permissions, moderation, anything money-like or
 ### 5. Verify (skills: `verification-before-completion`, `browser-testing-with-devtools`, `performance-optimization`)
 - `npm run check:task`, then the browser audit in both engines (`npm run test:e2e`), and
   `AUDIT_SHOTS=1` screenshots of every changed screen, looked at by eye in light and dark.
-- New screens go into `apps/web/e2e/audit.spec.ts` so axe, widths 320-1280 and tap targets run on them.
+- New screens go into `apps/web/e2e/screens.spec.ts` (or their journey's file), each through `audit()` from
+  `helpers.ts`, so axe, widths 320-1280 and tap targets run on them.
 - `npm run check:perf` (Lighthouse 95+/100/100/100), `check:size` (raise a budget only by the
   ratchet rule, with the reason in the commit), `check:secrets`, `check:deps`.
 - Say plainly what wasn't verified (real phones, Supabase itself, the deploy).
