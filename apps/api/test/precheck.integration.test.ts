@@ -111,6 +111,15 @@ describe('has it been asked already?', () => {
     expect(await precheck('Osaka?')).toEqual({ verdict: 'clear', questions: [] });
   });
 
+  it('answers text with no words in it, without an error', async () => {
+    // Search operators and punctuation only: nothing to match by words, and no meaning to compare.
+    for (const title of ["& | ! :* <-> ( ) '", '!!!!!!!!!!!!', '?? ... ?? ... ??']) {
+      const res = await h.call('POST', '/questions/precheck', undefined, { title });
+      expect(res.statusCode, title).toBe(200);
+      expect(res.json<{ verdict: string }>().verdict, title).toMatch(/^(clear|related)$/);
+    }
+  });
+
   it('looks within the field it’s asked about', async () => {
     const q = await ask('What is the best month to see the northern lights in Tromso?', 'travel');
     await answer(q);

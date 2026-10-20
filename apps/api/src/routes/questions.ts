@@ -270,40 +270,6 @@ export function registerQuestionRoutes(
   );
 
   app.get(
-    '/questions/similar',
-    {
-      schema: {
-        querystring: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['q'],
-          properties: { q: { type: 'string', maxLength: 300 } },
-        },
-      },
-    },
-    async req => {
-      const query = prefixQuery((req.query as { q: string }).q);
-      if (!query) return { questions: [] };
-      const rows = await db.withUser(
-        null,
-        async q =>
-          (
-            await q.query<{ id: string; title: string; answer_count: number }>(
-              `SELECT q.id::text AS id, q.title,
-              (SELECT count(*) FROM app.answers a WHERE a.question_id = q.id)::int AS answer_count
-       FROM app.questions q, to_tsquery('english', $1) query
-       WHERE q.search @@ query
-       ORDER BY ts_rank_cd(q.search, query) DESC, q.id DESC
-       LIMIT ${SIMILAR_COUNT}`,
-              [query],
-            )
-          ).rows,
-      );
-      return { questions: rows.map(r => ({ id: r.id, title: r.title, answerCount: r.answer_count })) };
-    },
-  );
-
-  app.get(
     '/questions/:id',
     {
       // Signed in is optional: it only marks the question seen if it was put to you.

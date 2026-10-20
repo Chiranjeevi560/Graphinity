@@ -171,23 +171,11 @@ describe('the sitemap list', () => {
   });
 });
 
-describe('finding similar questions while typing', () => {
-  it('finds a question from half-typed words', async () => {
-    const m = await member();
-    const id = await ask(m.token, {
-      ...question,
-      title: 'Importing a vintage wristwatch into Singapore: what duty applies?',
-    });
-    const res = await h.call('GET', `/questions/similar?q=${encodeURIComponent('wristwat duty singap')}`);
-    expect(res.json<{ questions: Array<{ id: string }> }>().questions.map(q => q.id)).toContain(id);
-  });
-
-  it('returns nothing, without an error, for text that has no words', async () => {
-    for (const q of ['', '!!!', "& | ! :* <-> ( ) '", 'a']) {
-      const res = await h.call('GET', `/questions/similar?q=${encodeURIComponent(q)}`);
-      expect(res.statusCode, q).toBe(200);
-      expect(res.json<{ questions: unknown[] }>().questions, q).toEqual([]);
-    }
+describe('the old search address', () => {
+  it('is gone: the precheck is the one way to find similar questions', async () => {
+    const res = await h.call('GET', `/questions/similar?q=${encodeURIComponent('wristwatch duty')}`);
+    expect(res.statusCode).toBe(400);
+    expect(res.json<{ questions?: unknown }>().questions).toBeUndefined();
   });
 });
 

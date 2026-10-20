@@ -143,12 +143,6 @@ by words alone.
 Titles under 10 characters aren't searched. Hidden questions never appear. Without Cloudflare (out of the
 free allowance, offline, not configured) it still answers, by words only, and never says `duplicate`.
 
-### `GET /questions/similar?q=:text`
-
-Up to 5 questions matching any word of `q`, including a word still being typed:
-`{ questions: [{ id, title, answerCount }] }`. Kept for older clients; the website uses the precheck. Text with no
-letters or digits returns an empty list.
-
 ### `GET /questions/:id`
 
 `{ question: summary + { body }, answers: [{ id, body, answerer: { handle }, createdAt, helpful, author, claim,
