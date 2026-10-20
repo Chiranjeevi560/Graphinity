@@ -1,15 +1,26 @@
-// A throwaway database per test file: created fresh, schema applied twice
-// (it must be safe to re-run), and a least-privilege login role created
-// exactly like production. Dropped afterwards.
+// A throwaway database per test file: created fresh, migrated the way every
+// environment is (twice: the second run must change nothing), and a
+// least-privilege login role created exactly like production. Dropped afterwards.
 import { randomBytes } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { createDatabase, type Database } from '../../src/db.ts';
+import { migrate, readMigrations } from '../../src/migrations.ts';
 
 /** Owns the tables in every test database, like Supabase's non-superuser `postgres`. */
 export const SCHEMA_OWNER = 'graphinity_schema_owner';
 
-export const schema = readFileSync(new URL('../../../../db/schema.sql', import.meta.url), 'utf8');
+export const migrations = readMigrations(fileURLToPath(new URL('../../../../db/migrations', import.meta.url)));
+
+/** The baseline, which databases made before migrations adopt by running it again. */
+export const baseline = migrations[0]?.sql ?? '';
+
+/** The schema version the latest migration that sets one declares (GET /health reports it). */
+export const SCHEMA_VERSION = Math.max(
+  ...migrations.flatMap(m =>
+    [...m.sql.matchAll(/INSERT INTO app\.schema_meta \(id, version\) VALUES \(true, (\d+)\)/g)].map(x => Number(x[1])),
+  ),
+);
 
 export interface TestDatabase {
   /**
@@ -27,7 +38,8 @@ export interface TestDatabase {
   close(): Promise<void>;
 }
 
-export async function createTestDatabase(): Promise<TestDatabase> {
+/** `migrated: false` leaves the database empty, for testing the migrations themselves. */
+export async function createTestDatabase({ migrated = true }: { migrated?: boolean } = {}): Promise<TestDatabase> {
   const adminUrl = process.env.TEST_DATABASE_ADMIN_URL;
   // No silent skipping: a missing database is a failed run, not a passed one.
   if (!adminUrl) throw new Error('TEST_DATABASE_ADMIN_URL is not set. Run `npm run db:start` first.');
@@ -79,10 +91,12 @@ export async function createTestDatabase(): Promise<TestDatabase> {
   await owner.query('CREATE SCHEMA IF NOT EXISTS extensions');
   await owner.query('CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions');
   await owner.query(`GRANT USAGE ON SCHEMA extensions TO ${SCHEMA_OWNER}`);
-  await owner.query(`SET ROLE ${SCHEMA_OWNER}`);
-  await owner.query(schema);
-  await owner.query(schema);
-  await owner.query('RESET ROLE');
+  if (migrated) {
+    await owner.query(`SET ROLE ${SCHEMA_OWNER}`);
+    await migrate(owner, migrations);
+    await migrate(owner, migrations);
+    await owner.query('RESET ROLE');
+  }
   await admin.query(`CREATE ROLE ${loginRole} LOGIN PASSWORD '${password}' IN ROLE app_api`);
   await admin.query(`GRANT CONNECT ON DATABASE ${dbName} TO ${loginRole}`);
 

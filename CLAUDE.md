@@ -80,7 +80,8 @@ code we would run.
 - `apps/web`: React 19 + TypeScript + Vite, static on Cloudflare Pages. No UI framework.
 - `apps/api`: Node 24 + Fastify 5 on Render (Singapore). `buildServer(deps)` takes every outside
   dependency as an argument; no test-mode switches in production code.
-- `db/schema.sql`: Supabase Postgres (Singapore). One file, safe to run twice, additive only.
+- `db/migrations`: Supabase Postgres (Singapore). Numbered forward-only files, applied by
+  `apps/api/src/migrations.ts`; never edit one that shipped (its README has the rules).
 - Sign-in: Google ID token (nonce + state, returns to our site), exchanged at Supabase Auth, called
   directly (no supabase-js, no Google script). Scope `openid email` only. Access token in
   memory, refresh token in sessionStorage, never localStorage. The API verifies every token.
@@ -126,7 +127,7 @@ fade half-way: measure state with JavaScript before calling it a bug.
   fill checked at 4.5:1 or more.
 - Screens are lazy-loaded route chunks (default exports); components are named exports.
 - New tables: `ENABLE` + `FORCE ROW LEVEL SECURITY`, explicit grants to `app_api`, policies, and a
-  matching integration test. Bump the version in `app.schema_meta`.
+  matching integration test, in a new migration file. Raise `app.schema_meta` when the API depends on it.
 
 ## Commits
 

@@ -1,18 +1,15 @@
--- Graphinity database schema.
+-- Graphinity database: the baseline, schema version 16, as it stood when
+-- migrations began. Everything after it is a new numbered file in this
+-- folder (see db/migrations/README.md); this one is never edited again.
 --
--- Rules for this file:
---   * Safe to run twice. Apply it in full every time; never hand-pick parts.
---   * Changes are additive only (new tables, new columns with defaults, new
---     constraints validated separately), so an older server keeps working
---     against a newer database during a deploy.
+-- Two rules still hold for it, because databases created before migrations
+-- (local ones, and the Supabase project) adopt it by running it once more:
+--   * Safe to run twice: every statement checks before it changes anything.
 --   * Every rule the API validates is repeated here as a constraint: the API
 --     can have bugs, the database is the last line.
---   * Plain SQL only, no psql meta-commands, so it can be pasted into the
---     Supabase SQL editor or applied by a script.
+-- The migration runner wraps it in a transaction, like every migration.
 
-BEGIN;
-
--- "already exists, skipping" notices are expected on every re-run.
+-- "already exists, skipping" notices are expected on a database adopting it.
 SET LOCAL client_min_messages = warning;
 
 -- Our tables live in their own schema. Supabase's public data API only
@@ -1625,8 +1622,6 @@ GRANT EXECUTE ON FUNCTION app.experience_proximity(bigint, uuid[]) TO app_api;
 DROP POLICY IF EXISTS moderators_system ON app.moderators;
 CREATE POLICY moderators_system ON app.moderators FOR SELECT TO app_api USING (app.is_system());
 
--- Bump on every change to this file.
+-- The version the API checks (GET /health); a migration the API depends on raises it.
 INSERT INTO app.schema_meta (id, version) VALUES (true, 16)
   ON CONFLICT (id) DO UPDATE SET version = EXCLUDED.version, applied_at = now();
-
-COMMIT;

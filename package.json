@@ -13,6 +13,7 @@
     "db:start": "sh scripts/db.sh start",
     "db:stop": "sh scripts/db.sh stop",
     "db:apply": "sh scripts/db.sh apply",
+    "db:migrate:remote": "node --env-file=.local/migrate.env apps/api/src/migrate-main.ts",
     "dev:api": "npm --workspace apps/api run dev",
     "dev:web": "npm --workspace apps/web run dev",
     "typecheck": "npm --workspaces run typecheck && tsc -p functions --noEmit",
@@ -29,7 +30,7 @@
     "check:perf": "node scripts/lighthouse.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "check:fast": "npm run typecheck && npm run lint && npm run format:check && node scripts/floor-guard.mjs",
+    "check:fast": "npm run typecheck && npm run lint && npm run format:check && node scripts/floor-guard.mjs && node scripts/check-migrations.mjs",
     "check:task": "npm run check:fast && npm run test:coverage && npm run build && npm run check:size",
     "check:full": "npm run check:task && npm run check:secrets && npm run check:deps && npm run check:licenses && npm run test:e2e && npm run check:perf",
     "dev:api:local": "npm --workspace apps/api run dev:local"

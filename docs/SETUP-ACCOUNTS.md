@@ -217,8 +217,8 @@ matches by words until the next day. Nothing here needs a card.
 **1. Supabase: turn on the vector extension (before updating the database to version 14).**
 1. Open **supabase.com**, your project, then **Database** in the left bar, then **Extensions**.
 2. Search for **vector**. Switch it on. If it asks for a schema, choose **extensions**.
-3. Then run `db/schema.sql` in the SQL Editor as usual. If you skipped step 2, it stops with a message
-   saying to turn the extension on first; nothing is changed.
+3. Then update the database (Part I). If you skipped step 2, it stops with a message saying to turn
+   the extension on first; nothing is changed.
 
 **2. Cloudflare: an API token that can only use Workers AI.**
 1. Open **dash.cloudflare.com** and sign in to the account that will host the website.
@@ -234,3 +234,30 @@ matches by words until the next day. Nothing here needs a card.
    - On Render (when deployed): your service, **Environment**, add the same two variables.
 6. Tell me when it's done. I'll check that a question gets its embedding from Cloudflare (the
    background job also fills in older questions, 20 a minute).
+
+## Part I: Update the live database
+
+Changes to the database are numbered files (`db/migrations`), applied by one command that keeps a
+record of what ran. This replaces pasting the schema into the SQL Editor. Until the deploy pipeline
+does it for you (a later phase), you run it from your computer when a release needs it.
+
+**Once: give your computer the database's main connection.**
+1. Open **supabase.com**, your project, and click **Connect** at the top of the page.
+2. Choose the **Session pooler** connection string (it works on every network). Copy it. It
+   contains `[YOUR-PASSWORD]`: that is the database password from when you made the project. If
+   you don't have it, **Project Settings**, **Database**, **Reset database password** (this logs
+   out nothing that uses the API's own login).
+3. In Terminal, in the Graphinity folder:
+
+   ```bash
+   touch .local/migrate.env && chmod 600 .local/migrate.env && open -e .local/migrate.env
+   ```
+
+4. In the window that opens, type `MIGRATION_DATABASE_URL=`, paste the string right after it, put
+   your password in place of `[YOUR-PASSWORD]`, and save. Don't send it to me: it can change
+   anything in the database. The folder is never uploaded to GitHub.
+
+**Each time:** run `npm run db:migrate:remote`. The first time it says `applied
+0001_baseline.sql` (your database adopts the record; nothing in it changes) and `schema version
+16`. After that it lists any new files it applied, or says `already up to date`.
+

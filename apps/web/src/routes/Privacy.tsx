@@ -1,6 +1,6 @@
 import { Link } from '../lib/router.ts';
 
-// Written from what the code actually stores and sends (db/schema.sql,
+// Written from what the code actually stores and sends (db/migrations,
 // apps/api). Change this page in the same commit as any change to that.
 export default function Privacy() {
   return (

@@ -3,7 +3,7 @@
 // minutes if fewer than 3 of them have opened it or answered; 5 more at 60
 // minutes while there's no consensus yet (fewer than 3 answers: consensus
 // needs at least 3). Experts' attention is scarce: at most 3 a day each.
-// The database (db/schema.sql, app.routes) enforces that limit and never
+// The database (db/migrations, app.routes) enforces that limit and never
 // routes to the asker.
 import type { Database, Queryable } from './db.ts';
 import type { Events } from './events.ts';

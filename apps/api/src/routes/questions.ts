@@ -1,5 +1,5 @@
 // Asking, answering and reading. Anyone can read; writing needs a profile.
-// Every rule here is repeated in the database (db/schema.sql), which also
+// Every rule here is repeated in the database (db/migrations), which also
 // refuses an answer to your own question even if this code forgot to check.
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Database } from '../db.ts';

@@ -21,6 +21,12 @@ Every setting, where it lives, and the free-tier limits it runs under.
 | `VAPID_SUBJECT` | no | `https://graphinity.pages.dev` | Who push services can contact about our pushes. Defaults to `WEB_ORIGIN` (no email needed) |
 | `CF_ACCOUNT_ID` / `CF_AI_TOKEN` | no (semantic search falls back to words without them) | 32 hex chars / a Cloudflare API token | Cloudflare Workers AI for embeddings (`@cf/baai/bge-base-en-v1.5`, cls pooling). Both or neither. The token needs only the **Workers AI** permission. Secret. Locally, without them, a deterministic local stand-in is used instead |
 
+## Migrations (`apps/api/src/migrate-main.ts`)
+
+| Variable | Required | Example | Notes |
+|---|---|---|---|
+| `MIGRATION_DATABASE_URL` | yes | `postgres://postgres.<project>:…@…pooler.supabase.com:5432/postgres` | The **schema owner**, the opposite of `DATABASE_URL`: it must own the tables and bypass row-level security (Supabase's `postgres` does). Only the migration step has it, never the running server. For the live project it lives in `.local/migrate.env` on the owner's computer (SETUP-ACCOUNTS.md, Part I). Secret |
+
 Locally, `npm run db:start` generates `DATABASE_URL`, `IP_HASH_KEY`, a local `SUPABASE_URL` and a
 random dev `SUPABASE_SECRET_KEY` into `.local/api.env`.
 

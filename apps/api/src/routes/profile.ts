@@ -102,7 +102,7 @@ async function replaceFields(q: Queryable, userId: string, fields: string[]) {
 export function registerProfileRoutes(app: FastifyInstance, deps: ProfileDeps) {
   const { db, clock, subjectKey } = deps;
 
-  // Lists for the profile form. They only change when db/schema.sql is
+  // Lists for the profile form. They only change when a migration is
   // applied (and the server redeployed), so they are read once and kept.
   let meta: Promise<{ fields: unknown[]; countries: unknown[] }> | null = null;
   app.get('/meta', async (_req, reply) => {
