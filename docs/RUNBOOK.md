@@ -92,10 +92,12 @@ the Home Screen.
 
 - **Browser tests** (`npm run test:e2e`) drive the production build in Chromium and WebKit
   against the real API and the sign-in stand-in, with axe, every width from 320 to 1280 and tap
-  targets. `AUDIT_SHOTS=1` also saves screenshots. They need the local database, and they write to
-  it: test people, questions, answers, a moderator and a blocked account pile up there with each
-  run. That is harmless locally, and the tests make fresh names each run.
-  Never point them at the real Supabase project.
+  targets. `AUDIT_SHOTS=1` also saves screenshots. One file per journey in `apps/web/e2e`
+  (`screens`, `answers`, `moderation`, `resilience`, `graph`), sharing `helpers.ts`.
+  Each run gets its own fresh database, `graphinity_e2e`, made by `scripts/e2e-api.mjs`
+  (dropped, created, migrated as a Supabase-shaped owner, new API login each time): nothing a
+  test writes outlives the run, and your development database is never touched. It starts the
+  local database server itself if it isn't running. Never point them at the real Supabase project.
 - **Lighthouse** (`npm run check:perf`) builds the site, serves it on port 4174 with the API on
   3000, and measures it like a visitor would. It refuses to start if something already uses either
   port, since it would measure that instead.
