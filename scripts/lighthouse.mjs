@@ -8,7 +8,6 @@ import { execFileSync, spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { chromium } from 'playwright';
 import lighthouse from 'lighthouse';
-import * as chromeLauncher from 'chrome-launcher';
 
 // In GitHub Actions, a failure before anything is measured (a busy port, a
 // server or browser that won't start) also shows on the run and its pull
@@ -21,6 +20,8 @@ process.on('uncaughtException', err => {
   annotate(err instanceof Error ? `${err.message} ${err.stack?.split('\n')[1]?.trim() ?? ''}` : String(err));
   throw err;
 });
+
+const DEBUG_PORT = 9223;
 
 // Keep in step with CONSTRAINTS.md.
 const BUDGET = { performance: 95, accessibility: 100, bestPractices: 100, seo: 100, lcpMs: 2500, cls: 0.1, tbtMs: 200 };
@@ -75,14 +76,14 @@ let failed = false;
 try {
   await waitFor('http://localhost:4174/');
   await waitFor('http://localhost:3000/health');
-  const chrome = await chromeLauncher.launch({
-    chromePath: chromium.executablePath(),
-    chromeFlags: ['--headless=new'],
-  });
+  // Chromium started by Playwright, the way the browser tests start it (with the flags it needs
+  // on CI's Linux, where chrome-launcher's start never opened a debugging port), and opened to
+  // Lighthouse on a debugging port.
+  const browser = await chromium.launch({ args: [`--remote-debugging-port=${DEBUG_PORT}`] });
   try {
     for (const page of PAGES) {
       const { lhr } = await lighthouse(`http://localhost:4174${page}`, {
-        port: chrome.port,
+        port: DEBUG_PORT,
         output: 'json',
         logLevel: 'error',
         onlyCategories: ['performance', 'accessibility', 'best-practices', 'seo'],
@@ -122,7 +123,7 @@ try {
       }
     }
   } finally {
-    await chrome.kill();
+    await browser.close();
   }
 } finally {
   preview.kill();
