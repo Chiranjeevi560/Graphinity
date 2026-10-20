@@ -1,0 +1,10 @@
+# The build context is only what the Dockerfile copies. Above all, .local
+# (database passwords, keys) must never reach an image or a build server.
+*
+!package.json
+!package-lock.json
+!.npmrc
+!apps/api/package.json
+!apps/api/src/**
+!apps/web/package.json
+!db/migrations/**
