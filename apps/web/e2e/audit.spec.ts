@@ -430,20 +430,18 @@ function runWords(browserName: string): string {
 
 /**
  * Opens a brand-new page at the home page. In CI, Playwright's Firefox driver sometimes never hears
- * a fresh page navigate: in the traces of runs 39345142715 and 39350901816 every request answered
- * 200 and the page was fully drawn, yet no navigation event arrived, and page.goto waited out the
- * whole test. So when the wait runs out, the page itself must prove it loaded: the right address
- * and a finished document. A page that really hangs still fails here.
+ * a fresh page navigate (runs 39345142715, 39350901816, 39385304222): every request answered 200,
+ * the page was fully drawn and its document "complete", yet no navigation event arrived. page.goto
+ * then waits out the whole test, and so does every later step ("waiting for navigation to
+ * finish"). A second navigation is tracked afresh, and must itself load: a page that really
+ * hangs still fails.
  */
 async function openHome(page: Page) {
   try {
     await page.goto('/', { timeout: 20_000 });
   } catch (err) {
     if (!(err instanceof errors.TimeoutError)) throw err;
-    expect(await page.evaluate(() => [location.href, document.readyState]), 'home page loaded').toEqual([
-      'http://localhost:4173/',
-      'complete',
-    ]);
+    await page.goto('/', { timeout: 20_000 });
   }
 }
 
