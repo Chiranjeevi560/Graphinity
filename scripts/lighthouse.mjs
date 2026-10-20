@@ -10,6 +10,18 @@ import { chromium } from 'playwright';
 import lighthouse from 'lighthouse';
 import * as chromeLauncher from 'chrome-launcher';
 
+// In GitHub Actions, a failure before anything is measured (a busy port, a
+// server or browser that won't start) also shows on the run and its pull
+// request, not only in the log.
+const annotate = message => {
+  if (process.env.GITHUB_ACTIONS)
+    console.log(`::error title=Page speed could not run::${message.replace(/\r?\n/g, ' ')}`);
+};
+process.on('uncaughtException', err => {
+  annotate(err instanceof Error ? `${err.message} ${err.stack?.split('\n')[1]?.trim() ?? ''}` : String(err));
+  throw err;
+});
+
 // Keep in step with CONSTRAINTS.md.
 const BUDGET = { performance: 95, accessibility: 100, bestPractices: 100, seo: 100, lcpMs: 2500, cls: 0.1, tbtMs: 200 };
 const PAGES = ['/'];
@@ -22,7 +34,9 @@ for (const url of ['http://localhost:4174/', 'http://localhost:3000/health']) {
     () => false,
   );
   if (busy) {
-    console.error(`Something is already running at ${new URL(url).host}. Stop it, then run this again.`);
+    const message = `Something is already running at ${new URL(url).host}. Stop it, then run this again.`;
+    console.error(message);
+    annotate(message);
     process.exit(1);
   }
 }
