@@ -91,7 +91,7 @@ export function createDatabase(connectionString: string, options: DatabaseOption
     async ping() {
       const { rows } = await pool.query<{ version: number }>('SELECT version FROM app.schema_meta');
       const version = rows[0]?.version;
-      if (version === undefined) throw new Error('schema_meta is empty; apply db/schema.sql');
+      if (version === undefined) throw new Error('schema_meta is empty; run the migrations (npm run db:apply)');
       return { schemaVersion: version };
     },
 

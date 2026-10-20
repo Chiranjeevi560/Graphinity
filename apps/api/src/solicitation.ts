@@ -4,7 +4,7 @@
 // asks people to make contact elsewhere is refused with a plain reason
 // rather than silently edited: changing someone's words without telling
 // them isn't honest, and the reason tells them what to fix. The database
-// repeats the rule (db/schema.sql, app.has_contact_details).
+// repeats the rule (db/migrations, app.has_contact_details).
 
 /**
  * A phone number: 10 or more digits, optionally after "+", allowing spaces,

@@ -1,14 +1,14 @@
-// Runs against a real Postgres. Each run creates a throwaway database, applies
-// the schema twice, connects as a least-privilege login role exactly as the
+// Runs against a real Postgres. Each run creates a throwaway database, runs
+// the migrations twice, connects as a least-privilege login role exactly as the
 // API does in production, and checks what that role can and cannot do.
 import { beforeAll, describe, expect, it } from 'vitest';
 import type pg from 'pg';
 import { createDatabase, type Database } from '../src/db.ts';
-import { createTestDatabase, schema, type TestDatabase } from './helpers/database.ts';
+import { baseline, createTestDatabase, SCHEMA_OWNER, SCHEMA_VERSION, type TestDatabase } from './helpers/database.ts';
 import { must } from './helpers/must.ts';
 
-// The version the schema file says it is, so tests don't need editing on every change.
-const VERSION = Number(/VALUES \(true, (\d+)\)/.exec(schema)?.[1]);
+// The version the migrations declare, so tests don't need editing on every change.
+const VERSION = SCHEMA_VERSION;
 
 let t: TestDatabase;
 let owner: pg.Client; // the schema owner, connected to the test database
@@ -33,8 +33,12 @@ async function refused(sql: string): Promise<string> {
 }
 
 describe('schema', () => {
-  it('applies a third time without error and records its version', async () => {
-    await owner.query(schema);
+  it('takes the baseline again without error (how older databases adopt it) and records its version', async () => {
+    await owner.query(`SET ROLE ${SCHEMA_OWNER}`);
+    await owner.query('BEGIN');
+    await owner.query(baseline);
+    await owner.query('COMMIT');
+    await owner.query('RESET ROLE');
     const { rows } = await owner.query('SELECT version FROM app.schema_meta');
     expect(VERSION).toBeGreaterThan(0);
     expect(rows).toEqual([{ version: VERSION }]);

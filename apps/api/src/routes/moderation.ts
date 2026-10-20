@@ -1,6 +1,6 @@
 // Reporting posts, and the owner's review: keep or remove reported posts,
 // block or unblock people, and see pairs exchanging points from the same
-// network. The database decides who may do what (db/schema.sql); this code
+// network. The database decides who may do what (db/migrations); this code
 // explains refusals in plain words.
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Database, Queryable } from '../db.ts';
