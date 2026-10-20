@@ -8,7 +8,7 @@
 import { randomInt } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { errors, expect, test, type Page } from '@playwright/test';
 
 const WIDTHS = [320, 375, 430, 1280];
 const MIN_TARGET = 44;
@@ -428,9 +428,28 @@ function runWords(browserName: string): string {
   return [browserName, ...Array.from({ length: 4 }, () => String(randomInt(1000, 10_000)))].join(' ');
 }
 
+/**
+ * Opens a brand-new page at the home page. In CI, Playwright's Firefox driver sometimes never hears
+ * a fresh page navigate: in the traces of runs 39345142715 and 39350901816 every request answered
+ * 200 and the page was fully drawn, yet no navigation event arrived, and page.goto waited out the
+ * whole test. So when the wait runs out, the page itself must prove it loaded: the right address
+ * and a finished document. A page that really hangs still fails here.
+ */
+async function openHome(page: Page) {
+  try {
+    await page.goto('/', { timeout: 20_000 });
+  } catch (err) {
+    if (!(err instanceof errors.TimeoutError)) throw err;
+    expect(await page.evaluate(() => [location.href, document.readyState]), 'home page loaded').toEqual([
+      'http://localhost:4173/',
+      'complete',
+    ]);
+  }
+}
+
 /** Signs in through the local stand-in as one of its people. */
 async function signIn(page: Page, who: 'Test person A' | 'A brand-new person') {
-  await page.goto('/');
+  await openHome(page);
   await page.getByRole('button', { name: 'Continue with Google' }).click();
   await page.getByRole('button', { name: who }).click();
   // The app finishes sign-in by moving to home or to setup; wait for either,
