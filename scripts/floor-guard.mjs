@@ -46,9 +46,14 @@ const untracked = (git(['ls-files', '--others', '--exclude-standard']) ?? '')
 const added = [];
 const removed = [];
 let file = '';
+let oldFile = '';
 for (const line of `${tracked}\n${untracked}`.split('\n')) {
-  if (line.startsWith('+++ ')) file = line.replace(/^\+\+\+ (b\/)?/, '');
-  else if (line.startsWith('+') && !line.startsWith('+++')) added.push({ file, text: line.slice(1) });
+  // A deleted file's lines belong to its old name (its new side is /dev/null).
+  if (line.startsWith('--- ')) oldFile = line.replace(/^--- (a\/)?/, '');
+  else if (line.startsWith('+++ ')) {
+    const name = line.replace(/^\+\+\+ (b\/)?/, '');
+    file = name === '/dev/null' ? oldFile : name;
+  } else if (line.startsWith('+') && !line.startsWith('+++')) added.push({ file, text: line.slice(1) });
   else if (line.startsWith('-') && !line.startsWith('---')) removed.push({ file, text: line.slice(1) });
 }
 
@@ -92,7 +97,8 @@ const assertionReasons = [
 ];
 
 // An assertion call removed from a test file, unless the same code was added
-// back in that file (moved, reorganised, or re-wrapped by the formatter).
+// back in that file or in another test file (moved, reorganised, split into
+// files, or re-wrapped by the formatter).
 // Layout doesn't count: whitespace and the trailing commas a formatter adds
 // are ignored, and the code may now span several lines. Any other change to
 // the assertion (a value, a matcher) still counts as removed. Imports don't.
@@ -101,10 +107,17 @@ const code = s => s.replace(/\s+/g, '').replace(/,(?=[)\]}])/g, '');
 const addedText = new Map();
 for (const { file: f, text } of added) addedText.set(f, `${addedText.get(f) ?? ''}\n${text}`);
 const addedCode = new Map([...addedText].map(([f, t]) => [f, code(t)]));
+const isTest = f => /\.(test|spec)\.ts$/.test(f);
+// Test code includes the helpers beside the tests (an assertion moved into a shared step still runs).
+const isTestCode = f => isTest(f) || /(^|\/)(test|e2e)\//.test(f);
+const addedTestCode = [...addedCode].filter(([f]) => isTestCode(f)).map(([, c]) => c);
+const isAssertion = text => !/^\s*import\b/.test(text) && /\b(expect|assert)(\.\w+)*\(/.test(text);
+// Kept: the same assertion code is added back in some test file of this change.
+const kept = (f, text) => addedCode.get(f)?.includes(code(text)) || addedTestCode.some(c => c.includes(code(text)));
+const lost = new Map(); // test file -> its assertions that reappear nowhere
 for (const { file: f, text } of removed) {
-  if (!/\.(test|spec)\.ts$/.test(f) || /^\s*import\b/.test(text)) continue;
-  if (!/\b(expect|assert)(\.\w+)*\(/.test(text)) continue;
-  if (addedCode.get(f)?.includes(code(text))) continue;
+  if (!isTest(f) || !isAssertion(text) || kept(f, text)) continue;
+  lost.set(f, [...(lost.get(f) ?? []), text]);
   if (assertionReasons.length > 0) continue;
   flag('assertion-removed', f, text);
 }
@@ -114,9 +127,18 @@ for (const f of (git(['diff', '--name-only', '--diff-filter=A', mergeBase, '--']
   if (/(^|\/)eslint-suppressions\.json$/.test(f)) flag('silenced-checker', f, '(lint suppressions file added)');
 }
 
-// A deleted test file is a test made easier.
+// A deleted test file is a test made easier, unless it was split or moved:
+// its assertions are in other test code added by this change.
 for (const f of (git(['diff', '--name-only', '--diff-filter=D', mergeBase, '--']) ?? '').split('\n').filter(Boolean)) {
-  if (/\.(test|spec)\.ts$/.test(f)) flag('test-deleted', f, '(file deleted)');
+  if (!isTest(f)) continue;
+  const hadAssertions = removed.some(r => r.file === f && isAssertion(r.text));
+  // Same rule as a removed assertion: kept somewhere, or a commit says why it changed.
+  if (!hadAssertions || (lost.has(f) && assertionReasons.length === 0))
+    flag(
+      'test-deleted',
+      f,
+      `(file deleted; ${lost.get(f)?.length ?? 0} of its assertions appear in no other test file)`,
+    );
 }
 
 // Any changed number on a CONSTRAINTS.md row, up or down. Deliberately not
