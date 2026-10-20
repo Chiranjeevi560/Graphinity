@@ -33,7 +33,6 @@ export default defineConfig({
     baseURL: 'http://localhost:4173',
     trace: 'retain-on-failure',
   },
-  globalSetup: './apps/web/e2e/global-setup.ts',
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
     { name: 'webkit', use: { ...devices['Desktop Safari'] } },
@@ -47,7 +46,8 @@ export default defineConfig({
       env: { DEV_AUTH_SECRET_KEY: TEST_SECRET },
     },
     {
-      command: 'node --env-file=.local/api.env apps/api/src/main.ts',
+      // A fresh database for every run, then the API on it (scripts/e2e-api.mjs).
+      command: 'node scripts/e2e-api.mjs',
       url: 'http://localhost:3000/health',
       reuseExistingServer: false,
       // Variables set here win over the env file.
