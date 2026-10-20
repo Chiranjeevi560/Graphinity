@@ -322,13 +322,15 @@ test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
 
   // Typing a similar question shows it, from half-typed words.
   await page.goto('/ask');
-  await page.getByLabel('Your question').fill(`vintage watch case ${run.slice(0, -2)}`);
+  await page.getByLabel('Your question').fill(`vintage watch case ${words.slice(0, -2)}`);
   await expect(
-    page.getByRole('region', { name: 'Similar questions already asked' }).getByRole('link', { name: new RegExp(run) }),
+    page
+      .getByRole('region', { name: 'Similar questions already asked' })
+      .getByRole('link', { name: new RegExp(words) }),
   ).toBeVisible();
   await audit(page, 'ask (similar questions)');
   await page.goto('/');
-  await expect(page.getByRole('link', { name: new RegExp(run) }).first()).toBeVisible();
+  await expect(page.getByRole('link', { name: new RegExp(words) }).first()).toBeVisible();
 
   await page.goto('/me');
   await expect(page.getByRole('heading', { name: `@${handle}` })).toBeVisible();
@@ -518,9 +520,18 @@ test('picking an answer moves points, and the profile shows them', async ({ page
         page.getByRole('status').filter({ hasText: 'Your answer is posted. Reload the page to see it.' }),
       ).toBeVisible();
       await page.unroute(refresh);
-      // The browser logs the failure this step caused on purpose; anything else still counts.
+      // The browser logs the failure this step caused on purpose, each engine in its own words
+      // (Firefox calls any cross-origin request with no answer a CORS failure); anything else still counts.
       consoleErrors.push(
-        ...consoleErrors.splice(errorsBefore).filter(e => !e.endsWith(':: Failed to load resource: net::ERR_FAILED')),
+        ...consoleErrors
+          .splice(errorsBefore)
+          .filter(
+            e =>
+              !e.endsWith(':: Failed to load resource: net::ERR_FAILED') &&
+              !/:: \[JavaScript Error: "Cross-Origin Request Blocked: .* at http:\/\/localhost:3000\/questions\/[0-9]+\. \(Reason: CORS request did not succeed\)/.test(
+                e,
+              ),
+          ),
       );
       await page.reload();
     }
