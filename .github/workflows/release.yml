@@ -1,0 +1,108 @@
+name: Release
+
+# Builds what ships, once per main commit, and only after CI passed for that
+# exact commit (docs/adr/0002, docs/DEPLOYMENT.md):
+#   - the API image, ghcr.io/<owner>/graphinity-api:<commit>, with a signed
+#     build provenance and an SBOM;
+#   - the website's neutral build (no environment compiled in), stamped later
+#     per environment;
+#   - the migrations, exactly as that commit has them.
+# Staging and then production deploy these same files; nothing is rebuilt
+# between them.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    # Only a main push that passed: never a pull request's code, never a failed run.
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write # push the image to GitHub's registry
+      id-token: write # sign the provenance
+      attestations: write # store it
+    env:
+      SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install exactly what the lockfile says
+        run: npm ci
+
+      - name: Website, neutral build
+        run: npm --workspace apps/web run build
+
+      - name: Image name
+        id: name
+        # Registry names are lowercase.
+        run: echo "image=ghcr.io/$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')/graphinity-api" >> "$GITHUB_OUTPUT"
+
+      - name: API image (build and push)
+        id: push
+        env:
+          IMAGE: ${{ steps.name.outputs.image }}
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker build --build-arg RELEASE="$SHA" -t "$IMAGE:$SHA" .
+          docker push "$IMAGE:$SHA"
+          echo "digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE:$SHA" | cut -d@ -f2)" >> "$GITHUB_OUTPUT"
+          docker logout ghcr.io
+
+      - name: Signed build provenance for the image
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.name.outputs.image }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+      - name: SBOM of the image, and its vulnerability summary
+        env:
+          IMAGE: ${{ steps.name.outputs.image }}
+        run: |
+          sh scripts/install-tools.sh
+          .local/tools/osv-scanner scan image --format spdx-2-3 --output-file sbom.spdx.json "$IMAGE:$SHA" || true
+          .local/tools/osv-scanner scan image --format json --output-file image-vulns.json "$IMAGE:$SHA" || true
+          node scripts/image-report.mjs image-vulns.json
+          test -s sbom.spdx.json
+
+      - name: Release manifest
+        env:
+          IMAGE: ${{ steps.name.outputs.image }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          mkdir -p release
+          cp -R apps/web/dist release/website
+          cp -R db/migrations release/migrations
+          cp sbom.spdx.json release/
+          node -e '
+            const m = { commit: process.env.SHA, image: `${process.env.IMAGE}@${process.env.DIGEST}`, builtAt: new Date().toISOString() };
+            require("fs").writeFileSync("release/release.json", JSON.stringify(m, null, 2) + "\n");
+            console.log(m);'
+
+      - name: Keep the release
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-${{ github.event.workflow_run.head_sha }}
+          path: release/
+          retention-days: 90

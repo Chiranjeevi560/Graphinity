@@ -1,0 +1,32 @@
+# Proposes updates as pull requests, which run the same CI as any change.
+# The cooldown matches CLAUDE.md's rule: nothing published in the last two
+# weeks (a compromised release is usually caught and pulled within days).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+    open-pull-requests-limit: 5
+    groups:
+      # Patch and minor updates of dev tools together: one pull request, not twenty.
+      dev-tools:
+        dependency-type: development
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+
+  # The API image's Node base (Dockerfile): a newer digest brings Debian's fixes.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14

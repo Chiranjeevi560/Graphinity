@@ -45,6 +45,8 @@ Checked by `node scripts/floor-guard.mjs` on everything changed since `origin/ma
 | Licences | Every dependency under one of: MIT, Apache-2.0, ISC, MPL-2.0, BSD-3-Clause, BSD-2-Clause, 0BSD, BlueOak-1.0.0, CC-BY-4.0, CC0-1.0, Python-2.0 | Today's list (2026-10-20): all permissive or file-level copyleft. A new licence (above all GPL or AGPL, which could oblige us to publish more than we choose) must be a decision | `npm run check:licenses` | task end, CI |
 | Code security | No Semgrep findings at ERROR (p/default, p/owasp-top-ten, p/typescript, p/react) | External rules | CI only (`semgrep`) | CI |
 | Supply chain | Exact versions, lockfile, install scripts off, nothing published in the last 2 weeks, CI actions pinned to commits | Owner's brief | review, `.npmrc`, CI | every change |
+| Migrations | Lint clean (no data-losing change without a `-- contract:` reason); no shipped migration edited; an upgrade from the base ends in exactly the schema of a fresh install | Drift between environments is invisible until it breaks a deploy | `node scripts/check-migrations.mjs` (lint in `check:fast`; all three in CI) | every edit, CI |
+| API image | Builds from the commit, runs as a non-root user, starts in production mode and answers `/health` with that commit | A release only promotes an image that has started | CI (`API image` step) | CI |
 
 One command per stage: `npm run check:fast` (seconds), `npm run check:task` (about a minute),
 `npm run check:full` (several minutes, includes browsers and Lighthouse).
@@ -54,6 +56,7 @@ One command per stage: `npm run check:fast` (seconds), `npm run check:task` (abo
 | Metric | Today | Direction |
 |---|---|---|
 | Lighthouse best practices, missing-profile page | 96 (logged 404) | must not fall |
+| API image: Debian base findings at high or critical (osv-scanner) | first measured by CI on this change | must not grow; fixed by a newer base digest (Dependabot) |
 
 ## Exceptions
 
