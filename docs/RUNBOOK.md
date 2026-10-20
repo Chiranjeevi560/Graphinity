@@ -102,10 +102,27 @@ the Home Screen.
 
 When adding a rule that matters, break it on purpose, confirm a test fails, and then restore it.
 
-To commit and push, use `sh scripts/ship.sh <message-file> <paths…>`. It runs every check first,
-commits only the listed paths, and pushes only if the floor guard agrees. It refuses when other
-files have changes, because the checks would then have tested something other than the commit:
-list them too, or stash them first.
+## Changing the code: branches and pull requests
+
+`main` changes only through pull requests, merged on GitHub once every check has passed
+(docs/plans/architecture-migration.md, phase 0).
+
+1. **Ship a change:** `sh scripts/ship.sh <message-file> <paths…>`.
+   - It runs every check first, then commits only the listed paths (`.` for all of them).
+   - It refuses when other files have changes, because the checks would then have tested something
+     other than the commit: list them too, or stash them first.
+   - From `main`, it starts a branch named after the message's first line (`change/<date>-<words>`).
+     On a branch, it adds the commit there: one pull request can hold several one-concern commits.
+   - It pushes the branch only if the floor guard agrees, and prints the pull request link.
+2. **Open the pull request** from that link. CI runs on it: format, lint, types, tests, migrations,
+   build, browsers, scanners.
+3. **Merge on GitHub** with **Rebase and merge**, once every check is green. That keeps each commit
+   and its full message, which are part of the record. Then delete the branch (GitHub offers to).
+4. **Back on your computer:** `git switch main && git pull --ff-only`. `ship.sh` refuses to start a
+   new branch from an out-of-date `main`.
+
+Once on a new computer: `git config blame.ignoreRevsFile .git-blame-ignore-revs`, so `git blame`
+skips formatting-only commits.
 
 ## Schema changes
 

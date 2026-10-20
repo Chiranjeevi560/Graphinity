@@ -5,9 +5,10 @@
 //
 // Findings are soft assertions: every problem on every screen is reported in
 // one run, instead of stopping at the first.
+import { randomInt } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { errors, expect, test, type Page } from '@playwright/test';
 
 const WIDTHS = [320, 375, 430, 1280];
 const MIN_TARGET = 44;
@@ -300,7 +301,8 @@ test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
 
   // Asking. The title is unique per run, so matching can be checked exactly.
   const run = `${browserName}${String(Date.now() % 1_000_000)}`;
-  const title = `How do I import a vintage watch into the UAE, case ${run}?`;
+  const words = runWords(browserName);
+  const title = `How do I import a vintage watch into the UAE, case ${words}?`;
   await page.getByRole('link', { name: 'Ask a question' }).click();
   await expect(page.getByRole('heading', { name: 'Ask a question' })).toBeVisible();
   await audit(page, 'ask (empty)');
@@ -320,13 +322,15 @@ test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
 
   // Typing a similar question shows it, from half-typed words.
   await page.goto('/ask');
-  await page.getByLabel('Your question').fill(`vintage watch case ${run.slice(0, -2)}`);
+  await page.getByLabel('Your question').fill(`vintage watch case ${words.slice(0, -2)}`);
   await expect(
-    page.getByRole('region', { name: 'Similar questions already asked' }).getByRole('link', { name: new RegExp(run) }),
+    page
+      .getByRole('region', { name: 'Similar questions already asked' })
+      .getByRole('link', { name: new RegExp(words) }),
   ).toBeVisible();
   await audit(page, 'ask (similar questions)');
   await page.goto('/');
-  await expect(page.getByRole('link', { name: new RegExp(run) }).first()).toBeVisible();
+  await expect(page.getByRole('link', { name: new RegExp(words) }).first()).toBeVisible();
 
   await page.goto('/me');
   await expect(page.getByRole('heading', { name: `@${handle}` })).toBeVisible();
@@ -414,9 +418,36 @@ test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
   });
 });
 
+/**
+ * Words in no other run's questions. Earlier runs and the other engines leave
+ * answered questions in the same database, and the duplicate check rates two
+ * titles one word apart about 0.91 alike, past the 0.88 at which posting waits
+ * for "Mine is different". Four words of its own bring a title to about 0.68.
+ */
+function runWords(browserName: string): string {
+  return [browserName, ...Array.from({ length: 4 }, () => String(randomInt(1000, 10_000)))].join(' ');
+}
+
+/**
+ * Opens a brand-new page at the home page. In CI, Playwright's Firefox driver sometimes never hears
+ * a fresh page navigate (runs 39345142715, 39350901816, 39385304222): every request answered 200,
+ * the page was fully drawn and its document "complete", yet no navigation event arrived. page.goto
+ * then waits out the whole test, and so does every later step ("waiting for navigation to
+ * finish"). A second navigation is tracked afresh, and must itself load: a page that really
+ * hangs still fails.
+ */
+async function openHome(page: Page) {
+  try {
+    await page.goto('/', { timeout: 20_000 });
+  } catch (err) {
+    if (!(err instanceof errors.TimeoutError)) throw err;
+    await page.goto('/', { timeout: 20_000 });
+  }
+}
+
 /** Signs in through the local stand-in as one of its people. */
 async function signIn(page: Page, who: 'Test person A' | 'A brand-new person') {
-  await page.goto('/');
+  await openHome(page);
   await page.getByRole('button', { name: 'Continue with Google' }).click();
   await page.getByRole('button', { name: who }).click();
   // The app finishes sign-in by moving to home or to setup; wait for either,
@@ -456,13 +487,14 @@ test('picking an answer moves points, and the profile shows them', async ({ page
     if (msg.type() === 'error') consoleErrors.push(`${page.url()} :: ${msg.text().slice(0, 200)}`);
   });
   const run = `${browserName}${String(Date.now() % 1_000_000)}`;
+  const words = runWords(browserName);
 
   // The asker: a fixed test person, so they can come back later.
   await signIn(page, 'Test person A');
   await setUpIfNeeded(page, `asker.${run}`);
   await establishTestPersonA();
   await page.goto('/ask');
-  const title = `Which customs form do I need for a watch, case ${run}?`;
+  const title = `Which customs form do I need for a watch, case ${words}?`;
   await page.getByLabel('Your question').fill(title);
   await page.getByLabel('Topic').selectOption('imports-customs');
   await page.getByRole('button', { name: 'Post question' }).click();
@@ -505,9 +537,18 @@ test('picking an answer moves points, and the profile shows them', async ({ page
         page.getByRole('status').filter({ hasText: 'Your answer is posted. Reload the page to see it.' }),
       ).toBeVisible();
       await page.unroute(refresh);
-      // The browser logs the failure this step caused on purpose; anything else still counts.
+      // The browser logs the failure this step caused on purpose, each engine in its own words
+      // (Firefox calls any cross-origin request with no answer a CORS failure); anything else still counts.
       consoleErrors.push(
-        ...consoleErrors.splice(errorsBefore).filter(e => !e.endsWith(':: Failed to load resource: net::ERR_FAILED')),
+        ...consoleErrors
+          .splice(errorsBefore)
+          .filter(
+            e =>
+              !e.endsWith(':: Failed to load resource: net::ERR_FAILED') &&
+              !/:: \[JavaScript Error: "Cross-Origin Request Blocked: .* at http:\/\/localhost:3000\/questions\/[0-9]+\. \(Reason: CORS request did not succeed\)/.test(
+                e,
+              ),
+          ),
       );
       await page.reload();
     }
@@ -573,6 +614,7 @@ test('picking an answer moves points, and the profile shows them', async ({ page
 
 test('a new answer reaches the asker live, without reloading', async ({ browser, browserName }) => {
   const run = `${browserName}${String(Date.now() % 1_000_000)}`;
+  const words = runWords(browserName);
   const askerContext = await browser.newContext();
   const answererContext = await browser.newContext();
   try {
@@ -581,7 +623,7 @@ test('a new answer reaches the asker live, without reloading', async ({ browser,
     await setUpIfNeeded(asker, `asker.${run}`);
     await establishTestPersonA();
     await asker.goto('/ask');
-    const title = `Is there a night bus from the airport, case ${run}?`;
+    const title = `Is there a night bus from the airport, case ${words}?`;
     await asker.getByLabel('Your question').fill(title);
     await asker.getByLabel('Topic').selectOption('imports-customs');
     await asker.getByRole('button', { name: 'Post question' }).click();
@@ -643,11 +685,12 @@ async function establishTestPersonA() {
 
 test('a moderator removes a reported question', async ({ page, browserName }) => {
   const run = `${browserName}${String(Date.now() % 1_000_000)}`;
+  const words = runWords(browserName);
   // Someone new asks something that shouldn't be there.
   await signIn(page, 'A brand-new person');
   await setUpIfNeeded(page, `spammer.${run}`);
   await page.goto('/ask');
-  const title = `Cheap watches here, visit my shop now, case ${run}?`;
+  const title = `Cheap watches here, visit my shop now, case ${words}?`;
   await page.getByLabel('Your question').fill(title);
   await page.getByLabel('Topic').selectOption('imports-customs');
   await page.getByRole('button', { name: 'Post question' }).click();
@@ -784,8 +827,9 @@ test('what you type survives a reload and a failed post, and is forgotten when y
   browserName,
 }) => {
   const run = `${browserName}${String(Date.now() % 1_000_000)}`;
-  const title = `Can I bring two laptops through Delhi customs, draft ${run}?`;
-  const answer = `I brought two through Delhi in March, draft ${run}. Nobody asked about the second one.`;
+  const words = runWords(browserName);
+  const title = `Can I bring two laptops through Delhi customs, draft ${words}?`;
+  const answer = `I brought two through Delhi in March, draft ${words}. Nobody asked about the second one.`;
   await signIn(page, 'Test person A');
   await establishTestPersonA();
 
@@ -801,9 +845,6 @@ test('what you type survives a reload and a failed post, and is forgotten when y
   await page.route(questions, route =>
     route.request().method() === 'POST' ? route.abort('internetdisconnected') : route.continue(),
   );
-  const earlier = page.getByRole('button', { name: 'Mine is different' });
-  await expect(page.getByRole('button', { name: 'Post question' }).or(earlier)).toBeVisible();
-  if (await earlier.isVisible()) await earlier.click();
   await page.getByRole('button', { name: 'Post question' }).click();
   await expect(page.getByRole('alert').filter({ hasText: 'Graphinity isn’t responding' })).toBeVisible();
   await page.reload();
@@ -811,7 +852,6 @@ test('what you type survives a reload and a failed post, and is forgotten when y
   await page.unroute(questions);
 
   // Back online it posts, and the draft is gone.
-  if (await earlier.isVisible()) await earlier.click();
   await page.getByRole('button', { name: 'Post question' }).click();
   await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
   const questionUrl = new URL(page.url()).pathname;
@@ -917,11 +957,12 @@ test('answers that report amounts show how far they agree, and keep the odd one 
   browserName,
 }) => {
   const run = `${browserName}${String(Date.now() % 1_000_000)}`;
+  const words = runWords(browserName);
   await signIn(page, 'Test person A');
   await setUpIfNeeded(page, `asker.${run}`);
   await establishTestPersonA();
   await page.goto('/ask');
-  const title = `How much customs did you pay on a watch through Chennai, case ${run}?`;
+  const title = `How much customs did you pay on a watch through Chennai, case ${words}?`;
   await page.getByLabel('Your question').fill(title);
   await page.getByLabel('Topic').selectOption('imports-customs');
   await page.getByRole('button', { name: 'Post question' }).click();
@@ -959,19 +1000,14 @@ test('asking something already answered offers those answers first, and never fo
   browserName,
 }) => {
   const run = `${browserName}${String(Date.now() % 1_000_000)}`;
-  const title = `Which documents did customs want for a used camera from Japan, case ${run}?`;
+  const words = runWords(browserName);
+  const title = `Which documents did customs want for a used camera from Japan, case ${words}?`;
   // Someone asked it and got an answer.
   await signIn(page, 'A brand-new person');
   await setUpIfNeeded(page, `first.${run}`);
   await page.goto('/ask');
   await page.getByLabel('Topic').selectOption('imports-customs');
-  const checked = page.waitForResponse(r => r.url().endsWith('/questions/precheck'));
   await page.getByLabel('Your question').fill(title);
-  await checked;
-  // Earlier runs leave the same question, answered, in the local database:
-  // this person's situation is their own, so they say so, as anyone could.
-  const earlier = page.getByRole('button', { name: 'Mine is different' });
-  if (await earlier.isVisible()) await earlier.click();
   await page.getByRole('button', { name: 'Post question' }).click();
   await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
   const questionUrl = new URL(page.url()).pathname;
