@@ -27,11 +27,17 @@ random dev `SUPABASE_SECRET_KEY` into `.local/api.env`.
 ## Website (`apps/web`)
 
 The build compiles in **none** of these: one build is promoted from staging to production. The
-deploy writes them into a copy of the build (`node apps/web/stamp-dist.ts dist <out>`), as a
+deploy writes them into a copy of the build (`npm run build:pages` runs
+`node stamp-dist.ts dist dist-pages`), as a
 `<meta name="graphinity-settings">` tag in `index.html`, the CSP in `_headers`, `robots.txt` and
 `sitemap.xml`. It refuses a build that names any environment, http addresses, a key that isn't the
 publishable one, or Google sign-in pointing anywhere but Google. The link-preview Functions read the
 same names from the Pages project's settings at request time.
+
+For Cloudflare Pages, set **Root directory** to `apps/web`, **Build command** to
+`npm run build:pages`, and **Build output directory** to `dist-pages`. Add the five `VITE_*`
+values below to the Pages project's environment variables for the deployment environment. They are
+public configuration, not secrets; never add API, database, OAuth token, or Supabase secret values.
 
 | Variable | Required | Example | Notes |
 |---|---|---|---|
