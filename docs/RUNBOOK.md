@@ -27,7 +27,8 @@ in the same commit.
 | Design gallery (development only) | http://localhost:5173/design |
 | All tests | `npm test` |
 | Typecheck | `npm run typecheck` |
-| Production build | `npm run build` |
+| Neutral production build | `npm run build` |
+| Cloudflare Pages build (from `apps/web`) | `npm run build:pages` |
 | Production build served with production headers | `npm --workspace apps/web run preview` (port 4173) |
 | Stop the local database | `npm run db:stop` |
 
@@ -134,17 +135,19 @@ this is the order and what to check.
 4. Check `GET /health` returns `{"status":"ok","schemaVersion":N}` with the version from step 1.
 5. **Measure the proxy hops** (SECURITY.md) and set `TRUST_PROXY_HOPS` to that number. Until then
    every visitor shares one rate-limit allowance.
-6. **Website on Cloudflare Pages**, from the repository root: build once with
-   `npm ci && npm --workspace apps/web run build` (output `apps/web/dist`, which names no
-   environment), then stamp a copy for the environment with its `VITE_*` values set:
-   `node apps/web/stamp-dist.ts apps/web/dist <out>` (docs/adr/0002). Upload `<out>`. The same
-   `dist` is stamped again for production after staging is verified. Functions come from
-   `/functions` (question link previews and the sitemap; only `/q/*` and `/sitemap.xml` run them,
-   per the built `_routes.json`). In the Pages project's settings choose **Fail open**, so pages
-   still load if the free daily allowance of 100,000 Function requests is ever used up. Variables and `VITE_SITE_ORIGIN`, `VITE_API_ORIGIN`, `VITE_SUPABASE_URL`,
-   `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_GOOGLE_CLIENT_ID` (the stamp refuses http or missing
-   values; the Functions read the same names at request time). Add `<site>/auth/callback` to the Google client's redirect URIs and `<site>` to its
-   JavaScript origins.
+6. **Website on Cloudflare Pages**: set the Pages project's **Root directory** to `apps/web`,
+   **Build command** to `npm run build:pages`, and **Build output directory** to `dist-pages`.
+   Configure `VITE_SITE_ORIGIN`, `VITE_API_ORIGIN`, `VITE_SUPABASE_URL`,
+   `VITE_SUPABASE_PUBLISHABLE_KEY`, and `VITE_GOOGLE_CLIENT_ID` in that Pages environment. The
+   command first creates the neutral `dist`, then stamps a copy into `dist-pages`; missing or
+   invalid deployment values fail the build instead of shipping a blank page. These five values
+   are public configuration only, not secrets. Functions come from `/functions` (question link
+   previews and the sitemap; only `/q/*` and `/sitemap.xml` run them, per the built `_routes.json`).
+   In the Pages project's settings choose **Fail open**, so pages still load if the free daily
+   allowance of 100,000 Function requests is ever used up. For the one-build promotion flow, run
+   the neutral build from the repository root and stamp each environment with
+   `node apps/web/stamp-dist.ts apps/web/dist <out>` (docs/adr/0002). Add `<site>/auth/callback` to
+   the Google client's redirect URIs and `<site>` to its JavaScript origins.
 7. **Keep-awake**: a Cloudflare Worker from `workers/keep-awake.js` with a Cron Trigger every 10
    minutes and `API_HEALTH_URL` set.
 8. **Check live**: sign in with Google (the screen should name the site), ask, answer from a second

@@ -30,7 +30,8 @@ on the provider's own page on 2026-10-20.
 3. **One build, configured at deploy time.**
    - Website: the build compiles in no environment. A tested deploy step (`apps/web/stamp.ts`)
      copies it and writes only `index.html` (a settings meta tag and the site's address),
-     `_headers` (CSP), `robots.txt` and `sitemap.xml`. It refuses a build that names any
+     `_headers` (CSP), `robots.txt` and `sitemap.xml`. Cloudflare Pages runs that step through
+     `npm run build:pages` and publishes `dist-pages`; it refuses a build that names any
      environment. Every hashed script and style is the same bytes in staging and production.
    - API: one container image per commit, pushed to GitHub's registry and deployed **by digest**
      to staging, then the same digest to production (Render deploy hooks accept a digest). The
