@@ -16,7 +16,7 @@ function buildChecksPlugin(): Plugin {
     generateBundle(_, bundle) {
       const html = bundle['index.html'];
       if (html?.type === 'asset') assertNoInlineScripts(String(html.source));
-      // Only these paths run the host's Functions (/functions); everything
+      // Only these paths run the host's Functions (apps/web/functions); everything
       // else is a free static file. If the free daily allowance runs out,
       // "fail open" in Cloudflare serves the static page instead.
       this.emitFile({
