@@ -178,3 +178,7 @@ The owner then explicitly asked to implement everything in the supplied prompts.
 ## Consolidation (2026-10-24, Claude)
 
 All of the work recorded above is now committed on `change/20261024-one-line-of-history` (commit aa8daee, "Bring in consent controls, the personal knowledge graph and consented discovery"), on top of `main` with the Cloudflare build fix and my migration, image and test work. The edits to existing files had been removed from the working tree by a `git stash` on 2026-10-23 (not by Codex or Claude, as far as the history shows); they were recovered intact from that stash. Changes made while committing: bundle budgets set by the ratchet rule (styles 6.37 kB, all scripts 99.51 kB) in both `package.json` and `CONSTRAINTS.md`. Copilot's worktrees were reviewed and mostly not brought in; see "Consolidation" in `project report.md` for the table and reasons. Open owner question: migration 0009's gating of meaning-based duplicate detection behind optional AI-personalization consent.
+
+## Own models (2026-10-25, Claude)
+
+The learning platform's first subsystem is in: model registry, `model_training` consent and kill switch, Graphinity's own PPMI-SVD-SIF text embedding, a statistical quality gate, and a daily worker-thread training job. See ADR 0010 and the matching section in `project report.md`, including the honest benchmark result (the gate refused to promote on synthetic data where words already win).

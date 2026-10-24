@@ -8,6 +8,9 @@ import { embedMissing } from './backfill.ts';
 import { chooseEmbedder } from './embeddings.ts';
 import { errorKind, serial } from './jobs.ts';
 import { createFlags, switchedEmbedder } from './flags.ts';
+import { ownEmbedderFromArtifact, swappableEmbedder } from './ml/own-embedder.ts';
+import { loadServing } from './ml/registry.ts';
+import { TEXT_EMBEDDING, trainTextEmbeddingJob } from './ml/training.ts';
 import { personalGraphQueueStatus, projectPersonalGraphSignals, purgeExpiredPersonalSignals } from './personal-data.ts';
 import { expireNetworkMarks } from './networks.ts';
 import { createLimiter, createPushSender } from './push-sender.ts';
@@ -51,11 +54,18 @@ const flags = createFlags(db, {
 });
 await flags.refresh();
 
-// Semantic search: Cloudflare Workers AI when configured; a local stand-in in
-// development; off (word matching) in production without it, or while the
+// Search by meaning: Graphinity's own model (ADR 0010) once one has been
+// trained and promoted; until then whatever chooseEmbedder picks (a local
+// stand-in in development, matching by words in production). Off while the
 // `embeddings` switch is off.
-const chosen = chooseEmbedder(config, (...args) => fetch(...args));
-const embedder = chosen ? switchedEmbedder(chosen, flags) : null;
+const live = swappableEmbedder(chooseEmbedder(config, (...args) => fetch(...args)));
+try {
+  const serving = await loadServing(db, TEXT_EMBEDDING);
+  if (serving) live.set(ownEmbedderFromArtifact(serving.artifact, serving.version));
+} catch (err) {
+  console.warn(`serving text model not loaded (${errorKind(err)}); search works by words until it is`);
+}
+const embedder = switchedEmbedder(live.embedder, flags);
 
 const authAdmin = createSupabaseAdmin({ supabaseUrl: config.supabaseUrl, secretKey: config.supabaseSecretKey });
 const events = createEvents();
@@ -194,25 +204,62 @@ const runRouting = serial(() =>
 );
 events.onAsked(runRouting);
 // Embeddings a question is missing, a few each minute.
-const runBackfill = embedder
-  ? serial(async () => {
-      if (!flags.enabled('embeddings')) return;
-      await embedMissing(db, embedder).then(
-        n => {
-          if (n) app.log.info({ questions: n }, 'embedded questions');
-        },
-        (err: unknown) => {
-          app.log.warn({ kind: errorKind(err) }, 'embedding backfill failed');
-        },
-      );
-    })
-  : null;
+const runBackfill = serial(async () => {
+  if (!flags.enabled('embeddings') || !live.current()) return;
+  await embedMissing(db, embedder).then(
+    n => {
+      if (n) app.log.info({ questions: n }, 'embedded questions');
+    },
+    (err: unknown) => {
+      app.log.warn({ kind: errorKind(err) }, 'embedding backfill failed');
+    },
+  );
+});
 runRouting();
 const routingTimer = setInterval(() => {
   runRouting();
-  runBackfill?.();
+  runBackfill();
 }, 60_000);
 routingTimer.unref();
+
+// Train Graphinity's own text model daily, on a worker thread (ADR 0010):
+// first 10 minutes after start, so a restart isn't slowed. A version that
+// wins its quality gate serves at once. Logs carry numbers only, never text.
+const runTraining = serial(async () => {
+  if (!flags.enabled('model_training')) return;
+  try {
+    const outcome = await trainTextEmbeddingJob(db);
+    if (outcome.status === 'promoted') {
+      const serving = await loadServing(db, TEXT_EMBEDDING);
+      if (serving) live.set(ownEmbedderFromArtifact(serving.artifact, serving.version));
+    }
+    app.log.info(
+      outcome.status === 'skipped'
+        ? { model: TEXT_EMBEDDING, status: outcome.status }
+        : {
+            model: TEXT_EMBEDDING,
+            status: outcome.status,
+            version: outcome.version,
+            mrr: outcome.result.metrics.mrr,
+            baselineMrr: outcome.result.baseline.mrr,
+            queries: outcome.result.metrics.queries,
+            trainMs: outcome.result.metrics.trainMs,
+          },
+      'model training',
+    );
+  } catch (err) {
+    app.log.warn({ kind: errorKind(err) }, 'model training failed');
+  }
+});
+const firstTraining = setTimeout(runTraining, 10 * 60_000);
+firstTraining.unref();
+const trainingTimer = setInterval(runTraining, 24 * 60 * 60_000);
+trainingTimer.unref();
+app.addHook('onClose', (_instance, done) => {
+  clearTimeout(firstTraining);
+  clearInterval(trainingTimer);
+  done();
+});
 app.addHook('onClose', (_instance, done) => {
   clearInterval(routingTimer);
   flags.stop();

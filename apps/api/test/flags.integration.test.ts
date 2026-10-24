@@ -16,6 +16,7 @@ describe('feature flags', () => {
     const { rows } = await t.api.query('SELECT name, enabled FROM app.feature_flags ORDER BY name');
     expect(rows).toEqual([
       { name: 'embeddings', enabled: true },
+      { name: 'model_training', enabled: true },
       { name: 'push', enabled: true },
       { name: 'recommendations', enabled: true },
     ]);
