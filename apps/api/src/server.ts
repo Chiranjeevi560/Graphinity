@@ -15,6 +15,9 @@ import { registerGraphRoutes } from './routes/graph.ts';
 import { registerPushRoutes } from './routes/push.ts';
 import type { Embedder } from './embeddings.ts';
 import { registerQuestionRoutes } from './routes/questions.ts';
+import { registerConsentRoutes } from './routes/consent.ts';
+import { registerPersonalGraphRoutes } from './routes/personal-graph.ts';
+import { registerRecommendationRoutes } from './routes/recommendations.ts';
 
 declare module 'fastify' {
   interface FastifyContextConfig {
@@ -64,6 +67,8 @@ export interface Deps {
   vapidPublicKey?: string | null;
   /** Embeddings for semantic search; absent: word matching only. */
   embedder?: Embedder | null;
+  /** Global recommendation kill switch; per-user consent is enforced separately. */
+  recommendationsEnabled?: () => boolean;
   limits?: Limits;
   /** Where logs go. Defaults to stdout. */
   logStream?: { write(line: string): void };
@@ -263,6 +268,9 @@ export async function buildServer(deps: Deps) {
   });
 
   registerProfileRoutes(app, { db, authAdmin: deps.authAdmin, clock, subjectKey: config.ipHashKey, log: app.log });
+  registerConsentRoutes(app, { db });
+  registerPersonalGraphRoutes(app, { db });
+  registerRecommendationRoutes(app, { db, enabled: deps.recommendationsEnabled ?? (() => true) });
   const events = deps.events ?? createEvents();
   registerQuestionRoutes(app, { db, events, embedder: deps.embedder ?? null });
   registerLiveRoutes(app, { events, clock });

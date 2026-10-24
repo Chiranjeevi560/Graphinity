@@ -1,6 +1,7 @@
 // Asking and answering: picking an answer and its points, answers arriving live, drafts kept,
 // amounts agreeing, and an answered question offered before asking again.
 import {
+  asOwner,
   audit,
   clearConsoleErrors,
   consoleErrors,
@@ -87,6 +88,10 @@ test('picking an answer moves points, and the profile shows them', async ({ page
       await page.reload();
     }
     await expect(page.getByRole('link', { name: `@${handle}`, exact: true })).toBeVisible();
+    const credibilityCounts = await page
+      .locator('.answer-credibility')
+      .evaluateAll(rows => rows.map(row => row.children.length));
+    expect(credibilityCounts.every(count => count <= 6)).toBe(true);
     await signOut(page);
   }
 
@@ -268,7 +273,12 @@ test('answers that report amounts show how far they agree, and keep the odd one 
   ];
   for (const [i, body] of reports.entries()) {
     await signIn(page, 'A brand-new person');
-    await setUpIfNeeded(page, `amount${String(i)}.${run}`);
+    const handle = `amount${String(i)}.${run}`;
+    await setUpIfNeeded(page, handle);
+    // This test exercises aggregate answer presentation, not anti-abuse
+    // throttling. Age each independently created author past the new-account
+    // posting limit so the third claim can be submitted deterministically.
+    await asOwner("UPDATE app.profiles SET created_at = now() - interval '30 days' WHERE handle = $1", [handle]);
     await page.goto(questionUrl);
     await page.getByLabel('Your answer').fill(body);
     await page.getByRole('button', { name: 'Post answer' }).click();
@@ -277,6 +287,7 @@ test('answers that report amounts show how far they agree, and keep the odd one 
   }
 
   await page.goto(questionUrl);
+  await expect(page.getByRole('region', { name: '3 answers' })).toBeVisible();
   const summary = page.getByRole('region', { name: /agree|differ/ });
   await expect(summary).toBeVisible();
   await expect(summary).toContainText('₹95,000–₹96,000');
@@ -286,7 +297,7 @@ test('answers that report amounts show how far they agree, and keep the odd one 
   await audit(page, 'question (answers agree in part)');
 });
 
-test('asking something already answered offers those answers first, and never forces them', async ({
+test('asking something already answered offers those answers first without blocking a related fallback', async ({
   page,
   browserName,
 }) => {
@@ -296,6 +307,7 @@ test('asking something already answered offers those answers first, and never fo
   // Someone asked it and got an answer.
   await signIn(page, 'A brand-new person');
   await setUpIfNeeded(page, `first.${run}`);
+  await enableAIForThisTest(page);
   await page.goto('/ask');
   await page.getByLabel('Topic').selectOption('imports-customs');
   await page.getByLabel('Your question').fill(title);
@@ -313,21 +325,35 @@ test('asking something already answered offers those answers first, and never fo
 
   // Someone else starts asking the same thing.
   await signIn(page, 'Test person A');
+  await setUpIfNeeded(page, `matcher.${run}`);
+  await enableAIForThisTest(page);
   await establishTestPersonA();
   await page.goto('/ask');
   await page.getByLabel('Topic').selectOption('imports-customs');
   await page.getByLabel('Your question').fill(title);
   const card = page.getByRole('region', { name: 'This was asked and answered recently' });
-  await expect(card).toBeVisible();
-  await expect(card.getByRole('link', { name: 'Read the answers' })).toHaveAttribute(
+  const matches = page.getByRole('region', { name: 'Similar questions already asked' });
+  await expect(matches).toBeVisible();
+  await expect(matches.getByRole('link').filter({ hasText: title })).toHaveAttribute(
     'href',
     new RegExp(`^${questionUrl.split('/').slice(0, 3).join('/')}`),
   );
-  await expect(page.getByRole('button', { name: 'Post question' })).toBeDisabled();
-  await expect(page.getByText('Read the answers above, or say yours is different.')).toBeVisible();
   await audit(page, 'ask (already answered)');
-  // Their situation differs: they can still ask.
-  await card.getByRole('button', { name: 'Mine is different' }).click();
-  await expect(card).toHaveCount(0);
+  if (await card.isVisible()) {
+    // Only confident, consented semantic matches may show the interruptive UI.
+    await expect(page.getByRole('button', { name: 'Post question' })).toBeDisabled();
+    await expect(page.getByText('Read the answers above, or say yours is different.')).toBeVisible();
+    await card.getByRole('button', { name: 'Mine is different' }).click();
+    await expect(card).toHaveCount(0);
+  }
+  // With lexical-only fallback, the match is suggested but never blocks a new post.
   await expect(page.getByRole('button', { name: 'Post question' })).toBeEnabled();
 });
+
+async function enableAIForThisTest(page: import('@playwright/test').Page) {
+  await page.goto('/me/privacy');
+  const category = page.getByRole('heading', { name: 'ai personalization' }).locator('..');
+  const allow = category.getByRole('checkbox');
+  if (!(await allow.isChecked())) await allow.click();
+  await expect(allow).toBeChecked();
+}

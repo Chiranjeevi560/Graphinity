@@ -66,6 +66,9 @@ export default function Me({ profile }: { profile: Profile }) {
       <LinkButton to="/me/edit" variant="secondary" className="btn-block">
         Edit profile
       </LinkButton>
+      <LinkButton to="/me/privacy" variant="secondary" className="btn-block">
+        Your data choices
+      </LinkButton>
       {profile.moderator && (
         <LinkButton to="/review" variant="secondary" className="btn-block">
           Review reports

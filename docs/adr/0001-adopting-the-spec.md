@@ -12,8 +12,12 @@ Supabase Postgres with forced row-level security, tested and pushed.
 
 1. **Evolve, don't rewrite.** The spec decides *what* Graphinity does; the existing, tested stack
    decides *how*. No pnpm, Docker, Redis/BullMQ, Kysely, Drizzle or Node 22 migration.
-2. **Embeddings: Cloudflare Workers AI's free allowance**, once Cloudflare's own pages confirm it
-   refuses rather than bills past the limit. Not OpenAI (paid).
+2. **Original embedding decision (superseded 2026-10-22):** Cloudflare Workers AI's free allowance
+   was selected because it refuses rather than bills past its limit. The owner has since directed
+   that Graphinity own its AI stack and use self-hosted inference, with external inference only as an
+   optional fallback. The current Cloudflare adapter therefore does not satisfy the new target; a
+   self-hosted model runtime and compatible deployment capacity have not yet been selected or
+   verified. Until then, production can run without the provider and falls back to word matching.
 3. **Sign-in stays as built** (access token in memory, refresh token in this tab's storage) until a
    custom domain exists; then `__Host-` HttpOnly cookies per spec §16.1. Cookies can't work while
    the site (`pages.dev`) and API (`onrender.com`) are different sites.
@@ -39,7 +43,7 @@ Status: ✅ built and tested · ◐ in progress · ○ planned · ⤳ bent (reas
 | §8.1 Springs as m·x″ + c·x′ + k·x | Built: `spring.ts` holds the table as written and converts it exactly (ω = √(k/m), ζ = c/2√(mk)). Snappy: presses, toggles. Fluid: dialogs, screens, the live banner. Spatial: a question travelling on the graph. Pulse: a person swelling as it reaches them | ✅ |
 | §8.3 WebGPU/WebGL2 in a worker | ⤳ Canvas 2D on the main thread: at our node counts it draws in well under a millisecond, and a GPU path is a large dependency-free rewrite to justify later with measurements | ⤳ |
 | §9.2 Canonical `/q/{field}/{country}/{slug}-{id}` with 301 | Today `/q/{id}/{slug}` with the address fixed in place; move with redirects | ○ |
-| §11.1 Semantic dedup (≥ 0.88 intercept, 0.72 related) | Built: Workers AI `bge-base-en-v1.5` (768, cls) into pgvector `halfvec` with HNSW (m 24, ef 200), RRF with words, thresholds as written. Bent: no cross-encoder rerank yet (another model call per keystroke pause on the free allowance); the thresholds need checking against real Cloudflare vectors once the owner adds the token | ◐ |
+| §11.1 Semantic dedup (≥ 0.88 intercept, 0.72 related) | Existing optional provider adapter: Workers AI `bge-base-en-v1.5` (768, cls) into pgvector `halfvec` with HNSW (m 24, ef 200), fused with word results. It is not self-hosted and does not meet the later owner directive. No cross-encoder, calibrated threshold evidence or self-hosted production runtime yet. | ◐ |
 | §11.2 Staged waves 5-5-5 at 0/20/60 min, 3 a day | Built and tested (wave 3's "consensus below 0.70" is "fewer than 3 answers" until consensus is stored) | ✅ |
 | §11.2 11-factor routing + greedy diversity + UCB1 + load dampener | Built: Ψ with φ1–φ8, UCB1 and the load dampener, each from real data (`routing-score.ts`, docs/GRAPH.md). Bent: φ4 is TrustRank from moderators (plain PageRank lets a ring pump itself); UCB1 counts only in the explore place (in the main ones it outranks proven people once a field is busy). Left out until there is data: φ3's city match, φ8's time of day (no timezones), φ9 diversity (no person-to-person weights) | ◐ |
 | §11.3 TrueSkill per field, medals | Built: replayed per field from every judgement on the server, spec tiers replace the old points medals; the opponent gap (8) was calibrated so every bar is reachable (see reputation.ts); next: shown on profiles and answers | ◐ |

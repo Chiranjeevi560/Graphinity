@@ -15,9 +15,11 @@ export async function embedMissing(db: Database, embedder: Embedder): Promise<nu
     async q =>
       (
         await q.query<{ id: string; title: string; body: string }>(
-          `SELECT id::text AS id, title, body FROM app.questions
-     WHERE embedding IS NULL OR embedding_model IS DISTINCT FROM $1
-     ORDER BY id DESC LIMIT ${String(BACKFILL_BATCH)}`,
+          `SELECT q.id::text AS id, q.title, q.body FROM app.questions q
+     JOIN app.user_consent_settings s ON s.user_id = q.asker_id
+       AND s.category = 'ai_personalization' AND s.enabled
+     WHERE q.embedding IS NULL OR q.embedding_model IS DISTINCT FROM $1
+     ORDER BY q.id DESC LIMIT ${String(BACKFILL_BATCH)}`,
           [embedder.model],
         )
       ).rows,
@@ -34,11 +36,13 @@ export async function embedMissing(db: Database, embedder: Embedder): Promise<nu
     for (const [i, t] of todo.entries()) {
       const v = vectors[i];
       if (v)
-        await q.query('UPDATE app.questions SET embedding = $2, embedding_model = $3 WHERE id = $1', [
-          t.id,
-          vectorLiteral(v),
-          embedder.model,
-        ]);
+        await q.query(
+          `UPDATE app.questions SET embedding = $2, embedding_model = $3 WHERE id = $1
+           AND EXISTS (SELECT 1 FROM app.user_consent_settings s
+                       WHERE s.user_id = app.questions.asker_id
+                         AND s.category = 'ai_personalization' AND s.enabled)`,
+          [t.id, vectorLiteral(v), embedder.model],
+        );
     }
   });
   return todo.length;

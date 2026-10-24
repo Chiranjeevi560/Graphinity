@@ -7,6 +7,8 @@ import { createEvents } from './events.ts';
 import { embedMissing } from './backfill.ts';
 import { chooseEmbedder } from './embeddings.ts';
 import { errorKind, serial } from './jobs.ts';
+import { createFlags, switchedEmbedder } from './flags.ts';
+import { personalGraphQueueStatus, projectPersonalGraphSignals, purgeExpiredPersonalSignals } from './personal-data.ts';
 import { expireNetworkMarks } from './networks.ts';
 import { createLimiter, createPushSender } from './push-sender.ts';
 import { announceRouting, routeDueQuestions } from './routing.ts';
@@ -43,9 +45,17 @@ try {
   process.exit(1);
 }
 
+// Kill switches (app.feature_flags), read now and every 30 seconds.
+const flags = createFlags(db, {
+  onChange: (name, enabled) => logger.current?.info({ flag: name, enabled }, 'feature flag changed'),
+});
+await flags.refresh();
+
 // Semantic search: Cloudflare Workers AI when configured; a local stand-in in
-// development; off (word matching) in production without it.
-const embedder = chooseEmbedder(config, (...args) => fetch(...args));
+// development; off (word matching) in production without it, or while the
+// `embeddings` switch is off.
+const chosen = chooseEmbedder(config, (...args) => fetch(...args));
+const embedder = chosen ? switchedEmbedder(chosen, flags) : null;
 
 const authAdmin = createSupabaseAdmin({ supabaseUrl: config.supabaseUrl, secretKey: config.supabaseSecretKey });
 const events = createEvents();
@@ -58,6 +68,7 @@ const app = await buildServer({
   events,
   vapidPublicKey: config.vapid?.publicKey ?? null,
   embedder,
+  recommendationsEnabled: () => flags.enabled('recommendations'),
 });
 logger.current = app.log;
 
@@ -84,6 +95,69 @@ app.addHook('onClose', (_instance, done) => {
   done();
 });
 
+// Personal signal events have a documented maximum 365-day retention.
+const purgeSignals = () => {
+  purgeExpiredPersonalSignals(db).then(
+    deleted => {
+      if (deleted) app.log.info({ deleted }, 'expired personal signals removed');
+    },
+    (err: unknown) => {
+      app.log.warn({ kind: errorKind(err) }, 'personal signal expiry failed');
+    },
+  );
+};
+purgeSignals();
+const personalSignalTimer = setInterval(purgeSignals, 60 * 60_000);
+personalSignalTimer.unref();
+app.addHook('onClose', (_instance, done) => {
+  clearInterval(personalSignalTimer);
+  done();
+});
+
+// Graph projection is bounded and asynchronous so user-facing writes only add
+// the consented source event; a worker claims at most 100 events per pass.
+const projectGraphSignals = () => {
+  projectPersonalGraphSignals(db).then(
+    projected => {
+      if (projected) app.log.info({ projected }, 'personal graph events projected');
+    },
+    (err: unknown) => {
+      app.log.warn({ kind: errorKind(err) }, 'personal graph projection failed');
+    },
+  );
+};
+projectGraphSignals();
+const graphProjectionTimer = setInterval(projectGraphSignals, 15_000);
+graphProjectionTimer.unref();
+app.addHook('onClose', (_instance, done) => {
+  clearInterval(graphProjectionTimer);
+  done();
+});
+
+const monitorGraphProjection = () => {
+  personalGraphQueueStatus(db).then(
+    status => {
+      if (status.pending === 0) return;
+      const fields = { pending: status.pending, oldestSeconds: Math.round(status.oldestSeconds) };
+      if (status.oldestSeconds >= 300) {
+        app.log.warn(fields, 'personal graph projection queue lag exceeded five minutes');
+      } else {
+        app.log.info(fields, 'personal graph projection queue has pending events');
+      }
+    },
+    (err: unknown) => {
+      app.log.warn({ kind: errorKind(err) }, 'personal graph queue monitoring failed');
+    },
+  );
+};
+monitorGraphProjection();
+const graphProjectionMonitorTimer = setInterval(monitorGraphProjection, 60_000);
+graphProjectionMonitorTimer.unref();
+app.addHook('onClose', (_instance, done) => {
+  clearInterval(graphProjectionMonitorTimer);
+  done();
+});
+
 // Web push to people's devices, when keys are set (VAPID_*).
 if (config.vapid) {
   const push = createPushSender({
@@ -97,6 +171,7 @@ if (config.vapid) {
   // so requests always find a free database connection (the pool has 5).
   const limit = createLimiter(2);
   events.onPublish((userId, event) => {
+    if (!flags.enabled('push')) return;
     limit(() => push(userId, event)).catch((err: unknown) => {
       app.log.warn({ kind: errorKind(err) }, 'push run failed');
     });
@@ -120,16 +195,17 @@ const runRouting = serial(() =>
 events.onAsked(runRouting);
 // Embeddings a question is missing, a few each minute.
 const runBackfill = embedder
-  ? serial(() =>
-      embedMissing(db, embedder).then(
+  ? serial(async () => {
+      if (!flags.enabled('embeddings')) return;
+      await embedMissing(db, embedder).then(
         n => {
           if (n) app.log.info({ questions: n }, 'embedded questions');
         },
         (err: unknown) => {
           app.log.warn({ kind: errorKind(err) }, 'embedding backfill failed');
         },
-      ),
-    )
+      );
+    })
   : null;
 runRouting();
 const routingTimer = setInterval(() => {
@@ -139,6 +215,7 @@ const routingTimer = setInterval(() => {
 routingTimer.unref();
 app.addHook('onClose', (_instance, done) => {
   clearInterval(routingTimer);
+  flags.stop();
   done();
 });
 

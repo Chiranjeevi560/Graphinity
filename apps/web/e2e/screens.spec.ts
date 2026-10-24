@@ -170,6 +170,21 @@ test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
   await expect(page.getByRole('heading', { name: 'Edit profile' })).toBeVisible();
   await audit(page, 'edit profile');
 
+  await page.goto('/me/privacy');
+  await expect(page.getByRole('heading', { name: 'Your data choices' })).toBeVisible();
+  const ownership = page.locator('article.profile-section').filter({
+    has: page.getByRole('heading', { name: 'ownership', exact: true }),
+  });
+  const ownershipConsent = ownership.getByRole('checkbox');
+  await expect(ownershipConsent).not.toBeChecked();
+  await ownershipConsent.click();
+  await expect(ownershipConsent).toBeChecked({ timeout: 15_000 });
+  await page.reload();
+  await expect(ownership.getByRole('checkbox')).toBeChecked();
+  await audit(page, 'privacy settings');
+  await ownership.getByRole('checkbox').click();
+  await expect(ownership.getByRole('checkbox')).not.toBeChecked({ timeout: 15_000 });
+
   await page.goto(`/u/${handle}`);
   await expect(page.getByRole('heading', { name: `@${handle}` })).toBeVisible();
   await audit(page, 'public profile');

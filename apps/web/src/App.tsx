@@ -13,6 +13,7 @@ const AuthCallback = lazy(() => import('./routes/AuthCallback.tsx'));
 const Welcome = lazy(() => import('./routes/Welcome.tsx'));
 const Me = lazy(() => import('./routes/Me.tsx'));
 const EditProfile = lazy(() => import('./routes/EditProfile.tsx'));
+const PrivacySettings = lazy(() => import('./routes/PrivacySettings.tsx'));
 const PublicProfile = lazy(() => import('./routes/PublicProfile.tsx'));
 const Ask = lazy(() => import('./routes/Ask.tsx'));
 const Question = lazy(() => import('./routes/Question.tsx'));
@@ -72,6 +73,8 @@ function route(path: string, state: SessionState): ReactNode {
       return state.status === 'ready' ? <Ask profile={state.profile} /> : <Redirect to="/" />;
     case '/me/edit':
       return state.status === 'ready' ? <EditProfile profile={state.profile} /> : <Redirect to="/" />;
+    case '/me/privacy':
+      return state.status === 'ready' ? <PrivacySettings /> : <Redirect to="/" />;
     default:
       return <NotFound />;
   }

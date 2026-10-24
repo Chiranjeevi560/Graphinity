@@ -11,7 +11,10 @@ import { fakeAuthAdmin, TEST_ISSUER, testIssuer } from './tokens.ts';
 
 export const IP_HASH_KEY = Buffer.alloc(32, 9);
 
-export async function startApp(now: () => number, opts: { vapidPublicKey?: string; embedder?: Embedder } = {}) {
+export async function startApp(
+  now: () => number,
+  opts: { vapidPublicKey?: string; embedder?: Embedder; recommendationsEnabled?: () => boolean } = {},
+) {
   const t = await createTestDatabase();
   const issuer = await testIssuer();
   const admin = fakeAuthAdmin();
@@ -32,6 +35,7 @@ export async function startApp(now: () => number, opts: { vapidPublicKey?: strin
     events,
     vapidPublicKey: opts.vapidPublicKey ?? null,
     embedder: opts.embedder ?? null,
+    ...(opts.recommendationsEnabled ? { recommendationsEnabled: opts.recommendationsEnabled } : {}),
     // Generous limits: these tests are about behaviour, not rate limiting.
     limits: {
       ...defaultLimits,

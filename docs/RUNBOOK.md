@@ -136,6 +136,83 @@ skips formatting-only commits.
 - Every new table needs `ENABLE` and `FORCE ROW LEVEL SECURITY`, explicit grants to `app_api`,
   and policies. The integration test fails if RLS is missing.
 
+## Kill switches (feature flags)
+
+Parts that can be switched off without a deploy, from the Supabase **SQL Editor**. Every server
+picks a change up within 30 seconds and logs `feature flag changed`. Off is always a working state.
+
+| Flag | Off means |
+|---|---|
+| `embeddings` | No calls to Cloudflare Workers AI; duplicate and similar-question matching by words only |
+| `push` | No notifications to devices; everything still shows on the site |
+
+```sql
+UPDATE app.feature_flags SET enabled = false, note = 'Cloudflare errors, 2026-10-21', updated_at = now()
+WHERE name = 'embeddings';
+SELECT name, enabled, note, updated_at FROM app.feature_flags;
+```
+
+The API can read the flags but never change them. If the database can't be reached, servers keep
+the last values they read. A new flag is a migration (see `0002_feature_flags.sql`) plus its name
+in `apps/api/src/flags.ts`.
+
+## Consent and personal graph
+
+The API drains up to 100 pending personal graph events immediately at startup and every 15 seconds.
+Successful batches log only the projected count; failures log a sanitized error kind and are retried
+on the next pass. The database function uses `SKIP LOCKED`, so multiple API instances may drain in
+parallel. Once a minute the API logs aggregate queue depth and the oldest event age. A backlog older
+than five minutes is a warning; configure the hosting provider's log alert for
+`personal graph projection queue lag exceeded five minutes`. This is a structured-log warning, not
+a built-in SLO dashboard or paging integration. Signal expiry still runs hourly; expired evidence
+edges cascade when their source events are deleted.
+
+Migration `0003_consent_controls.sql` adds the purpose inventory, private current settings, and an
+append-only audit table. Optional categories default off. Migration `0004_personal_knowledge_graph.sql`
+adds user-owned graph records. The database enforces RLS and refuses graph inserts unless the
+category is enabled; disabling a choice prevents future writes and personalization use. Existing
+records stay visible to their owner for inspection and removal. The API currently offers individual
+node deletion, and account deletion cascades all consent and graph records.
+
+Personal signal events expire within 365 days. `interaction_history` captures typed question, answer,
+selection, helpful, and report actions without content text. Separate `search_history` stores opted-in
+search text, and `reading_history` stores opted-in question identifiers (not reading duration). AI
+embeddings and background backfill require `ai_personalization`; revoking it clears the account’s
+stored question vectors and removes them from semantic search. Revocation stops future capture; events
+remain visible and removable by their owner. The API runs a narrow
+database-owned purge function
+on startup and hourly; it deletes only expired events and logs only the number removed. If the purge
+fails, it retries on the next hourly run and does not affect requests.
+
+To check schema readiness, inspect `GET /health` for schema version 29. Do not manually edit a
+user's consent rows in SQL; a manual change bypasses the user's authenticated action and audit flow.
+For incident response, the owner can turn off the `embeddings`, `push`, or `recommendations` kill
+switches as above. Turning off recommendations stops the scoring query globally; per-user consent
+remains an independent control.
+Consent categories are not feature flags: disabling consent is per user and must be respected by
+every future collector and recommender at the data-use boundary.
+
+New routed questions have a seven-second recipient-only pass/undo window. The selected routing score,
+field expertise weight, country-based local-time fit and diversity fit are saved with algorithm
+version 1 and returned only to the recipient. Older routes have null snapshots. See `docs/GRAPH.md`
+for the score definition and complexity notes.
+
+The finite `For you` list uses `feed_personalization` as its own default-off choice. `feed-rrf-v2`
+fuses bounded PostgreSQL source rankings for selected fields, lexical search matches, related
+questions from consented views, and recency using reciprocal-rank fusion (`1 / (60 + rank)`). Each
+result explains its strongest source; no click or engagement optimization is used, and the response
+is not retained. Revoking search or reading consent immediately removes that source from the query.
+The bounded 2,450-candidate in-process algorithm benchmark is `node scripts/benchmark-recommendations.mjs`;
+it excludes database and HTTP latency. Changing the formula requires a version change and evaluation
+against judged fixtures.
+
+Current limitations: graph nodes are user-entered/imported records; purchase, travel, and learning
+event capture are not wired. Feed RRF is a deterministic rank-fusion algorithm, not a trained or
+adaptive model. It has synthetic benchmark latency but no production DB/API latency or relevance
+measurement. Partner sharing, enterprise aggregate products, and differential privacy are not
+implemented. Routing and recommendation values are retrieval scores, not calibrated predictions;
+ranking changes require a new algorithm version and judged-data evaluation.
+
 ## Deploy
 
 Order matters: **database, then server, then website.** A website that needs a new API must not

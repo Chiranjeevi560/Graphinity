@@ -35,7 +35,9 @@
   gap: var(--space-1);
 }
 .design-input {
+  box-sizing: border-box;
   width: 100%;
+  height: var(--tap);
   min-height: var(--tap);
   padding: 0 var(--space-3);
   border: 0;
@@ -140,6 +142,70 @@
   flex-direction: column;
   gap: var(--space-3);
 }
+.consent-choice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--tap);
+  cursor: pointer;
+}
+.consent-choice input {
+  width: 1.25rem;
+  height: 1.25rem;
+  accent-color: var(--accent);
+}
+.legal dl {
+  display: grid;
+  grid-template-columns: minmax(6.5rem, auto) 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+}
+.legal dd {
+  margin: 0;
+}
+.personal-graph-items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.personal-graph-items li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--tap);
+  border-bottom: 1px solid var(--separator);
+}
+.personal-graph-items li span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.personal-graph-items small {
+  color: var(--label-secondary);
+}
+.personal-signal-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.personal-signal {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  padding-block: var(--space-2);
+  border-bottom: 1px solid var(--separator);
+}
+.personal-signal p {
+  margin: 0;
+}
 .profile-footer {
   display: flex;
   flex-direction: column;
@@ -152,6 +218,12 @@
 }
 
 /* Questions: lists, the question page, answers. */
+.recommended {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-8);
+}
 .home-questions {
   display: flex;
   flex-direction: column;
@@ -169,13 +241,34 @@
 .answer + .answer {
   border-top: var(--hairline) solid var(--separator);
 }
+.question-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
 .question-link {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
   min-height: var(--tap);
   padding: var(--space-3) 0;
   color: inherit;
+}
+.inbox-pass {
+  flex: none;
+}
+.inbox-undo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-card);
+  background: var(--fill-tertiary);
 }
 /* Whole-row links, not links inside a sentence: no underline (base.css underlines those). */
 .question-link,

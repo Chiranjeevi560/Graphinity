@@ -94,8 +94,8 @@ describe('a migration that fails', () => {
   it('leaves nothing half done', async () => {
     await migrate(t.owner, migrations);
     const broken = next('CREATE TABLE app.half_done (id integer); SELECT 1 / 0;');
-    expect(await failure(migrate(t.owner, [...migrations, broken]))).toMatch(
-      /0002_test\.sql failed and was rolled back: division by zero/,
+    expect(await failure(migrate(t.owner, [...migrations, broken]))).toContain(
+      `${broken.file} failed and was rolled back: division by zero`,
     );
     expect((await t.owner.query("SELECT to_regclass('app.half_done') AS t")).rows).toEqual([{ t: null }]);
     expect(await recorded()).toHaveLength(migrations.length);

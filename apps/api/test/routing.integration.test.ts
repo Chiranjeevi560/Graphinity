@@ -272,6 +272,73 @@ describe('events', () => {
 });
 
 describe('the score learns from what people did', () => {
+  it('stores co-answer affinity and updates expertise only after useful feedback', async () => {
+    const asker = await member({ fields: ['food-cooking'] });
+    const first = await member({ fields: ['food-cooking'] });
+    const second = await member({ fields: ['food-cooking'] });
+    const questionId = await ask(asker.token, 'food-cooking', null);
+    const answers: string[] = [];
+    for (const person of [first, second]) {
+      const response = await h.call('POST', `/questions/${questionId}/answers`, person.token, {
+        body: 'I used the same method twice and kept a simple record.',
+      });
+      expect(response.statusCode).toBe(201);
+      answers.push(response.json<{ answer: { id: string } }>().answer.id);
+    }
+
+    const pair = [first.id, second.id].sort();
+    const before = await h.t.owner.query<{ weight: number; co_answer_count: number }>(
+      `SELECT weight, co_answer_count FROM app.epistemic_affinity_edges
+       WHERE field = 'food-cooking' AND user_low = $1 AND user_high = $2`,
+      pair,
+    );
+    expect(before.rows[0]).toMatchObject({ co_answer_count: 1 });
+    const beforeWeight = before.rows[0]?.weight ?? 0;
+
+    expect((await h.call('POST', `/answers/${answers[0]}/helpful`, asker.token)).statusCode).toBe(200);
+    const expertise = await h.t.owner.query<{ weight: number; evidence_count: number }>(
+      `SELECT weight, evidence_count FROM app.expertise_edge_weights
+       WHERE profile_id = $1 AND field = 'food-cooking' AND country = 'IN'`,
+      [first.id],
+    );
+    const after = await h.t.owner.query<{ weight: number }>(
+      `SELECT weight FROM app.epistemic_affinity_edges
+       WHERE field = 'food-cooking' AND user_low = $1 AND user_high = $2`,
+      pair,
+    );
+    expect(expertise.rows[0]?.weight).toBeGreaterThan(0.5);
+    expect(expertise.rows[0]?.evidence_count).toBe(1);
+    expect(after.rows[0]?.weight).toBeGreaterThan(beforeWeight);
+
+    await h.t.owner.query('INSERT INTO app.selections (question_id, answer_id) VALUES ($1, $2)', [
+      questionId,
+      answers[0],
+    ]);
+    await h.t.owner.query('INSERT INTO app.ratings (answer_id, stars) VALUES ($1, 5)', [answers[0]]);
+    await h.t.owner.query('INSERT INTO app.verdicts (answer_id, correct) VALUES ($1, true)', [answers[0]]);
+    const activeExpertise = await h.t.owner.query<{ weight: number }>(
+      `SELECT weight FROM app.expertise_edge_weights
+       WHERE profile_id = $1 AND field = 'food-cooking' AND country = 'IN'`,
+      [first.id],
+    );
+    const selectedExpertise = activeExpertise.rows[0]?.weight ?? 0;
+    await h.t.owner.query(
+      "UPDATE app.selections SET answer_id = $2, change_reason = 'better_answer_later' WHERE question_id = $1",
+      [questionId, answers[1]],
+    );
+    const retracted = await h.t.owner.query<{ reward: number }>(
+      'SELECT reward FROM app.answer_edge_reinforcement WHERE answer_id = $1',
+      [answers[0]],
+    );
+    const afterRetraction = await h.t.owner.query<{ weight: number }>(
+      `SELECT weight FROM app.expertise_edge_weights
+       WHERE profile_id = $1 AND field = 'food-cooking' AND country = 'IN'`,
+      [first.id],
+    );
+    expect(retracted.rows[0]?.reward).toBeCloseTo(0.65, 5);
+    expect(afterRetraction.rows[0]?.weight).toBeLessThan(selectedExpertise);
+  });
+
   // The score has no chance in it, so the order is the score's alone.
   // Everyone joined long ago, so the newcomer places don't apply.
   const firstPick = async (questionId: string) => (await h.t.database.asSystem(q => routeWave(q, questionId, 1, 1)))[0];

@@ -26,7 +26,7 @@ Graphinity's product architecture synthesizes the [Apple Human Interface Guideli
 3. **Responsibility**: Routing algorithms strictly enforce notification caps and cognitive load limits, treating expert attention as a scarce, non-renewable resource.  
 4. **Familiarity**: Interactions rely on intuitive spatial physics and standard platform conventions rather than obscure control schemes.  
 5. **Flexibility**: The interface adapts seamlessly from a 120Hz WebGPU desktop knowledge graph canvas to a screen-reader-optimized semantic tree or low-power mobile viewport.  
-6. **Simplicity**: All social clutter—public follower counts, karma leaderboards, decorative badges, comment chains, and algorithmic feeds—is structurally omitted.  
+6. **Simplicity**: Public follower counts, karma leaderboards, decorative badges, and comment chains remain omitted. The owner's 2026-10-22 master prompt supersedes this specification's earlier prohibition on personalized feeds: finite, useful knowledge discovery and recommendations are allowed only with separate opt-in consent, visible explanations, user controls, and no engagement-maximizing objective.
 7. **Craft**: Subpixel typography, optical alignment, spring physics, and deterministic database transactions receive equal engineering discipline.  
 8. **Delight**: Watching a question pulse propagate across real human nodes and return structured, high-trust answers transforms information retrieval into a visceral, living experience.
 
@@ -34,7 +34,7 @@ Graphinity's product architecture synthesizes the [Apple Human Interface Guideli
 
 Institutional discipline requires explicit architectural prohibitions. Graphinity enforces the following non-negotiable anti-goals:
 
-* **No Infinite Social Feeds**: Users never scroll an algorithmic timeline of trending posts. The entry surface is strictly an inquiry canvas and a personal routing inbox.  
+* **No Infinite Social Feeds**: Users never scroll an engagement-maximizing endless timeline. The later 2026-10-22 owner requirement permits finite, consented, explainable knowledge recommendations and personalized discovery. The implemented finite recommendation baseline uses versioned reciprocal-rank fusion; adaptive learned recommendations remain unimplemented.
 * **No Public Follower Graphs**: Users cannot manually follow, friend, or subscribe to other users. Graph edges are computed exclusively by the backend topology engine based on domain overlap, co-answering similarity, and verified helpfulness.  
 * **No Global Reputation Score**: A user's credibility in `Imports -> India` transfers zero weight to `Programming` or `Watches`. Reputation is strictly partitioned by `(field_id, country_code)` tuples.  
 * **No Nested Argument Threads**: Answers are structured, standalone empirical reports. Disagreements are resolved mathematically through the Consensus Engine and structured confidence distributions rather than adversarial reply chains.  

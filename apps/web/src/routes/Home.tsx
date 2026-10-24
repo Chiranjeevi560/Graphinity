@@ -6,6 +6,7 @@ import { Inbox } from '../components/Inbox.tsx';
 import { LoadFailed } from '../components/Message.tsx';
 import { Link } from '../lib/router.ts';
 import { QuestionList } from '../components/QuestionList.tsx';
+import { RecommendedQuestions } from '../components/RecommendedQuestions.tsx';
 import type { GraphData } from '../lib/graph-layout.ts';
 import { graphCaption } from '../lib/graph-words.ts';
 import { retrySession, useSession } from '../session.tsx';
@@ -98,6 +99,7 @@ export default function Home() {
         </div>
       )}
       {state.status === 'ready' && <Inbox />}
+      {state.status === 'ready' && <RecommendedQuestions />}
       <section className="home-questions" aria-labelledby="recent-heading">
         <h2 id="recent-heading" className="text-title3">
           Recent questions

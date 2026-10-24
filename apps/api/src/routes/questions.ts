@@ -127,6 +127,38 @@ export function registerQuestionRoutes(
     }
   }
 
+  async function consentEnabled(userId: string, category: string): Promise<boolean> {
+    return db.withUser(userId, async q => {
+      const { rows } = await q.query<{ enabled: boolean }>(
+        'SELECT enabled FROM app.user_consent_settings WHERE user_id = $1 AND category = $2',
+        [userId, category],
+      );
+      return rows[0]?.enabled ?? false;
+    });
+  }
+
+  async function saveSearchHistory(userId: string, query: string, field: string | null): Promise<void> {
+    await db.withUser(userId, async q => {
+      await q.query(
+        `INSERT INTO app.personal_signal_events
+           (user_id, consent_category, signal_type, value, source, expires_at)
+         SELECT $1, 'search_history', 'question_precheck', jsonb_build_object('query', $2::text, 'field', $3::text),
+                'user_action', clock_timestamp() + interval '365 days'
+         WHERE EXISTS (
+           SELECT 1 FROM app.user_consent_settings s
+           WHERE s.user_id = $1 AND s.category = 'search_history' AND s.enabled
+         ) AND NOT EXISTS (
+           SELECT 1 FROM app.personal_signal_events e
+           WHERE e.user_id = $1 AND e.consent_category = 'search_history'
+             AND e.signal_type = 'question_precheck'
+             AND e.value = jsonb_build_object('query', $2::text, 'field', $3::text)
+             AND e.occurred_at > clock_timestamp() - interval '5 minutes'
+         )`,
+        [userId, query, field],
+      );
+    });
+  }
+
   // Newest first, a page at a time. `before` is the last id of the previous page.
   app.get(
     '/questions',
@@ -184,6 +216,7 @@ export function registerQuestionRoutes(
   app.post(
     '/questions/precheck',
     {
+      config: { auth: 'optional' },
       schema: {
         body: {
           type: 'object',
@@ -202,10 +235,15 @@ export function registerQuestionRoutes(
       const title = cleanLine(body.title);
       // Too short to mean anything yet (counted as people count characters).
       if (textProblem(title, 10, Number.MAX_SAFE_INTEGER) === 'too_short') return { verdict: 'clear', questions: [] };
-      const vector = await embed(questionText(title, cleanBody(body.details ?? '')));
+      const userId = req.user?.id;
+      const field = body.field ?? null;
+      if (userId && (await consentEnabled(userId, 'search_history'))) await saveSearchHistory(userId, title, field);
+      const vector =
+        userId && (await consentEnabled(userId, 'ai_personalization'))
+          ? await embed(questionText(title, cleanBody(body.details ?? '')))
+          : null;
       const words = prefixQuery(title);
       const everyWord = prefixQuery(title, 'all');
-      const field = body.field ?? null;
       const found = await db.withUser(null, async q => {
         const byMeaning =
           vector && embedder
@@ -292,6 +330,24 @@ export function registerQuestionRoutes(
           )
         ).rows[0];
         if (!question) return null;
+        if (viewer) {
+          await q.query(
+            `INSERT INTO app.personal_signal_events
+               (user_id, consent_category, signal_type, subject_id, source, expires_at)
+             SELECT $1, 'reading_history', 'question_viewed', $2, 'user_action',
+                    clock_timestamp() + interval '365 days'
+             WHERE EXISTS (
+               SELECT 1 FROM app.user_consent_settings s
+               WHERE s.user_id = $1 AND s.category = 'reading_history' AND s.enabled
+             ) AND NOT EXISTS (
+               SELECT 1 FROM app.personal_signal_events e
+               WHERE e.user_id = $1 AND e.consent_category = 'reading_history'
+                 AND e.signal_type = 'question_viewed' AND e.subject_id = $2
+                 AND e.occurred_at > clock_timestamp() - interval '15 minutes'
+             )`,
+            [viewer, id],
+          );
+        }
         const answers = (
           await q.query<{
             id: string;
@@ -351,8 +407,12 @@ export function registerQuestionRoutes(
                 trust_pct: number | null;
                 answered_pct: number | null;
                 newcomer: boolean | null;
+                ranking_score: number | null;
+                expertise_weight: number | null;
+                circadian_fit: number | null;
+                diversity_fit: number | null;
               }>(
-                'SELECT same_country, field_points, trust_pct, answered_pct, newcomer FROM app.routes WHERE question_id = $1 AND profile_id = $2',
+                'SELECT same_country, field_points, trust_pct, answered_pct, newcomer, ranking_score, expertise_weight, circadian_fit, diversity_fit FROM app.routes WHERE question_id = $1 AND profile_id = $2',
                 [id, viewer],
               )
             ).rows[0]
@@ -457,6 +517,10 @@ export function registerQuestionRoutes(
             trustPct: found.why.trust_pct,
             answeredPct: found.why.answered_pct,
             newcomer: found.why.newcomer,
+            rankingScore: found.why.ranking_score,
+            expertiseWeight: found.why.expertise_weight,
+            circadianFit: found.why.circadian_fit,
+            diversityFit: found.why.diversity_fit,
           },
         }),
       };
@@ -470,19 +534,92 @@ export function registerQuestionRoutes(
       user.id,
       async q =>
         (
-          await q.query<QuestionRow & { routed_at: Date; seen: boolean }>(
-            `${questionSelect('r.routed_at, r.seen_at IS NOT NULL AS seen,')}
+          await q.query<QuestionRow & { routed_at: Date; seen: boolean; pass_undo_until: Date | null }>(
+            `${questionSelect('r.routed_at, r.seen_at IS NOT NULL AS seen, rp.undo_until AS pass_undo_until,')}
        JOIN app.routes r ON r.question_id = q.id AND r.profile_id = $1
+       LEFT JOIN app.route_passes rp ON rp.question_id = r.question_id AND rp.profile_id = r.profile_id
+         AND rp.undone_at IS NULL
+       WHERE rp.question_id IS NULL OR rp.undo_until > clock_timestamp()
        ORDER BY r.routed_at DESC LIMIT 30`,
             [user.id],
           )
         ).rows,
     );
     return {
-      questions: rows.map(r => ({ ...summary(r), routedAt: r.routed_at.toISOString(), seen: r.seen })),
+      questions: rows.map(r => ({
+        ...summary(r),
+        routedAt: r.routed_at.toISOString(),
+        seen: r.seen,
+        passUndoUntil: r.pass_undo_until?.toISOString() ?? null,
+      })),
       unseen: rows.filter(r => !r.seen).length,
     };
   });
+
+  app.post(
+    '/me/inbox/:id/pass',
+    {
+      config: { auth: 'required', write: true },
+      schema: {
+        params: { type: 'object', additionalProperties: false, required: ['id'], properties: { id: idSchema } },
+      },
+    },
+    async (req, reply) => {
+      const user = signedIn(req);
+      const { id } = req.params as { id: string };
+      const result = await db.withUser(user.id, async q => {
+        const route = await q.query<{ question_id: string }>(
+          'SELECT question_id::text FROM app.routes WHERE question_id = $1 AND profile_id = $2 FOR UPDATE',
+          [id, user.id],
+        );
+        if (!route.rows[0]) return { error: 'not_found' as const };
+        const answered = await q.query('SELECT 1 FROM app.answers WHERE question_id = $1 AND answerer_id = $2', [
+          id,
+          user.id,
+        ]);
+        if (answered.rowCount) return { error: 'already_answered' as const };
+        const pass = await q.query<{ undo_until: Date }>(
+          `INSERT INTO app.route_passes (question_id, profile_id)
+           VALUES ($1, $2) ON CONFLICT DO NOTHING RETURNING undo_until`,
+          [id, user.id],
+        );
+        if (!pass.rows[0]) return { error: 'already_passed' as const };
+        return { undoUntil: pass.rows[0].undo_until.toISOString() };
+      });
+      if ('error' in result) {
+        if (result.error === 'not_found')
+          return fail(reply, 404, 'route_not_found', 'That question is no longer in your inbox.');
+        if (result.error === 'already_answered')
+          return fail(reply, 409, 'already_answered', 'You’ve already answered this question.');
+        return fail(reply, 409, 'already_passed', 'You’ve already passed on this question.');
+      }
+      return reply.code(201).send(result);
+    },
+  );
+
+  app.post(
+    '/me/inbox/:id/undo-pass',
+    {
+      config: { auth: 'required', write: true },
+      schema: {
+        params: { type: 'object', additionalProperties: false, required: ['id'], properties: { id: idSchema } },
+      },
+    },
+    async (req, reply) => {
+      const user = signedIn(req);
+      const { id } = req.params as { id: string };
+      const restored = await db.withUser(user.id, async q =>
+        q.query(
+          `UPDATE app.route_passes SET undone_at = clock_timestamp()
+           WHERE question_id = $1 AND profile_id = $2 AND undone_at IS NULL AND undo_until > clock_timestamp()
+           RETURNING question_id`,
+          [id, user.id],
+        ),
+      );
+      if (!restored.rowCount) return fail(reply, 409, 'undo_expired', 'The 7-second undo window has ended.');
+      return reply.code(204).send();
+    },
+  );
 
   app.post(
     '/questions',
@@ -514,7 +651,9 @@ export function registerQuestionRoutes(
       const detailsProblem = textProblem(details, LIMITS.details.min, LIMITS.details.max);
       if (detailsProblem) return refuseText(reply, 'details', detailsProblem);
       // Its meaning, for finding it again (a missed one is filled in later by the background job).
-      const vector = await embed(questionText(title, details));
+      const vector = (await consentEnabled(user.id, 'ai_personalization'))
+        ? await embed(questionText(title, details))
+        : null;
       let id: string | null;
       try {
         id = await db.withUser(user.id, async q => {
