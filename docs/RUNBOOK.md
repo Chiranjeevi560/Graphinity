@@ -145,6 +145,7 @@ picks a change up within 30 seconds and logs `feature flag changed`. Off is alwa
 |---|---|
 | `embeddings` | No calls to Cloudflare Workers AI; duplicate and similar-question matching by words only |
 | `push` | No notifications to devices; everything still shows on the site |
+| `model_training` | No daily training of Graphinity's own models; the serving model (if any) keeps serving |
 
 ```sql
 UPDATE app.feature_flags SET enabled = false, note = 'Cloudflare errors, 2026-10-21', updated_at = now()
@@ -212,6 +213,20 @@ adaptive model. It has synthetic benchmark latency but no production DB/API late
 measurement. Partner sharing, enterprise aggregate products, and differential privacy are not
 implemented. Routing and recommendation values are retrieval scores, not calibrated predictions;
 ranking changes require a new algorithm version and judged-data evaluation.
+
+## Graphinity's own models
+
+Trained daily from consented public posts, on a worker thread (ADR 0010). To see every version and
+why it was or wasn't promoted, in the Supabase SQL Editor:
+
+```sql
+SELECT version, status, reason, metrics ->> 'mrr' AS mrr, baseline ->> 'mrr' AS baseline_mrr,
+       dataset ->> 'trainingDocuments' AS documents, created_at
+FROM app.ml_models WHERE name = 'text-embedding' ORDER BY version DESC;
+```
+
+Logs show `model training` with the status and scores (numbers only). To benchmark on this machine:
+`node scripts/benchmark-text-embedding.mjs 10000 50000`.
 
 ## Deploy
 

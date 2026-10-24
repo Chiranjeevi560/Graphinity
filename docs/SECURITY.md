@@ -121,6 +121,20 @@ sharing, enterprise outputs, differential privacy, and named-recipient authoriza
 implemented. The JSON export covers documented content and interaction categories; re-audit it
 whenever a user-linked table is added.
 
+## Graphinity's own models (ADR 0010)
+
+- Training reads only public, non-hidden posts of people who turned on `model_training` (off by
+  default); hidden posts are excluded by the query and again by the read policy. Turning it off
+  removes a person's text from every later run; a version already serving keeps the statistics it
+  learned until a newer one replaces it.
+- `app.ml_models` is readable and writable only by system transactions (forced RLS); no request can
+  see or change a model. Weights never leave the database, and the repository's public CI never
+  sees user data.
+- A served model's weights are checked against their stored SHA-256 every time they're loaded; a
+  mismatch refuses to serve (tested by altering a byte).
+- A model's vocabulary holds words from consented posts, including rare ones. It is never sent to
+  a client; only similarity scores are used, inside the database query.
+
 ## Known gaps
 
 - The daily limit of 3 questions per person is counted without a lock. One server routes one

@@ -15,6 +15,8 @@ export const FLAG_DEFAULTS = {
   push: true,
   /** Finite, consent-gated knowledge suggestions. */
   recommendations: true,
+  /** Daily training of Graphinity's own models (ADR 0010). */
+  model_training: true,
 } as const;
 
 export type FlagName = keyof typeof FLAG_DEFAULTS;
@@ -70,8 +72,13 @@ export function createFlags(
  */
 export function switchedEmbedder(inner: Embedder, flags: Pick<Flags, 'enabled'>): Embedder {
   return {
-    model: inner.model,
-    dims: inner.dims,
+    // Read through on every use: the inner model can be replaced while the server runs.
+    get model() {
+      return inner.model;
+    },
+    get dims() {
+      return inner.dims;
+    },
     embed: texts =>
       flags.enabled('embeddings') ? inner.embed(texts) : Promise.reject(new EmbeddingError('turned off')),
   };
