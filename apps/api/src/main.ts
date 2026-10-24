@@ -10,7 +10,8 @@ import { errorKind, serial } from './jobs.ts';
 import { createFlags, switchedEmbedder } from './flags.ts';
 import { ownEmbedderFromArtifact, swappableEmbedder } from './ml/own-embedder.ts';
 import { loadServing } from './ml/registry.ts';
-import { TEXT_EMBEDDING, trainTextEmbeddingJob } from './ml/training.ts';
+import { deserializeSpelling, speller, swappableSpeller } from './ml/spelling.ts';
+import { SPELLING, TEXT_EMBEDDING, trainSpellingJob, trainTextEmbeddingJob } from './ml/training.ts';
 import { personalGraphQueueStatus, projectPersonalGraphSignals, purgeExpiredPersonalSignals } from './personal-data.ts';
 import { expireNetworkMarks } from './networks.ts';
 import { createLimiter, createPushSender } from './push-sender.ts';
@@ -67,6 +68,16 @@ try {
 }
 const embedder = switchedEmbedder(live.embedder, flags);
 
+// Spelling correction (ADR 0011), Graphinity's own once a version has been
+// promoted; until then the precheck searches words as typed.
+const spelling = swappableSpeller();
+try {
+  const serving = await loadServing(db, SPELLING);
+  if (serving) spelling.set(speller(deserializeSpelling(serving.artifact)));
+} catch (err) {
+  console.warn(`serving spelling model not loaded (${errorKind(err)}); words are searched as typed until it is`);
+}
+
 const authAdmin = createSupabaseAdmin({ supabaseUrl: config.supabaseUrl, secretKey: config.supabaseSecretKey });
 const events = createEvents();
 const app = await buildServer({
@@ -78,6 +89,7 @@ const app = await buildServer({
   events,
   vapidPublicKey: config.vapid?.publicKey ?? null,
   embedder,
+  speller: spelling.speller,
   recommendationsEnabled: () => flags.enabled('recommendations'),
 });
 logger.current = app.log;
@@ -222,7 +234,7 @@ const routingTimer = setInterval(() => {
 }, 60_000);
 routingTimer.unref();
 
-// Train Graphinity's own text model daily, on a worker thread (ADR 0010):
+// Train Graphinity's own models daily, on a worker thread (ADR 0010, 0011):
 // first 10 minutes after start, so a restart isn't slowed. A version that
 // wins its quality gate serves at once. Logs carry numbers only, never text.
 const runTraining = serial(async () => {
@@ -248,7 +260,30 @@ const runTraining = serial(async () => {
       'model training',
     );
   } catch (err) {
-    app.log.warn({ kind: errorKind(err) }, 'model training failed');
+    app.log.warn({ kind: errorKind(err), model: TEXT_EMBEDDING }, 'model training failed');
+  }
+  try {
+    const outcome = await trainSpellingJob(db);
+    if (outcome.status === 'promoted') {
+      const serving = await loadServing(db, SPELLING);
+      if (serving) spelling.set(speller(deserializeSpelling(serving.artifact)));
+    }
+    app.log.info(
+      outcome.status === 'skipped'
+        ? { model: SPELLING, status: outcome.status }
+        : {
+            model: SPELLING,
+            status: outcome.status,
+            version: outcome.version,
+            precision: outcome.result.metrics.precision,
+            recall: outcome.result.metrics.recall,
+            typos: outcome.result.metrics.typos,
+            trainMs: outcome.result.metrics.trainMs,
+          },
+      'model training',
+    );
+  } catch (err) {
+    app.log.warn({ kind: errorKind(err), model: SPELLING }, 'model training failed');
   }
 });
 const firstTraining = setTimeout(runTraining, 10 * 60_000);

@@ -67,6 +67,15 @@ describe('matching while typing', () => {
 
   it('ignores repeats and keeps the query short', () => {
     expect(prefixQuery('tax tax tax')).toBe('tax:*');
+    // Twelve different words, however often one repeats.
+    const repeated = ['tax', 'tax', ...Array.from({ length: 14 }, (_, i) => `w${String.fromCharCode(97 + i)}`)].join(
+      ' ',
+    );
+    expect(prefixQuery(repeated)?.split(' | ')).toHaveLength(12);
+    // Extra words (spelling corrections) join the typed ones, once each, and are filtered the same way.
+    expect(prefixQuery('cusotms duty', 'any', ['customs', 'duty', 'x', 'a & b'])).toBe(
+      'cusotms:* | duty:* | customs:*',
+    );
     expect(prefixQuery(Array.from({ length: 30 }, (_, i) => `word${String(i)}`).join(' '))?.split(' | ')).toHaveLength(
       12,
     );

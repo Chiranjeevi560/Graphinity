@@ -7,7 +7,16 @@ import { ownEmbedderFromArtifact } from '../src/ml/own-embedder.ts';
 import { loadServing } from '../src/ml/registry.ts';
 import { serializeModel, trainTextEmbedding } from '../src/ml/text-embedding.ts';
 import type { TrainingResult, WorkerInput } from '../src/ml/train-embedding.ts';
-import { runOnWorker, TEXT_EMBEDDING, trainTextEmbeddingJob } from '../src/ml/training.ts';
+import { deserializeSpelling, serializeSpelling, speller, trainSpelling } from '../src/ml/spelling.ts';
+import type { SpellingResult } from '../src/ml/train-spelling.ts';
+import {
+  runOnWorker,
+  runSpellingOnWorker,
+  SPELLING,
+  TEXT_EMBEDDING,
+  trainSpellingJob,
+  trainTextEmbeddingJob,
+} from '../src/ml/training.ts';
 import { createTestDatabase, type TestDatabase } from './helpers/database.ts';
 
 let t: TestDatabase;
@@ -206,4 +215,74 @@ describe('a real training run on a worker thread', () => {
       expect(result.artifact === null).toBe(!result.decision.promote);
     },
   );
+});
+
+describe('the spelling job', () => {
+  const scores = {
+    typos: 120,
+    newWords: 10,
+    changed: 100,
+    right: 95,
+    precision: 0.95,
+    precisionLower: 0.89,
+    recall: 0.8,
+  };
+  const result = (promote: boolean): SpellingResult => ({
+    decision: { promote, reason: promote ? 'fixes 80.0% of test typos' : 'only 12 test typos; 100 needed' },
+    params: { lambda: 4, mu: 5, minCount: 2, keep: -1000, seed: 1 },
+    dataset: { trainingDocuments: 3, heldOutDocuments: 1, vocabulary: 4, tuneWords: 100, testWords: 130 },
+    metrics: { ...scores, tuneRecall: 0.8, trainMs: 1 },
+    baseline: { kind: 'none', version: null, scores: null },
+    artifact: promote
+      ? new Uint8Array(
+          serializeSpelling(
+            trainSpelling(['customs duty on a watch', 'customs duty on a phone'], {
+              lambda: 4,
+              mu: 5,
+              minCount: 2,
+              keep: -1000,
+            }),
+          ),
+        )
+      : null,
+  });
+
+  it('is versioned apart from the text model, and serves a promoted version', async () => {
+    const rejected = await trainSpellingJob(t.database, { minDocuments: 1, run: () => Promise.resolve(result(false)) });
+    expect(rejected).toMatchObject({ status: 'rejected', version: 1 });
+    await ask(consenting, 'Customs duty on a drone at Delhi?', '');
+    const promoted = await trainSpellingJob(t.database, { minDocuments: 1, run: () => Promise.resolve(result(true)) });
+    expect(promoted).toMatchObject({ status: 'promoted', version: 2 });
+    const serving = await loadServing(t.database, SPELLING);
+    expect(serving?.version).toBe(2);
+    expect(speller(deserializeSpelling(serving?.artifact ?? Buffer.alloc(0))).correct('cusotms', null)).toBe('customs');
+    const { rows } = await t.owner.query<{ name: string; status: string; metrics: { recall: number } }>(
+      "SELECT name, status, metrics FROM app.ml_models WHERE name = 'spelling' ORDER BY version",
+    );
+    expect(rows.map(r => r.status)).toEqual(['rejected', 'production']);
+    expect(rows[1]?.metrics.recall).toBe(0.8);
+    // The text model's serving version is untouched by it.
+    expect(
+      (
+        await t.owner.query(
+          "SELECT count(*)::int AS n FROM app.ml_models WHERE name = 'text-embedding' AND status = 'production'",
+        )
+      ).rows,
+    ).toEqual([{ n: 1 }]);
+  });
+
+  it('runs for real on a worker thread', { timeout: 120_000 }, async () => {
+    const goods = ['watch', 'camera', 'laptop', 'phone', 'perfume', 'bicycle', 'tablet', 'drone'];
+    const questions = goods.flatMap((g, i) =>
+      ['dubai', 'chennai', 'delhi', 'singapore', 'mumbai', 'london'].map((p, j) => ({
+        id: String(i * 6 + j + 1),
+        title: `customs duty on a ${g} at ${p}`,
+        body: `what import tax did you pay when your ${g} arrived at ${p} airport by courier`,
+      })),
+    );
+    const outcome = await runSpellingOnWorker({ questions, answers: [], serving: null });
+    expect(outcome.dataset.trainingDocuments + outcome.dataset.heldOutDocuments).toBe(questions.length);
+    expect(outcome.metrics.typos).toBeGreaterThan(0);
+    expect(outcome.artifact === null).toBe(!outcome.decision.promote);
+  });
 });

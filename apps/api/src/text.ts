@@ -48,11 +48,15 @@ export function textProblem(text: string, min: number, max: number): TextProblem
  * A full-text query matching any word (or, with 'all', every word),
  * including words still being typed ("impor" finds "import"). Only letters
  * and digits get through, so nothing typed can change the query's meaning.
+ * `also` adds words to match (spelling corrections), beyond the 12 typed.
  * Null when there is nothing to match.
  */
-export function prefixQuery(raw: string, match: 'any' | 'all' = 'any'): string | null {
-  const words = [...new Set(raw.toLowerCase().match(/[\p{L}\p{M}\p{N}]+/gu) ?? [])]
-    .filter(w => codePoints(w).length >= 2)
-    .slice(0, 12);
+export function prefixQuery(raw: string, match: 'any' | 'all' = 'any', also: readonly string[] = []): string | null {
+  // The first 12 different words of each.
+  const wordsOf = (text: string) =>
+    [...new Set(text.toLowerCase().match(/[\p{L}\p{M}\p{N}]+/gu) ?? [])]
+      .filter(w => codePoints(w).length >= 2)
+      .slice(0, 12);
+  const words = [...new Set([...wordsOf(raw), ...wordsOf(also.join(' '))])];
   return words.length ? words.map(w => `${w}:*`).join(match === 'all' ? ' & ' : ' | ') : null;
 }

@@ -134,6 +134,11 @@ whenever a user-linked table is added.
   mismatch refuses to serve (tested by altering a byte).
 - A model's vocabulary holds words from consented posts, including rare ones. It is never sent to
   a client; only similarity scores are used, inside the database query.
+- Spelling correction (ADR 0011) learns only words seen at least twice. Its corrections are used
+  inside the precheck's word search and never returned, so the response carries no word that
+  wasn't typed or isn't in a question the caller may already see. Corrected words reach the full-text
+  query through the same letters-and-digits filter as typed ones, so they can't change the query's
+  meaning. The serving speller loads with the same SHA-256 check.
 
 ## Known gaps
 

@@ -14,6 +14,7 @@ import { registerPointRoutes } from './routes/points.ts';
 import { registerGraphRoutes } from './routes/graph.ts';
 import { registerPushRoutes } from './routes/push.ts';
 import type { Embedder } from './embeddings.ts';
+import type { Speller } from './ml/spelling.ts';
 import { registerQuestionRoutes } from './routes/questions.ts';
 import { registerConsentRoutes } from './routes/consent.ts';
 import { registerPersonalGraphRoutes } from './routes/personal-graph.ts';
@@ -67,6 +68,8 @@ export interface Deps {
   vapidPublicKey?: string | null;
   /** Embeddings for semantic search; absent: word matching only. */
   embedder?: Embedder | null;
+  /** Spelling corrections for the precheck's word search; absent: words as typed only. */
+  speller?: Pick<Speller, 'correctDraft'> | null;
   /** Global recommendation kill switch; per-user consent is enforced separately. */
   recommendationsEnabled?: () => boolean;
   limits?: Limits;
@@ -272,7 +275,7 @@ export async function buildServer(deps: Deps) {
   registerPersonalGraphRoutes(app, { db });
   registerRecommendationRoutes(app, { db, enabled: deps.recommendationsEnabled ?? (() => true) });
   const events = deps.events ?? createEvents();
-  registerQuestionRoutes(app, { db, events, embedder: deps.embedder ?? null });
+  registerQuestionRoutes(app, { db, events, embedder: deps.embedder ?? null, speller: deps.speller ?? null });
   registerLiveRoutes(app, { events, clock });
   registerModerationRoutes(app, { db });
   registerPushRoutes(app, { db, vapidPublicKey: deps.vapidPublicKey ?? null });
