@@ -37,6 +37,10 @@ interface WhyYou {
   trustPct: number | null;
   answeredPct: number | null;
   newcomer: boolean | null;
+  rankingScore: number | null;
+  expertiseWeight: number | null;
+  circadianFit: number | null;
+  diversityFit: number | null;
 }
 interface Page {
   question: QuestionSummary & { body: string; hidden: boolean };
@@ -61,6 +65,9 @@ function whyLines(why: WhyYou, page: Page): string[] {
   if (why.answeredPct !== null) lines.push(`You answer ${String(why.answeredPct)}% of what’s sent to you`);
   if (why.trustPct !== null) lines.push(`${String(why.trustPct)}% of your picked answers here turned out right`);
   if (why.newcomer) lines.push('You’re new: some places in every wave are kept for new members');
+  if (why.expertiseWeight !== null) lines.push('Your field expertise score includes evaluated answers');
+  if (why.circadianFit !== null) lines.push('Your country’s local daytime was considered when timing this request');
+  if (why.diversityFit !== null) lines.push('The wave was balanced across people with different answer histories');
   return lines;
 }
 
@@ -246,7 +253,7 @@ export default function Question({ id }: { id: string }) {
                   />
                   {a.minorityPinned && <p className="minority-badge text-footnote">Different outcome · kept visible</p>}
                   <p className="text-body post-body">{a.body}</p>
-                  <p className="text-footnote secondary question-meta">
+                  <p className="text-footnote secondary question-meta answer-credibility">
                     <span>
                       <Link to={`/u/${encodeURIComponent(a.answerer.handle)}`}>@{a.answerer.handle}</Link>
                     </span>

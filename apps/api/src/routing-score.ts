@@ -2,11 +2,8 @@
 // be put to? Pure: the routing job gathers the facts (routing.ts), this
 // weighs them, so every factor is tested on its own.
 //
-// Two of the spec's parts are left out until there is data for them, and
-// say so rather than pretend: the time-of-day fit in φ8 needs each person's
-// timezone, which we don't collect, and φ9 (diversity) needs person-to-
-// person weights. Leaving φ9 out lowers everyone's score by the same 0.03,
-// so the order is what the spec's would be.
+// Circadian fit uses the profile country and a central IANA timezone where
+// possible. Diversity is recomputed greedily from stored answerer affinities.
 import { wilsonLowerBound, type Skill } from './reputation.ts';
 
 export const ALPHA = {
@@ -18,6 +15,7 @@ export const ALPHA = {
   selection: 0.08,
   responsiveness: 0.06,
   activity: 0.04,
+  diversity: 0.03,
 } as const;
 export const BETA_COLD = 0.12;
 /** The newcomer bonus lasts until someone has had this many questions in the field. */
@@ -33,6 +31,8 @@ export interface Candidate {
   proximity: number | null;
   /** Their TrueSkill in the field (reputation.ts replay). */
   skill: Skill;
+  /** Stored, field/country-specific competence weight updated from evaluations. */
+  expertiseWeight: number;
   resident: boolean;
   /** One of their answers was picked on a question about this country. */
   pickedInCountry: boolean;
@@ -49,6 +49,8 @@ export interface Candidate {
   /** Questions in this field put to them, ever. */
   routesInField: number;
   usedToday: number;
+  circadianFit: number;
+  maxAffinityWithSelected: number;
 }
 
 export type Factors = Record<keyof typeof ALPHA, number>;
@@ -58,7 +60,7 @@ export function factors(c: Candidate): Factors {
   const timeTerm = c.medianReplySeconds === null ? 0.5 : Math.exp(-c.medianReplySeconds / REPLY_SCALE_SECONDS);
   return {
     proximity: Math.max(0, Math.min(1, c.proximity ?? 0)),
-    reputation: sigmoid((c.skill.mu - 3 * c.skill.sigma - 25) / 8.33),
+    reputation: 0.8 * sigmoid((c.skill.mu - 3 * c.skill.sigma - 25) / 8.33) + 0.2 * clamp(c.expertiseWeight),
     country: c.resident ? 0.8 : c.pickedInCountry ? 0.5 : 0,
     trust: Math.max(0, Math.min(1, c.trust)),
     helpful: wilsonLowerBound(c.helped, c.answers),
@@ -66,8 +68,79 @@ export function factors(c: Candidate): Factors {
     // No record counts as halfway: one reply in two tries.
     responsiveness: (timeTerm * (c.answered + 1)) / (c.asked + 2),
     activity:
-      c.daysSinceActive === null ? 0 : Math.exp((-Math.LN2 * Math.max(0, c.daysSinceActive)) / ACTIVE_HALF_LIFE_DAYS),
+      (c.daysSinceActive === null
+        ? 0
+        : Math.exp((-Math.LN2 * Math.max(0, c.daysSinceActive)) / ACTIVE_HALF_LIFE_DAYS)) * clamp(c.circadianFit),
+    diversity: 1 - clamp(c.maxAffinityWithSelected),
   };
+}
+
+const countryTimeZones: Record<string, string> = {
+  AE: 'Asia/Dubai',
+  AR: 'America/Argentina/Buenos_Aires',
+  AT: 'Europe/Vienna',
+  AU: 'Australia/Adelaide',
+  BD: 'Asia/Dhaka',
+  BE: 'Europe/Brussels',
+  BR: 'America/Sao_Paulo',
+  CA: 'America/Winnipeg',
+  CH: 'Europe/Zurich',
+  CL: 'America/Santiago',
+  CN: 'Asia/Shanghai',
+  CO: 'America/Bogota',
+  DE: 'Europe/Berlin',
+  DK: 'Europe/Copenhagen',
+  EG: 'Africa/Cairo',
+  ES: 'Europe/Madrid',
+  FI: 'Europe/Helsinki',
+  FR: 'Europe/Paris',
+  GB: 'Europe/London',
+  GR: 'Europe/Athens',
+  HK: 'Asia/Hong_Kong',
+  ID: 'Asia/Jakarta',
+  IE: 'Europe/Dublin',
+  IL: 'Asia/Jerusalem',
+  IN: 'Asia/Kolkata',
+  IT: 'Europe/Rome',
+  JP: 'Asia/Tokyo',
+  KE: 'Africa/Nairobi',
+  KR: 'Asia/Seoul',
+  LK: 'Asia/Colombo',
+  MX: 'America/Mexico_City',
+  MY: 'Asia/Kuala_Lumpur',
+  NG: 'Africa/Lagos',
+  NL: 'Europe/Amsterdam',
+  NP: 'Asia/Kathmandu',
+  NZ: 'Pacific/Auckland',
+  PK: 'Asia/Karachi',
+  PH: 'Asia/Manila',
+  PL: 'Europe/Warsaw',
+  PT: 'Europe/Lisbon',
+  RU: 'Asia/Novosibirsk',
+  SA: 'Asia/Riyadh',
+  SE: 'Europe/Stockholm',
+  SG: 'Asia/Singapore',
+  TH: 'Asia/Bangkok',
+  TR: 'Europe/Istanbul',
+  TW: 'Asia/Taipei',
+  UA: 'Europe/Kyiv',
+  US: 'America/Chicago',
+  VN: 'Asia/Ho_Chi_Minh',
+  ZA: 'Africa/Johannesburg',
+};
+
+/** Daytime suitability centered at 14:00; multi-zone countries use a central zone. */
+export function circadianFit(country: string, now: Date): number {
+  const timeZone = countryTimeZones[country];
+  if (!timeZone || !Number.isFinite(now.getTime())) return 0.5;
+  const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', hourCycle: 'h23' }).format(now));
+  const distance = Math.abs(hour - 14);
+  return clamp(0.5 + 0.5 * Math.cos((Math.min(distance, 24 - distance) / 12) * Math.PI));
+}
+
+function clamp(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(1, value));
 }
 
 /** UCB1 √(2 ln N_f / (n + 1)) while someone has had fewer than 5 questions in the field. */
@@ -100,6 +173,55 @@ export function psi(
   const sum = (Object.keys(ALPHA) as Array<keyof typeof ALPHA>).reduce((s, k) => s + ALPHA[k] * f[k], 0);
   const bonus = options.explore ? BETA_COLD * coldBonus(c.routesInField, field.routes) : 0;
   return (sum + bonus) * loadDampener(c.usedToday, field.dailyLimit);
+}
+
+export interface DiverseOption {
+  id: string;
+  score: number;
+  candidate: Pick<Candidate, 'usedToday'>;
+}
+
+/** Maximum learned affinity to an already selected recipient; O(k) per candidate. */
+export function affinityToSelected(
+  id: string,
+  selected: readonly string[],
+  affinities: ReadonlyMap<string, number>,
+): number {
+  return selected.reduce((max, other) => {
+    const key = id < other ? `${id}:${other}` : `${other}:${id}`;
+    return Math.max(max, clamp(affinities.get(key) ?? 0));
+  }, 0);
+}
+
+/** Greedy marginal selection with a field-local pairwise affinity penalty. */
+export function greedyDiverse<T extends DiverseOption>(
+  options: readonly T[],
+  count: number,
+  affinities: ReadonlyMap<string, number>,
+  alreadySelected: readonly string[] = [],
+  dailyLimit = 3,
+): T[] {
+  const selectedIds = [...alreadySelected];
+  const remaining = new Map(options.map(option => [option.id, option]));
+  const result: T[] = [];
+  while (result.length < count && remaining.size > 0) {
+    let best: T | undefined;
+    let bestScore = Number.NEGATIVE_INFINITY;
+    for (const option of remaining.values()) {
+      const maxAffinity = affinityToSelected(option.id, selectedIds, affinities);
+      const score =
+        option.score + ALPHA.diversity * (1 - maxAffinity) * loadDampener(option.candidate.usedToday, dailyLimit);
+      if (score > bestScore || (score === bestScore && best && option.id < best.id)) {
+        best = option;
+        bestScore = score;
+      }
+    }
+    if (!best) break;
+    result.push(best);
+    selectedIds.push(best.id);
+    remaining.delete(best.id);
+  }
+  return result;
 }
 
 /**

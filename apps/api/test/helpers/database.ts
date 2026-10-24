@@ -18,7 +18,11 @@ export const baseline = migrations[0]?.sql ?? '';
 /** The schema version the latest migration that sets one declares (GET /health reports it). */
 export const SCHEMA_VERSION = Math.max(
   ...migrations.flatMap(m =>
-    [...m.sql.matchAll(/INSERT INTO app\.schema_meta \(id, version\) VALUES \(true, (\d+)\)/g)].map(x => Number(x[1])),
+    [
+      ...m.sql.matchAll(
+        /INSERT INTO app\.schema_meta \(id, version\) VALUES \(true, (\d+)\)|UPDATE app\.schema_meta SET version = (\d+)/g,
+      ),
+    ].map(x => Number(x[1] ?? x[2])),
   ),
 );
 

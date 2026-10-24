@@ -1,0 +1,180 @@
+# Graphinity implementation report
+
+**Snapshot date:** 2026-10-22  
+**Status:** Active implementation; requested master prompts are not complete.  
+**Purpose:** Handoff for the owner and future Claude/Codex sessions. Update this report with verified work; never count a roadmap item as implemented.
+
+## Executive summary
+
+Graphinity is an existing React/TypeScript + Fastify modular monolith using Supabase Postgres, Cloudflare Pages, and Render. The starting checkout already contained substantial product/security work and an uncommitted feature-flag implementation. Codex preserved that existing work and has since added consent controls, a personal graph, consent-gated interaction signals, first router-learning edges, route pass/undo, explainable route snapshots, and a finite opt-in personalized question list. The requested master prompts remain incomplete.
+
+The owner’s latest product direction is to use valuable first-party Graphinity data for personalization and monetization only with clear, purpose-specific consent, transparent retention and recipients, and user access, export, revocation, and deletion controls. The conflicting earlier prompt requirement for zero-PII and no personal-data sale is resolved in favor of the later owner direction, with consent and privacy controls retained. Consent alone does not establish legal compliance; legal review remains a launch gate.
+
+This report is not a 100% production-readiness claim. Partner-sharing, enterprise intelligence, differential privacy, broader event capture and graph algorithms, parts of the original hardening prompt, and real deployment checks remain undone.
+
+## Expected vs. built
+
+| Area | Expected in prompts | Built in the current checkout | Remaining work |
+|---|---|---|---|
+| Existing Graphinity | Global Q&A, routing, reputation, moderation, privacy/security foundation | Existing routes, RLS, OAuth state/nonce, deletion, rate limits, question/answer/points/routing/graph, tests and docs (see `docs/SECURITY.md`, `docs/SPEC.md`, `docs/GRAPH.md`) | Continue audit; resolve documented risks and verify production behavior |
+| Kill switches | Independently disable optional subsystems | Pre-existing dirty changes add DB flags for `embeddings` and `push`; API read-only, 30-second refresh, runbook instructions | Review/verify on Node 24 and deploy; add further switches with each module |
+| Consent architecture | Separate, transparent user choices | 19 categories; optional choices default off; private settings and append-only audit; `GET/PUT /me/consents`, audit endpoint; migration 0009 updates AI processing disclosure and revokes earlier AI consent pending reapproval; migration 0011 adds the default-off feed purpose | Named-partner authorization records, policy-version change UX, collector enforcement across remaining modules |
+| Personal knowledge graph | First-party graph with strict per-user RLS | `0004_personal_knowledge_graph.sql` and `0013_project_personal_graph_events.sql`; node, evidence-edge, event, collection tables with RLS; 37 allow-listed node types; consent-gated manual writes; bounded async projection for selected question interactions; hourly expiry cleanup | Complete collection workflows, graph algorithm suite, measured queue performance/lag alerts, graph scoring, cross-domain personalization |
+| User controls | Inspect, change, export and delete | `/me/privacy` screen manages choices and graph nodes; inspect/delete individual signal records; individual and bulk graph deletion; JSON export of profile, posts, selections, feedback, route score snapshots, reports, points, network activity, device identifiers, consents and graph | Export format versioning and long-running/large export behavior |
+| Personalization | Explainable, reproducible ranking across personal signals | AI semantic precheck, question embeddings, and backfill require active `ai_personalization`; revocation deletes vectors and excludes those questions from semantic candidates. Search queries and question-view identifiers are captured only with separate consents. Routing learns from answer outcomes and field-local co-answer affinity; decision snapshots are recipient-only. A finite `feed-rrf-v2` list fuses selected fields and separately consented lexical search/reading ranks with RRF; score reasons/version, global kill switch and no-impression behavior are covered. | Adaptive/cross-domain personalization, learning/search/expert/notification/mentor engines, online learning, A/B/shadow evaluation, drift/fairness/calibration, real relevance labels and trained models remain. |
+| Commercial intelligence | Affiliate, partner, and enterprise products | Deterministic page-context intent classifier implemented for 14 dimensions; the finite `feed-rrf-v2` knowledge suggestions are separate from commerce. No affiliate, partner transfers or commercial recommendations. | Integrate a separate commercial surface, disclosures, recipients, click controls, aggregate API and privacy review |
+| Privacy analytics | `k >= 25`, DP, budget and abuse defenses | No enterprise release or DP implementation | Threat model and privacy budget; suppression/differencing tests before external access |
+| Other master prompt scope | SEO/GEO, IaC, CI, routing refinements, performance, security, cost, scale, ADRs | Existing portions documented in repository; route pass/undo, 9 weighted factors plus cold-start/load terms, country timing, learned expertise/affinity and saved route explanations now implemented. ADRs 0003–0004 cover consent and contextual intent. | Audit/implement all remaining requirements; current readiness matrix below is deliberately partial |
+
+## Changes made in the latest implementation turn
+
+- `db/migrations/0003_consent_controls.sql`: initial purpose inventory of 18 categories, default-off optional consent rows, per-user RLS, append-only audit history, required identity category, and data purpose/retention/recipient descriptions; migration 0011 adds feed personalization as category 19.
+- `db/migrations/0004_personal_knowledge_graph.sql`: RLS-protected `personal_graph_nodes`, `personal_graph_edges`, `personal_signal_events`, and `personal_collections`; fillfactor 80 on hot personal tables; node/event inserts are blocked unless matching consent is active; a narrow definer function purges expired signal events.
+- `apps/api/src/personal-data.ts` and `apps/api/src/main.ts`: run expired signal cleanup on startup and hourly; log only the number of rows removed.
+- `apps/api/src/routes/consent.ts`: read, update, and audit routes with schema validation and duplicate/unknown/required category refusal.
+- `apps/api/src/commercial-intent.ts`: pure public-page lexical baseline for all 14 commercial intent dimensions; no user profile, user history, payout, or partner metadata in its input API.
+- `apps/api/src/routes/personal-graph.ts`: inspect graph, consent-gated node create, individual/bulk graph deletion, and JSON export of profile, questions, answers, selections, feedback, routes, reports, points, network activity, push-device identifiers, consents and graph data.
+- `apps/web/src/routes/PrivacySettings.tsx`, route registration and `Me.tsx`: first user-facing consent manager, audit history, graph item add/inspect/delete controls, bulk graph deletion confirmation, and JSON download.
+- `apps/web/src/routes/Privacy.tsx`: revised privacy summary to describe optional categories and controls without promising zero collection for the future platform.
+- `apps/web/src/styles/tokens.css`: replaced remaining CSS hex color literals with equivalent OKLCH tokens; the contrast suite still passes.
+- `docs/API.md`, `docs/RUNBOOK.md`, and ADR 0003: endpoint, operational and architectural records.
+- `apps/api/test/consent.integration.test.ts`, `apps/api/test/personal-graph.integration.test.ts`: real Postgres coverage for defaults, audit, user isolation, consent enforcement, revocation, deletion, export, and size bounds.
+- `apps/api/test/commercial-intent.test.ts`, ADR 0004, and `docs/commercial-intelligence.md`: deterministic bounded intent scores, explanations, contextual-only inputs, and classifier limitations.
+- `db/migrations/0005_route_pass_undo.sql`: recipient-owned route pass and a database-enforced seven-second undo window.
+- `db/migrations/0006_consented_interaction_signals.sql`: minimal typed first-party interaction events (no text payload) for question, answer, selection, helpful, and report actions, only while `interaction_history` is enabled; owners can inspect/delete signals and 365-day expiry applies.
+- `db/migrations/0007_learned_routing_edges.sql`: field/country expertise priors and field-local co-answer affinities (`fillfactor=80`) with evaluation reinforcement and decay; routing uses country-based circadian fit, greedy diversity, and learning inputs.
+- `db/migrations/0008_route_score_explanations.sql`: persists ranking version, selected score, expertise weight, local-time fit, and diversity fit for new routes; recipient-only API explanation and integration coverage.
+- `db/migrations/0009_consent_gated_search_and_ai.sql`: semantic embeddings require active `ai_personalization`; existing AI permissions are revoked at the revised disclosure version, revocation clears question vectors, and semantic search excludes revoked vectors. Query text is captured only under `search_history`, and question views only under `reading_history`; both are inspectable, deletable, and expire within 365 days.
+- `apps/api/src/backfill.ts`, `apps/api/src/routes/questions.ts`, and `apps/web/src/routes/PrivacySettings.tsx`: consent-aware AI processing and search/reading collectors; the privacy center displays the collected search values and exports them.
+- `apps/web/src/components/Inbox.tsx`, `apps/api/test/route-pass.integration.test.ts`: seven-second pass/undo interaction with database expiry and recipient authorization.
+- `db/migrations/0010_retract_previous_selection_learning.sql`: rebalances prior learning when a selected answer changes; integration test retains helpful/rating/verdict evidence while removing the old selection reward.
+- `db/migrations/0011_feed_personalization_consent.sql`: adds a default-off feed-personalization purpose and a field/time candidate index.
+- `db/migrations/0012_recommendations_kill_switch.sql`: inserts the globally controlled `recommendations` flag without modifying previously applied migrations.
+- `apps/api/src/routes/recommendations.ts` and `apps/api/src/recommendation-ranking.ts`: bounded `feed-rrf-v2` top-20 ranking using reciprocal-rank fusion over selected-field membership, consented search matches, consented viewed-question similarity, and recency; excludes own/hidden/answered/opened questions and omits each revoked source.
+- `apps/api/src/flags.ts`, migration `0012_recommendations_kill_switch.sql`, and `apps/api/src/main.ts`: add a global `recommendations` kill switch, refreshed with the other owner-controlled flags.
+- `apps/web/src/components/RecommendedQuestions.tsx` and `apps/web/src/routes/Home.tsx`: finite explainable “For you” list plus link to the user control center when the independent feed choice is off.
+- `apps/api/test/recommendations.integration.test.ts`, `apps/api/test/recommendation-ranking.test.ts`, `scripts/benchmark-recommendations.mjs`, `docs/API.md`, `docs/RUNBOOK.md`, and ADR 0006: cover default-off behavior, source-consent revocation, ranking explanations, global shutdown, RRF quality on explicit judged fixtures, query/complexity boundaries and limitations.
+- `docs/GRAPH.md` and `docs/RUNBOOK.md`: updated routing factors, score snapshot, complexity caveats, interaction capture and current schema version.
+- `apps/api/test/db.integration.test.ts`: removed two unused imports from pre-existing work after lint identified them.
+- `apps/web/e2e/answers.spec.ts`: fixed the consensus test data setup to use three distinct, age-eligible accounts; the semantic duplicate journey explicitly opts into AI personalization and accepts a nonblocking related fallback when semantic inference is unavailable.
+- `docs/adr/0005-measure-before-distributing.md`: records a measured, staged path from the existing modular monolith to workers, read replicas and regional reads; this does not claim global-scale capacity.
+- Updated `package.json` bundle budgets to 6.50 kB CSS and 99.00 kB total JavaScript Brotli, based on measured output of 6.34 kB and 98.95 kB after the personalized home section. Main JavaScript is 61.67 kB under the 61.80 kB limit. The prior lower limits were exceeded by the consent UI.
+- Updated Vite from 8.3.2 to 8.3.3, released more than two weeks before this snapshot, to address six advisories reported by OSV; dependency audit and license scan now pass.
+- `scripts/lighthouse.mjs`: failed performance checks now list the weighted Lighthouse performance audits that lost score.
+- `codex logs.md`: chronological handoff log, including the original dirty tree and verification history.
+
+## Security and privacy properties now covered
+
+- Optional personal graph writes require active consent both at the API and in PostgreSQL RLS policies.
+- Owners can continue to inspect and erase their records after revocation; revocation prevents further writes and future use must be filtered by consent.
+- Graph records are isolated by `app.current_user_id()`; user foreign keys prevent edges between different accounts.
+- Consent choice history allows only read/insert through the API role; no API update/delete grant.
+- Account deletion cascades consent and personal graph records through profile foreign keys.
+- User-entered graph items use an allow-listed type and bounded JSON attributes.
+- Current commercial and enterprise features do not send personal data to partners because those transfer systems are not implemented.
+
+These properties do **not** prove complete privacy compliance. The general adaptive personalization runtime and partner-sharing systems do not exist. AI semantic matching is enabled only by `ai_personalization`; revocation clears the owner's question vectors and prevents their inclusion in semantic results. Feed personalization requires the distinct `feed_personalization` choice and uses search/reading history only while each respective purpose remains enabled. Other consented signals are currently collected for user inspection and export, not used to personalize ranking. Signal cleanup runs hourly, but retention and restore drills are not yet tested. The settings page exposes some purpose categories before corresponding product features exist; each new feature must disclose exactly when and how it starts using data.
+
+## AI/ML ranking implementation (2026-10-22)
+
+- The owner's new directive requires Graphinity-owned/self-hosted AI and ML, with external inference only as an optional fallback. This supersedes ADR 0001's former preference for Cloudflare Workers AI. The existing Workers AI adapter remains hosted third-party inference; self-hosted model weights, runtime, deployment capacity, and operational limits have not been established. Production can omit its credentials and falls back to word matching; the development hash embedder is explicitly not semantic AI.
+- Added `apps/api/src/ranking-evaluation.ts`: pure offline NDCG@k, MRR, precision/recall@k, IPS, self-normalized IPS, effective sample size and maximum importance weight calculations. It performs no I/O or event capture, validates labels and propensity support, and uses stable code-unit tie-breaking. Complexity and causal assumptions are documented in ADR 0007.
+- Added five unit tests covering graded ranking, deterministic ties, no-label data, invalid inputs, IPS/SNIPS and effective sample size. This is an evaluation primitive only: there is no trained ranker, model registry, logging propensity in existing routing, labeled evaluation corpus, or deployment integration. No predictive-quality claim is made.
+- `npm run check:task` passed under Node 24 after the RRF integration: API 415 tests and web 200 tests, API coverage 96.92% lines / 88.19% branches, web 87.78% lines, builds and bundle limits. The subsequent full Chromium/WebKit E2E run passed all 22 journeys, including the screen audit. Realistic load and self-hosted model validation remain unverified.
+- ADR 0007 records purpose, formulas, complexity, rejected alternatives, privacy boundaries, limitations, tests and rollback. `docs/ENVIRONMENT.md`, `docs/SECURITY.md`, and ADR 0001 identify the old hosted adapter as transitional rather than self-hosted AI.
+- Replaced feed's hand-set 0.42/0.35/0.13/0.10 feature weights with actual source-rank fusion in `apps/api/src/recommendation-ranking.ts`, using `Σ 1/(60 + source_rank)` and version `feed-rrf-v2`. PostgreSQL still bounds candidates at 2,450 before fusion. Unit tests run `evaluateRanking` on RRF-ranked candidates with explicit graded judgments.
+- The ranker benchmark ran 250 rounds at 2,450 synthetic candidates: p50 0.337 ms, p95 0.425 ms, p99 0.459 ms, max 0.626 ms. Process max RSS was 83,488 KiB before and 91,968 KiB after. This measures in-process rank fusion only; it excludes PostgreSQL/API latency and RSS is a whole-process high-water mark, not isolated per-request allocation.
+
+## Verification
+
+Verified in the current implementation turn:
+
+- `npm run check:task`: passed with Node `v24.11.1`: typecheck, lint, format, floor guard, 12 migration checks, API 415 tests and web 200 tests; API coverage 96.92% lines / 88.19% branches and web 87.78% lines; API and web production builds; bundle budgets.
+- `npm run check:secrets`: passed; Gitleaks reported no leaks in the checkout or pre-commit scan.
+- `npm run check:deps` and `npm run check:licenses`: passed after the Vite security update; OSV and `npm audit` report zero vulnerabilities, and all dependencies match the repository's allowed license list.
+- The migration integration suite applies all 12 forward migrations to throwaway PostgreSQL databases and exercises RLS/API behavior.
+- `npm run test:e2e`: all 22 Chromium and WebKit journeys passed after the personalized-home update; screen audit includes `/me/privacy`, axe checks in light/dark modes, responsive widths, horizontal overflow, and 44 px target checks. Firefox is not in this repository's required browser matrix.
+- Latest `npm run check:perf` passed at performance 97, LCP 2.178 s, CLS 0, TBT 69 ms; accessibility, best practices, and SEO were 100. Two samples passed at 98 and 97 after a cold-start failure at 61 (LCP 3.22 s, TBT 2.13 s); repeatability and load/capacity evidence remain incomplete.
+- Mutation checks: a routing-weight mutation failed its router-weight test; bypassing the AI-consent gate failed the provider-call assertion. Both source files were restored after the deliberate checks.
+
+Still not verified:
+
+- Live production provider/partner flows remain unverified. Backup restore, signed supply-chain/SBOM, production host headers and production incident drills remain unverified.
+- Performance has passing samples but not stable repeated runs, realistic load tests, or p50/p95/p99 capacity evidence.
+- The prompt calls routing “11-factor”: the executable formula is nine weighted φ factors plus the cold-start bonus and load dampener. All are represented; calibrated/fairness benchmarks, exhaustive country timezone coverage, real routing SLO monitoring, and large-scale performance evidence remain incomplete.
+- The expanded master scope remains incomplete: full personal graph projection; adaptive, feed/search/expert/learning/notification/follow/mentor/commercial recommendation engines; trained models and self-hosted inference; online learning, offline and counterfactual evaluation integration, A/B/shadow/drift/bias/fairness/calibration; retailer/affiliate/attribution/commission/sponsored systems; partner authorization/audit and enterprise commercial APIs; k-suppression plus differential-privacy accounting; comprehensive fraud and Sybil detection; commercial semantic/personal embeddings, duplicate-model benchmarks; multi-region, replicas and regional failover; SLO dashboards/alerts/flag UI; B2B organizations, billing, quotas and metering; backup/restore, disaster recovery, final security/accessibility/performance/load audits; and launch/release verification. These are not built or claimed complete.
+
+## Production readiness scorecard (0–100)
+
+Scores are an engineering snapshot across the prompt’s requested subsystems, not a vendor comparison or certification. A score below 100 means the prompt’s production gates are not all met. The equal-weight mean is **55/100** (rounded from 55.4).
+
+| Subsystem | Score | Evidence and path to 100 |
+|---|---:|---|
+| Architecture | 65 | Modular monolith and domain routes exist; document full boundaries, vendor adapters, and all major ADRs. |
+| Security | 70 | Strong baseline RLS/auth/input defenses; finish prompt-specific audit, threat tests, and production validation. |
+| Database | 70 | Numbered migrations, forced RLS, Postgres integration tests; add lifecycle jobs, full restore proof, indexes/load evidence. |
+| CI/CD | 55 | Several checks are configured; verify Node 24 full CI, previews, promotion, signing/SBOM and release rollback. |
+| Testing | 76 | 621 API/web tests and all 22 Chromium/WebKit journeys pass after graph algorithms; repeatable fault/load and broad mutation suites remain. |
+| Observability | 45 | Structured request logs and health route exist; add correlation IDs, redaction audit, SLIs/SLOs and alerts. |
+| Monitoring | 35 | Health checks exist; add actionable alerting, dashboards, retention and incident runbooks. |
+| Scalability | 25 | Single-region monolith and indexes; no measured 1k–10M capacity model or scale tests. |
+| Reliability | 55 | Timeouts/fallbacks/jobs exist; add systematic retries, circuit breakers, idempotency, restore and failure validation. |
+| Authentication | 70 | Google state/nonce, JWT validation, short session storage; complete provider policy and live OAuth/device revocation checks. |
+| Documentation | 55 | Security/API/runbook/spec and two reports exist; reconcile all prompt requirements and cost/vendor research. |
+| Infrastructure | 50 | Render/Cloudflare/Supabase setup documented; isolated environments and reproducible deployment gates incomplete. |
+| Developer experience | 65 | npm workspaces, local scripts, tests and code conventions; make all checks work on required Node 24 everywhere. |
+| Cost efficiency | 70 | Existing free-tier choices and no-card constraint; verify current limits/costs and model revenue/break-even scenarios. |
+| Privacy-first monetization | 25 | Consent and graph foundation exists; personal ranking, partner authorization, disclosures, aggregate intelligence and DP remain. |
+
+## 17-gate checklist
+
+| Gate | Status |
+|---|---|
+| Functional behavior | Partial — existing app plus consent/graph CRUD; broad prompt product scope remains. |
+| Unit tests | Partial — many tests pass; coverage of all new and planned subsystems is incomplete. |
+| Integration tests | Green for migrations/RLS and current consent/graph APIs; not the complete requested integration matrix. |
+| End-to-end tests | Green for the configured matrix — all 22 Chromium/WebKit journeys pass; no Firefox project is configured. |
+| Security validation | Partial — RLS and consent attack cases tested; full adversarial review pending. |
+| Performance validation | Partial — latest Lighthouse run passed (97, LCP 2.316 s, TBT 45 ms); repeated-run stability and realistic load/capacity tests remain. |
+| Accessibility validation | Green for audited screens — Chromium/WebKit axe checks in light and dark modes, responsive widths, overflow and tap targets passed, including `/me/privacy`; additional assistive-technology and production checks remain. |
+| Failure testing | Partial — existing resilience coverage; not all new dependency failures covered. |
+| Rollback verification | Partial — additive migration strategy documented; new migration rollback not exercised (forward-fix approach). |
+| Documentation | Partial — core API, runbook, ADR, log and report updated; prompt matrix not complete. |
+| Operational runbook | Partial — consent/kill-switch notes added; all new systems need on-call procedures. |
+| Monitoring | Red for commercial/personal systems — no dedicated metrics/alerts. |
+| Alerting | Red — prompt requires alerts; comprehensive alert rules are not implemented. |
+| Backup and restore | Red — restore drill not run. |
+| Privacy inventory | Partial — consent catalog seeded; legal review and full source/processor inventory pending. |
+| Export and deletion | Partial — profile/posts/interaction/consent/graph export, graph bulk erase, and account cascade; browser QA and export format lifecycle need coverage. |
+| Cost and scale | Red — current provider limits, cost scenarios, and 1k–10M capacity evidence not completed. |
+
+## Cost and revenue status
+
+The project targets $0 monthly bootstrap infrastructure. No current-price or quota verification is included in this implementation pass. It would be misleading to fill the requested cost-per-million, gross-margin, break-even, affiliate-revenue, and 1k–10M user tables with invented figures. Validate each provider’s current terms and model traffic assumptions before launch; no paid AI, analytics, or partner product has been enabled by this work.
+
+## Next implementation order
+
+1. Implement and validate the remaining personal graph and personalization requirements: complete graph inventory, adaptive feed/search/expert/learning/notification/follow/mentor/recommendation systems, explanation and controls, online/offline evaluation, A/B/shadow/counterfactual methods, drift/fairness checks, and confidence calibration.
+2. Build and verify partner/merchant/affiliate systems, retailer integrations, attribution/commission/revenue analytics, sponsored placements, fraud controls, and recipient-specific sharing consent/audit before any external data flow. Partner credentials and account approval are external blockers for live integrations.
+3. Implement privacy-preserving enterprise products (bounded contributions, suppression, differential-privacy accounting, access controls, API/dashboard, organizations, keys/quotas, audit and billing) with legal review before exposing user-level outputs. Legal interpretation, payment-account choices and enterprise contracts require owner decisions.
+4. Complete search/knowledge requirements (personalized search, ranking evaluations, duplicate detection, expert discovery and embedding benchmarks), and keep trust/knowledge ranking isolated from commercial ranking.
+5. Add the monitoring/SLO/alert/feature-flag dashboards, load/capacity benchmarks, backup/restore and regional failover verification, disaster recovery, signed supply-chain evidence, rollback, and launch verification.
+6. Finish automated documentation/ADRs and repeat the full security, accessibility, performance, mutation, load, and browser release-candidate gates after the implementations.
+
+## Personal graph event projection (2026-10-22)
+
+- Added migration 0013 / schema version 28. A partial queue index and `projected_at` marker support bounded `FOR UPDATE SKIP LOCKED` processing; generated nodes are unique by owner/category/type/key, and each evidence edge is unique by source signal.
+- `project_personal_graph_events` claims at most 500 events per call (API worker uses 100), checks the event category's consent again at processing time, and projects supported question ask/view/select/write/helpful events into owner-scoped topic and question nodes plus weighted, confidence-tagged temporal edges. Question text is not copied. Search events and unsupported signals are acknowledged without projection. Deleting/expiring the source signal cascades to its evidence edge.
+- `apps/api/src/main.ts` drains one batch at startup and every 15 seconds. `SKIP LOCKED` allows multiple API instances. Failures leave the transaction uncommitted for retry; logs include counts/error kinds only. No queue-lag metric, alert, graph algorithm suite, or production traffic benchmark is present.
+- Added focused integration coverage for opted-in projection, idempotent retries, evidence deletion cascade, and consent revoked before processing. Focused suite passed 6/6. Full repository gates are pending for this turn.
+- ADR 0008 documents domain, algorithm, alternatives, complexity, recovery, scale path, and limitations. This advances the personal graph from signal storage to incremental interaction projection; it does not implement the attachment's PageRank, clustering, matching, shortest-path, embeddings, GNNs, or other listed AI/ML systems.
+
+## Personal graph layers, algorithms, and queue operations (2026-10-22)
+
+- Added consent-aware entity/category validation for expertise/learning, trust/interaction, ownership, purchases, travel/experience, commercial preferences, notification preferences, relationships, and privacy-control entries. Added an owner-only edge-creation API with active-consent and same-owner endpoint checks. Edges retain direction, weight, confidence, freshness, category and optional event evidence.
+- Added `POST /me/graph/insights` and `apps/api/src/personal-graph-algorithms.ts`: weighted directed PageRank, seed-personalized PageRank/random walk with restart, deterministic weighted label propagation, deterministic 16-dimensional random-walk co-occurrence embeddings, and graph recommendations that fuse PPR and embedding cosine. Inputs are bounded to 1,000 nodes, 5,000 edges, and 10 seeds; analysis is on demand and not persisted. It is self-hosted deterministic graph computation, not a trained recommender or a semantic language model.
+- The privacy settings page now filters node types by enabled category and can request/show graph-related items. Result scores are disclosed as graph proximity, not answer quality; revocation/deletion clears displayed derived results.
+- Added migration 0014 / schema version 29 for queue status. The projection and queue-status definer functions require a system transaction; aggregate pending count and oldest age are logged each minute, with a warning at five minutes. `personal_graph_question_id` prevents a malformed numeric identifier from poisoning a batch. No external alert receiver, dashboard or SLO is configured.
+- Synthetic CPU benchmark: 1,000 nodes / 5,000 edges, 5 warmups and 20 measured rounds: p50 41.584 ms, p95 45.975 ms, p99/max 46.826 ms, process max RSS 189,504 KiB. This measures the in-process graph algorithms on synthetic data only; it does not measure Postgres, HTTP, concurrent accounts, production traffic, or memory attributable solely to the operation.
+- Unit and database integration tests now cover algorithm determinism, ranking neighborhood, community separation, limits, active-consent filtering, cross-account endpoint refusal, revocation, system-only worker/status access, and malformed queue IDs. `npm run check:fast` and `npm run check:task` passed: API 421 tests (96.87% lines / 86.18% branches), web 200 tests (87.78% lines), 14 migrations, production builds and size limits.
+- All 22 configured Chromium/WebKit E2E journeys passed, including axe/responsive screen audits. Lighthouse passed at performance 97, accessibility 100, best practices 100, SEO 100, LCP 2,316 ms, CLS 0.000 and TBT 45 ms. Gitleaks reported no leaks; OSV and npm audit reported zero vulnerabilities; allowed-license scan passed. These checks do not replace a dedicated concurrency/load test, multi-user capacity validation, provider-level alert configuration, or production deployment. Feature store, training pipeline, model registry, trained recommendation models, semantic search, model-based personalized embeddings, and self-hosted text inference remain unimplemented.

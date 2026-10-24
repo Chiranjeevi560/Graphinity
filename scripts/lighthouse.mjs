@@ -112,6 +112,11 @@ try {
         failed = true;
         console.error(`  over budget: ${misses.join('; ')}`);
         if (process.env.GITHUB_ACTIONS) console.log(`::error title=Page speed over budget::${misses.join('; ')}`);
+        for (const ref of lhr.categories.performance.auditRefs) {
+          const audit = lhr.audits[ref.id];
+          if (ref.weight > 0 && audit.score !== null && audit.score < 1)
+            console.error(`  performance: ${ref.id} (${audit.title}) ${audit.displayValue ?? ''}`);
+        }
         // Name the checks that cost points, so the fix doesn't start with a guess.
         for (const key of ['best-practices', 'seo', 'accessibility']) {
           for (const ref of lhr.categories[key].auditRefs) {

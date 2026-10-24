@@ -7,10 +7,20 @@ import { must } from './helpers/must.ts';
 
 let h: TestApp;
 let names = 0;
+let searcher: string | undefined;
 const embedder = localEmbedder();
+let embedCalls = 0;
+const observedEmbedder: Embedder = {
+  model: embedder.model,
+  dims: embedder.dims,
+  embed: async texts => {
+    embedCalls += texts.length;
+    return embedder.embed(texts);
+  },
+};
 
 beforeAll(async () => {
-  h = await startApp(() => Date.now(), { embedder });
+  h = await startApp(() => Date.now(), { embedder: observedEmbedder });
   return h.close;
 });
 
@@ -27,6 +37,11 @@ async function member() {
       })
     ).statusCode,
   ).toBe(201);
+  expect(
+    (await h.call('PUT', '/me/consents', p.token, { choices: [{ category: 'ai_personalization', enabled: true }] }))
+      .statusCode,
+  ).toBe(200);
+  searcher = p.token;
   return p;
 }
 
@@ -52,10 +67,86 @@ interface Precheck {
   verdict: string;
   questions: Array<{ id: string; title: string; similarity: number | null }>;
 }
-const precheck = async (title: string, field?: string) =>
-  (await h.call('POST', '/questions/precheck', undefined, { title, ...(field ? { field } : {}) })).json<Precheck>();
+const precheck = async (title: string, field?: string, token = searcher) =>
+  (await h.call('POST', '/questions/precheck', token, { title, ...(field ? { field } : {}) })).json<Precheck>();
 
 describe('has it been asked already?', () => {
+  it('does not send question content to the embedding provider without AI consent', async () => {
+    const person = await h.person();
+    expect(
+      (
+        await h.call('POST', '/me/profile', person.token, {
+          handle: 'pre.noai',
+          country: 'IN',
+          fields: ['imports-customs'],
+          adult: true,
+        })
+      ).statusCode,
+    ).toBe(201);
+    const beforePrecheck = embedCalls;
+    await h.call('POST', '/questions/precheck', person.token, {
+      title: 'How do I clear a camera lens through customs at the airport?',
+    });
+    expect(embedCalls).toBe(beforePrecheck);
+    const response = await h.call('POST', '/questions', person.token, {
+      title: 'How do I clear a camera lens through customs at the airport?',
+      field: 'imports-customs',
+    });
+    const id = response.json<{ question: { id: string } }>().question.id;
+    expect((await h.t.owner.query('SELECT embedding FROM app.questions WHERE id = $1', [id])).rows).toEqual([
+      { embedding: null },
+    ]);
+    expect(await embedMissing(h.t.database, embedder)).toBe(0);
+  });
+
+  it('records searches and question views only under their independent consents', async () => {
+    const person = await member();
+    const title = 'Which documents do customs ask for when importing a used camera from Japan?';
+    await precheck(title, undefined, person.token);
+    const empty = await h.call('GET', '/me/graph', person.token);
+    expect(empty.json<{ graph: { signals: Array<{ signalType: string }> } }>().graph.signals).toEqual([]);
+
+    expect(
+      await h.call('PUT', '/me/consents', person.token, {
+        choices: [
+          { category: 'search_history', enabled: true },
+          { category: 'reading_history', enabled: true },
+        ],
+      }),
+    ).toMatchObject({ statusCode: 200 });
+    const searchCheck = await h.call('POST', '/questions/precheck', person.token, { title });
+    expect(searchCheck.statusCode, searchCheck.body).toBe(200);
+    expect(
+      (await h.call('GET', '/me/consents', person.token))
+        .json<{ categories: Array<{ name: string; enabled: boolean }> }>()
+        .categories.find(category => category.name === 'search_history')?.enabled,
+    ).toBe(true);
+    const questionId = await ask(title);
+    await h.call('GET', `/questions/${questionId}`, person.token);
+    const signals = (await h.call('GET', '/me/graph', person.token)).json<{
+      graph: { signals: Array<{ category: string; signalType: string; value: Record<string, unknown> }> };
+    }>().graph.signals;
+    expect(signals).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          category: 'search_history',
+          signalType: 'question_precheck',
+          value: { query: title, field: null },
+        }),
+        expect.objectContaining({ category: 'reading_history', signalType: 'question_viewed', subjectId: questionId }),
+      ]),
+    );
+
+    await h.call('PUT', '/me/consents', person.token, {
+      choices: [{ category: 'search_history', enabled: false }],
+    });
+    await precheck('How do I import a refurbished tablet through customs in Japan?', undefined, person.token);
+    const afterRevocation = (await h.call('GET', '/me/graph', person.token)).json<{
+      graph: { signals: Array<{ category: string }> };
+    }>().graph.signals;
+    expect(afterRevocation.filter(signal => signal.category === 'search_history')).toHaveLength(1);
+  });
+
   it('stores each new question’s meaning, from the model that made it', async () => {
     const q = await ask('How much customs duty did you pay importing a watch through Chennai airport?');
     const { rows } = await h.t.owner.query<{ model: string; has: boolean }>(
@@ -63,6 +154,35 @@ describe('has it been asked already?', () => {
       [q],
     );
     expect(rows).toEqual([{ model: embedder.model, has: true }]);
+  });
+
+  it('clears stored question vectors as soon as AI consent is revoked', async () => {
+    const q = await ask('How do I declare a camera lens at customs in Mumbai?');
+    const ownerToken = must(searcher, 'signed-in asker token');
+    expect(
+      (
+        await h.t.owner.query<{ has: boolean }>(
+          'SELECT embedding IS NOT NULL AS has FROM app.questions WHERE id = $1',
+          [q],
+        )
+      ).rows,
+    ).toEqual([{ has: true }]);
+    expect(
+      (
+        await h.call('PUT', '/me/consents', ownerToken, {
+          choices: [{ category: 'ai_personalization', enabled: false }],
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      (
+        await h.t.owner.query<{ embedding: unknown; model: string | null }>(
+          'SELECT embedding, embedding_model AS model FROM app.questions WHERE id = $1',
+          [q],
+        )
+      ).rows,
+    ).toEqual([{ embedding: null, model: null }]);
+    searcher = (await member()).token;
   });
 
   it('offers an answered question asked the same way as the one to read first', async () => {
@@ -171,7 +291,17 @@ describe('the background job', () => {
       /* catch up on this file's questions */
     }
     expect(await embedMissing(h.t.database, embedder)).toBe(0);
-    await ask('What does the courier charge to clear a parcel of books in Delhi?');
+    const qid = await ask('What does the courier charge to clear a parcel of books in Delhi?');
+    expect(
+      (
+        await h.t.owner.query(
+          `SELECT s.enabled FROM app.user_consent_settings s
+           JOIN app.questions q ON q.asker_id = s.user_id
+           WHERE q.id = $1 AND s.category = 'ai_personalization'`,
+          [qid],
+        )
+      ).rows,
+    ).toEqual([{ enabled: true }]);
     await h.t.owner.query(
       'UPDATE app.questions SET embedding = NULL, embedding_model = NULL WHERE embedding_model IS NOT NULL AND id = (SELECT max(id) FROM app.questions)',
     );
@@ -205,6 +335,13 @@ describe('without meaning (out of the free allowance, or offline)', () => {
           })
         ).statusCode,
       ).toBe(201);
+      expect(
+        (
+          await off.call('PUT', '/me/consents', p.token, {
+            choices: [{ category: 'ai_personalization', enabled: true }],
+          })
+        ).statusCode,
+      ).toBe(200);
       const res = await off.call('POST', '/questions', p.token, {
         title: 'Which customs form do I need for a camera lens import?',
         field: 'imports-customs',

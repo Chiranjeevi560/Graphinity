@@ -55,7 +55,7 @@ Base URL: `http://localhost:3000` locally; the Render URL in production.
 ### `GET /health`
 Checks that the server can reach the database as its restricted role. Used by the keep-awake worker
 and to confirm a deploy reached the database.
-`200 {"status":"ok","schemaVersion":16,"environment":"staging","release":"<commit>"}` · `503 {"status":"unavailable"}`.
+`200 {"status":"ok","schemaVersion":29,"environment":"staging","release":"<commit>"}` · `503 {"status":"unavailable"}`.
 `environment` is `development`, `staging` or `production`; `release` is the commit the running image
 was built from (`null` on your computer). The pipeline waits until `release` is the commit it deployed.
 
@@ -142,6 +142,13 @@ first, then those holding every word, then the rest in fused order. `similarity`
 by words alone.
 Titles under 10 characters aren't searched. Hidden questions never appear. Without Cloudflare (out of the
 free allowance, offline, not configured) it still answers, by words only, and never says `duplicate`.
+Authentication is optional. Semantic embeddings are generated or sent to Cloudflare Workers AI only
+when the signed-in account has enabled `ai_personalization`; anonymous and opted-out requests use word
+search. A signed-in query is saved only with separate `search_history` consent, at most once per exact
+query and field every five minutes, and expires within 365 days. No query is sent to a commercial partner.
+Cloudflare describes standard Workers AI inference as zero-retention after processing and says it does
+not train on customer content; its [data usage terms](https://developers.cloudflare.com/workers-ai/platform/data-usage/)
+describe limited exceptions. Recheck these terms before launch or changing providers.
 
 ### `GET /questions/:id`
 
@@ -326,4 +333,74 @@ A blocked person can still read and delete their account, but can't ask, answer 
 ### Limits for new accounts
 
 In its first day an account can ask 3 questions and give 10 answers (429 `new_account_limit`).
+
+## Consent and personal data
+
+### `GET /me/consents` (signed in)
+
+Returns the purpose inventory and current choices. Optional categories default to `enabled: false`.
+Each category includes its purpose, information description, retention statement, recipients, and
+policy version. `identity` is required to provide the account service and cannot be disabled here.
+
+### `PUT /me/consents` (signed in, counts as a write)
+
+`{ choices: [{ category, enabled }] }` updates one or more independent choices. Duplicate and
+unknown categories are refused. Changed choices append to an account-private audit history; an
+unchanged choice creates no extra event. `GET /me/consents/audit` returns the caller's latest 500
+choice events. Audit history cannot be edited or deleted through the API; account deletion removes
+it with the account.
+
+### Personal graph
+
+- `GET /me/graph` returns the caller's nodes, edges, signal events, and collections for inspection.
+  Generated temporal edges include `evidenceSignalId`, linking the edge to its source event.
+- `POST /me/graph/nodes` accepts `{ category, entityType, label, attributes?, source? }`. It requires
+  active consent for the category, supports only an allow-listed set of first-party entity types, and
+  enforces the entity type's data-use category (for example, `purchase` requires `purchase_history`,
+  while expertise and learning nodes require `learning_expertise`), and bounds attributes to 2 KiB.
+  Unknown categories return 400, mismatched entity/category pairs return 400, and disabled categories
+  return 403.
+- `POST /me/graph/edges` accepts `{ category, sourceNode, targetNode, relation, weight?, confidence? }`.
+  Both endpoints must be the caller's nodes in currently consented categories, the edge category must
+  also be active, and self-edges are refused. Weight and confidence are bounded from 0 to 1.
+- `POST /me/graph/insights` accepts `{ seedNodeIds: [uuid, ...], limit? }`. It analyzes only the
+  caller's nodes and edges whose purpose remains active. It returns algorithm version, iteration
+  counts, per-node PageRank, personalized PageRank, deterministic communities, and recommendation
+  scores. Seeds are distinct and limited to 10; graph analysis is capped at 1,000 nodes, 5,000 edges,
+  and 100 returned results. Results are computed on demand and are not persisted as user features.
+- `DELETE /me/graph/nodes/:id` removes only the caller's node; linked edges cascade. Owners can
+  inspect and remove stored information after revoking its optional consent.
+- `GET /me/data-export` returns a JSON export of the caller's profile, their questions and answers,
+  selections, helpful marks, routed questions, reports, points, network activity by day, push-device
+  identifiers, consent inventory/history, and personal graph records. It excludes provider
+  authentication secrets and other people's records. `DELETE /me/graph` deletes all graph nodes,
+  edges, collections, and signal events but leaves core account content and consent history intact.
+  Account deletion cascades personal graph and consent data.
+
+Question asks, views, selections, and authored/helpful answers with active `interaction_history` or
+`reading_history` consent are projected asynchronously by a bounded Postgres worker. It creates
+topic and question nodes plus one weighted edge per event; labels never copy question text. The
+worker rechecks consent when it processes an event. Deleting or expiring a source event removes its
+evidence edge. The worker claims at most 100 events per 15-second pass (the database function caps
+any call at 500); unsupported events and events whose consent was revoked are acknowledged without
+projection.
+
+The graph tables are inaccessible to anonymous and Supabase browser roles. RLS is enabled and
+forced; inserts require the matching consent in PostgreSQL as well as in the API. No automatic
+purchase or travel event collector is wired yet, so those categories are not currently used to
+personalize or commercialize a person's experience. Partner sharing and enterprise data products
+are also not implemented; their catalog entries describe intended purposes, not an active data
+transfer.
+
+### `GET /me/recommendations` (signed in)
+
+Returns a maximum of 20 public questions with their field, answer count, ranking score, algorithm
+version, and a human-readable reason. `feed_personalization` is independently opt-in and defaults
+off. When enabled, `feed-rrf-v2` uses reciprocal-rank fusion across selected-field membership,
+lexical search matches, related questions from reading history, and recency. Each active source
+contributes `1 / (60 + rank)`; search-history signals are read only when `search_history` is enabled,
+and reading-history signals only when `reading_history` is enabled. It excludes the caller's own questions, hidden questions, questions
+the caller has answered, and questions already opened. It stores no recommendation history and does
+not use affiliate/commercial signals or optimize clicks. Search and reading revocation take effect
+on the next request. The result is a finite discovery list, not an endless feed.
 

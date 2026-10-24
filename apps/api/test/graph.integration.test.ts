@@ -158,13 +158,18 @@ describe('how far a question went', () => {
     const q = await ask(asker.token, 'government-services', 'IN');
     await routeDueQuestions(h.t.database);
     const theirs = (await h.call('GET', `/questions/${q}`, expert.token)).json<Body>();
-    expect(theirs.whyYou).toEqual({
+    expect(theirs.whyYou).toMatchObject({
       sameCountry: true,
       fieldPoints: 0,
       trustPct: null,
       answeredPct: null,
       newcomer: true,
     });
+    const why = theirs.whyYou as Record<string, number | null>;
+    expect(why.rankingScore).toBeGreaterThanOrEqual(0);
+    expect(why.expertiseWeight).toBeGreaterThanOrEqual(0.01);
+    expect(why.circadianFit).toBeGreaterThanOrEqual(0);
+    expect(why.diversityFit).toBeGreaterThanOrEqual(0);
     expect((await h.call('GET', `/questions/${q}`, outsider.token)).json<Body>().whyYou).toBeUndefined();
     expect((await h.call('GET', `/questions/${q}`, asker.token)).json<Body>().whyYou).toBeUndefined();
   });

@@ -4,7 +4,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import type pg from 'pg';
 import { createDatabase, type Database } from '../src/db.ts';
-import { baseline, createTestDatabase, SCHEMA_OWNER, SCHEMA_VERSION, type TestDatabase } from './helpers/database.ts';
+import { createTestDatabase, SCHEMA_VERSION, type TestDatabase } from './helpers/database.ts';
 import { must } from './helpers/must.ts';
 
 // The version the migrations declare, so tests don't need editing on every change.
@@ -33,12 +33,9 @@ async function refused(sql: string): Promise<string> {
 }
 
 describe('schema', () => {
-  it('takes the baseline again without error (how older databases adopt it) and records its version', async () => {
-    await owner.query(`SET ROLE ${SCHEMA_OWNER}`);
-    await owner.query('BEGIN');
-    await owner.query(baseline);
-    await owner.query('COMMIT');
-    await owner.query('RESET ROLE');
+  // Running the baseline again on an older database is tested in migrations.integration.test.ts
+  // (that is how such databases adopt migrations); here, the version the migrations leave.
+  it('records the schema version the latest migration declares', async () => {
     const { rows } = await owner.query('SELECT version FROM app.schema_meta');
     expect(VERSION).toBeGreaterThan(0);
     expect(rows).toEqual([{ version: VERSION }]);

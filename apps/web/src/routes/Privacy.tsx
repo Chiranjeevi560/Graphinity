@@ -13,13 +13,17 @@ export default function Privacy() {
 
       <h2 className="text-title3">The short version</h2>
       <ul className="text-body">
-        <li>We keep what Graphinity needs to work, and nothing to sell or study you with.</li>
         <li>
-          No ads, no analytics, no tracking scripts, and no cookies at all: signing in is kept in this browser tab only,
-          and closing the tab signs you out.
+          We store the account and content you need to use Graphinity, plus optional data only for purposes you allow.
         </li>
+        <li>
+          Optional data uses start off. You can review and change each choice under Your data choices in your profile.
+        </li>
+        <li>We do not use third-party behavioral tracking, cross-site tracking, or fingerprinting.</li>
         <li>Your Google name and email are never shown, and Graphinity itself never reads them.</li>
-        <li>Deleting your account deletes what you shared.</li>
+        <li>
+          You can inspect and export account and personal graph data, revoke optional consent, and delete your account.
+        </li>
       </ul>
 
       <h2 className="text-title3">What we keep</h2>
@@ -69,7 +73,14 @@ export default function Privacy() {
 
       <h2 className="text-title3">What we don’t do</h2>
       <ul className="text-body">
-        <li>We don’t sell or share your information for advertising.</li>
+        <li>
+          We do not share personal information with a commercial partner unless you separately authorize the named
+          recipient and data categories.
+        </li>
+        <li>
+          Optional search, reading, ownership, purchase, travel, learning, and preference signals are not collected for
+          personalization unless the relevant choice is enabled.
+        </li>
         <li>
           Our server logs record only which kind of page was asked for, whether it worked, and how long it took: never
           your address, your name, or what you wrote.
