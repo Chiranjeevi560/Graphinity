@@ -3,12 +3,10 @@
 // Plumbing only (§12.2): embeddings find duplicates and similar questions;
 // nothing here writes an answer.
 //
-// In production: Cloudflare Workers AI's free daily allowance (the owner's
-// choice, docs/adr/0001). Past it, Cloudflare refuses rather than bills
-// ("further operations will fail with an error", Workers AI pricing page,
-// checked 2026-10-19), and Graphinity falls back to word matching.
-// Without Cloudflare settings (development, tests): a deterministic local
-// embedding that needs no network.
+// Graphinity's own model serves (apps/api/src/ml, ADR 0010): trained only on
+// Graphinity's posts, run on its own server, with no outside AI. Until one
+// has won its quality gate, production matches by words; development and
+// tests use the deterministic local stand-in below, which needs no training.
 import { createHash } from 'node:crypto';
 
 export interface Embedder {
@@ -19,48 +17,8 @@ export interface Embedder {
   embed(texts: readonly string[]): Promise<number[][]>;
 }
 
-/** bge-base-en-v1.5: 768 numbers, documented request and response; English, like Graphinity. */
-export const WORKERS_AI_MODEL = '@cf/baai/bge-base-en-v1.5';
+/** Columns of the stored vectors (pgvector halfvec(768)); smaller models are zero-padded. */
 export const DIMS = 768;
-const TIMEOUT_MS = 4000;
-
-/**
- * Cloudflare Workers AI over its REST API: POST {text: [...], pooling:
- * "cls"} to /accounts/{id}/ai/run/{model}; the answer is {result: {shape,
- * data}}. "cls" pooling, as Cloudflare recommends, always: vectors made
- * with different pooling can't be compared.
- */
-export function workersAiEmbedder(deps: { accountId: string; token: string; fetch: typeof fetch }): Embedder {
-  const url = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(deps.accountId)}/ai/run/${WORKERS_AI_MODEL}`;
-  return {
-    model: `workers-ai:${WORKERS_AI_MODEL}:cls`,
-    dims: DIMS,
-    async embed(texts) {
-      if (texts.length === 0) return [];
-      const res = await deps.fetch(url, {
-        method: 'POST',
-        headers: { authorization: `Bearer ${deps.token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ text: texts, pooling: 'cls' }),
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-      });
-      if (!res.ok) throw new EmbeddingError(`workers ai ${String(res.status)}`);
-      const body = (await res.json()) as { success?: boolean; result?: { data?: unknown } };
-      const data = body.result?.data;
-      if (body.success !== true || !Array.isArray(data) || data.length !== texts.length)
-        throw new EmbeddingError('workers ai: unexpected answer');
-      return data.map(row => {
-        if (
-          !Array.isArray(row) ||
-          row.length !== DIMS ||
-          !row.every(x => typeof x === 'number' && Number.isFinite(x))
-        ) {
-          throw new EmbeddingError('workers ai: unexpected vector');
-        }
-        return unit(row as number[]);
-      });
-    },
-  };
-}
 
 /**
  * A deterministic stand-in with no network: words and word pairs hashed
@@ -94,53 +52,16 @@ export function localEmbedder(): Embedder {
   };
 }
 
-/** Keeps the last few hundred vectors: someone typing sends the same text more than once. */
-export function cached(inner: Embedder, size = 500): Embedder {
-  const memo = new Map<string, number[]>();
-  return {
-    model: inner.model,
-    dims: inner.dims,
-    async embed(texts) {
-      const keys = texts.map(t =>
-        createHash('sha256').update(t.normalize('NFC').trim().toLowerCase()).digest('base64url'),
-      );
-      const missing = [...new Set(keys.filter(k => !memo.has(k)))];
-      if (missing.length) {
-        const fresh = await inner.embed(missing.map(k => texts[keys.indexOf(k)] ?? ''));
-        missing.forEach((k, i) => {
-          const v = fresh[i];
-          if (!v) return;
-          memo.delete(k);
-          memo.set(k, v);
-          if (memo.size > size) {
-            const oldest = memo.keys().next().value;
-            if (oldest !== undefined) memo.delete(oldest);
-          }
-        });
-      }
-      return keys.map(k => {
-        const v = memo.get(k);
-        if (!v) throw new EmbeddingError('missing vector');
-        return v;
-      });
-    },
-  };
-}
-
 export class EmbeddingError extends Error {
   override name = 'EmbeddingError';
 }
 
 /**
- * Which embedder the server runs with: Cloudflare when configured; the
- * local stand-in in development; none in production without Cloudflare
- * (word matching only: a hashed-words stand-in is no semantic search).
+ * What serves before Graphinity's own model has been promoted: the local
+ * stand-in in development, nothing in production (matching by words: a
+ * hashed-words stand-in is no search by meaning).
  */
-export function chooseEmbedder(
-  config: { production: boolean; workersAi: { accountId: string; token: string } | null },
-  fetchImpl: typeof fetch,
-): Embedder | null {
-  if (config.workersAi) return cached(workersAiEmbedder({ ...config.workersAi, fetch: fetchImpl }));
+export function chooseEmbedder(config: { production: boolean }): Embedder | null {
   return config.production ? null : localEmbedder();
 }
 

@@ -90,7 +90,8 @@ free-tier pages; if training ever risks it, switch `model_training` off.
 
 ## Consequences
 
-- No outside AI is needed for search by meaning. Until a model wins, search works by words
+- No outside AI is used for search by meaning: the Cloudflare Workers AI adapter and its
+  `CF_ACCOUNT_ID` / `CF_AI_TOKEN` settings are removed. Until a model wins, search works by words
   (production) or the hashed stand-in (development).
 - When a new version is promoted, stored vectors are re-embedded by the existing backfill (20 a
   minute); meanwhile meaning-search finds only re-embedded questions, and words find all.

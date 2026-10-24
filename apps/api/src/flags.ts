@@ -9,7 +9,7 @@ import { EmbeddingError } from './embeddings.ts';
 
 /** The switches the code knows, with the value used before the first refresh succeeds. */
 export const FLAG_DEFAULTS = {
-  /** Search by meaning through Cloudflare Workers AI. */
+  /** Search by meaning, with Graphinity's own model (ADR 0010). */
   embeddings: true,
   /** Notifications to people's devices. */
   push: true,

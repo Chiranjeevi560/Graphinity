@@ -58,7 +58,7 @@ await flags.refresh();
 // trained and promoted; until then whatever chooseEmbedder picks (a local
 // stand-in in development, matching by words in production). Off while the
 // `embeddings` switch is off.
-const live = swappableEmbedder(chooseEmbedder(config, (...args) => fetch(...args)));
+const live = swappableEmbedder(chooseEmbedder(config));
 try {
   const serving = await loadServing(db, TEXT_EMBEDDING);
   if (serving) live.set(ownEmbedderFromArtifact(serving.artifact, serving.version));

@@ -20,6 +20,19 @@ describe('BM25', () => {
   });
 });
 
+describe('BM25 at the edges', () => {
+  it('scores nothing for an empty collection, a document that isn’t there, or a word no document has', () => {
+    const empty = bm25Index([]);
+    expect(empty.size).toBe(0);
+    expect(empty.score('anything', 0)).toBe(0);
+    const index = bm25Index(['customs duty', '']);
+    expect(index.score('customs', 5)).toBe(0);
+    expect(index.score('zebra', 0)).toBe(0);
+    expect(index.score('customs', 1)).toBe(0);
+    expect(Number.isFinite(index.score('customs', 0))).toBe(true);
+  });
+});
+
 describe('the held-out split', () => {
   it('holds out about one question in five, the same ones every time', () => {
     const ids = Array.from({ length: 5000 }, (_, i) => String(i + 1));
