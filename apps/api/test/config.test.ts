@@ -22,24 +22,6 @@ describe('loadConfig', () => {
     expect(c.ipHashKey.length).toBe(32);
   });
 
-  it('takes Cloudflare Workers AI settings both or neither, and checks their shape without echoing them', () => {
-    const account = 'a'.repeat(32),
-      token = 'cf_token_0123456789abcdef';
-    expect(loadConfig(prod).workersAi).toBeNull();
-    expect(loadConfig({ ...prod, CF_ACCOUNT_ID: account, CF_AI_TOKEN: token }).workersAi).toEqual({
-      accountId: account,
-      token,
-    });
-    expect(() => loadConfig({ ...prod, CF_ACCOUNT_ID: account })).toThrow(/CF_AI_TOKEN/);
-    expect(() => loadConfig({ ...prod, CF_AI_TOKEN: token })).toThrow(/CF_ACCOUNT_ID/);
-    try {
-      loadConfig({ ...prod, CF_ACCOUNT_ID: 'not-an-id', CF_AI_TOKEN: token });
-    } catch (err) {
-      expect(err).toBeInstanceOf(ConfigError);
-      expect((err as Error).message).not.toContain(token);
-    }
-  });
-
   it('has safe development defaults: no proxies trusted, local origin', () => {
     const c = loadConfig({
       DATABASE_URL: prod.DATABASE_URL,

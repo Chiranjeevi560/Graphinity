@@ -208,32 +208,22 @@ Supabase dashboard; the website can't.
 To remove a moderator later: `DELETE FROM app.moderators WHERE profile_id = (SELECT id FROM app.profiles WHERE handle = 'theirname');`
 
 
-## Part H: Turn on search by meaning (Supabase and Cloudflare, free)
+## Part H: Search by meaning (Supabase only, free)
 
-Graphinity finds questions asked in other words ("import tax" for "customs duty") with Cloudflare
-Workers AI's free daily allowance. Past it, Cloudflare refuses rather than bills, and Graphinity
-matches by words until the next day. Nothing here needs a card.
+Graphinity finds questions asked in other words ("import tax" for "customs duty") with its own model,
+trained every day on the posts of people who allowed it, and run on Graphinity's own server. No
+outside AI is used, and there is no AI account or token to set up. Until the model has learned
+enough to beat matching by words (its quality gate decides, ADR 0010), search works by words.
 
-**1. Supabase: turn on the vector extension (before updating the database to version 14).**
+**Once: turn on the vector extension (it stores the meanings).**
 1. Open **supabase.com**, your project, then **Database** in the left bar, then **Extensions**.
 2. Search for **vector**. Switch it on. If it asks for a schema, choose **extensions**.
 3. Then update the database (Part I). If you skipped step 2, it stops with a message saying to turn
    the extension on first; nothing is changed.
 
-**2. Cloudflare: an API token that can only use Workers AI.**
-1. Open **dash.cloudflare.com** and sign in to the account that will host the website.
-2. Your **Account ID** is on the right of the account's home page (Workers & Pages, or the account
-   overview). It is 32 characters. Copy it.
-3. Click your profile icon (top right), **My Profile**, then **API Tokens**, then **Create Token**.
-4. Choose **Create Custom Token**. Name it `graphinity-workers-ai`. Under **Permissions** pick
-   **Account**, **Workers AI**, **Read**. Under **Account Resources** pick your account. Leave the
-   rest. Click **Continue to summary**, then **Create Token**. Copy the token (it is shown once).
-5. Put both into the API's settings yourself, never in chat:
-   - Locally: run `open -e .local/api.env` and add two lines:
-     `CF_ACCOUNT_ID=` followed by the id, and `CF_AI_TOKEN=` followed by the token. Save.
-   - On Render (when deployed): your service, **Environment**, add the same two variables.
-6. Tell me when it's done. I'll check that a question gets its embedding from Cloudflare (the
-   background job also fills in older questions, 20 a minute).
+If Render's settings still have `CF_ACCOUNT_ID` or `CF_AI_TOKEN` from before, delete them
+(your service, **Environment**): nothing reads them any more. Then revoke that token in Cloudflare
+(**My Profile**, **API Tokens**).
 
 ## Part I: Update the live database
 

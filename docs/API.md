@@ -140,15 +140,13 @@ and has an answer from the last 180 days; `related` from 0.72, or when a questio
 meaning is unavailable; `clear` otherwise, with no questions. Up to 5 are returned: a recent duplicate
 first, then those holding every word, then the rest in fused order. `similarity` is `null` for a match
 by words alone.
-Titles under 10 characters aren't searched. Hidden questions never appear. Without Cloudflare (out of the
-free allowance, offline, not configured) it still answers, by words only, and never says `duplicate`.
-Authentication is optional. Semantic embeddings are generated or sent to Cloudflare Workers AI only
-when the signed-in account has enabled `ai_personalization`; anonymous and opted-out requests use word
+Titles under 10 characters aren't searched. Hidden questions never appear. Meaning comes from
+Graphinity's own model (ADR 0010), computed on Graphinity's server; nothing is sent to an outside AI.
+Until a model has been promoted (or with the `embeddings` switch off) it answers by words only, and
+never says `duplicate`. Authentication is optional. A query's meaning is computed only when the
+signed-in account has enabled `ai_personalization`; anonymous and opted-out requests use word
 search. A signed-in query is saved only with separate `search_history` consent, at most once per exact
 query and field every five minutes, and expires within 365 days. No query is sent to a commercial partner.
-Cloudflare describes standard Workers AI inference as zero-retention after processing and says it does
-not train on customer content; its [data usage terms](https://developers.cloudflare.com/workers-ai/platform/data-usage/)
-describe limited exceptions. Recheck these terms before launch or changing providers.
 
 ### `GET /questions/:id`
 
