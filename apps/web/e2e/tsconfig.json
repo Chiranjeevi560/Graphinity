@@ -1,0 +1,11 @@
+{
+  // The browser tests are the repository's, not the website's: they run in Node under
+  // Playwright and use root-level tools (@playwright/test, @axe-core/playwright, pg) that
+  // a website install doesn't have. Their own project keeps them strict and type-checked
+  // (npm run typecheck at the root) without making the website's build depend on them.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["."]
+}
