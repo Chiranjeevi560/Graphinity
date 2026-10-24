@@ -66,5 +66,10 @@
       "path": "apps/web/dist/assets/*.js",
       "limit": "99.51 kB"
     }
-  ]
+  ],
+  "overrides": {
+    "chromium-bidi": {
+      "zod": "4.6.6"
+    }
+  }
 }
