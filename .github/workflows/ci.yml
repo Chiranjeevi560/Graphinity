@@ -132,8 +132,12 @@ jobs:
           docker build --build-arg RELEASE="$GITHUB_SHA" -t graphinity-api:ci .
           .local/tools/osv-scanner scan image --format json --output-file image-vulns.json graphinity-api:ci || true
           node scripts/image-report.mjs image-vulns.json
+          # It must declare the unprivileged user, and run with no writable disk, no Linux
+          # capabilities and no way to gain privileges: if it needed any of those, it would fail here.
+          test "$(docker inspect --format '{{.Config.User}}' graphinity-api:ci)" = node
           set -a; . .local/api.env; set +a
-          docker run -d --name api-smoke --network host -e PORT=3100 -e APP_ENV=staging \
+          docker run -d --name api-smoke --network host --read-only --cap-drop=ALL \
+            --security-opt no-new-privileges -e PORT=3100 -e APP_ENV=staging \
             -e WEB_ORIGIN=https://smoke.example -e SUPABASE_URL=https://smoke.supabase.co -e TRUST_PROXY_HOPS=0 \
             -e DATABASE_URL -e IP_HASH_KEY -e SUPABASE_SECRET_KEY graphinity-api:ci
           for i in $(seq 30); do curl -sf http://127.0.0.1:3100/health > health.json && break; sleep 1; done
