@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { robotsTxt, sitemapXml } from '../seo.ts';
+import { CITING_CRAWLERS, llmsTxt, robotsTxt, sitemapXml, TRAINING_CRAWLERS } from '../seo.ts';
 import { applyMeta, pageMeta } from '../src/lib/meta.ts';
 
 const ORIGIN = 'https://graphinity.pages.dev';
@@ -9,8 +9,46 @@ describe('robots.txt and sitemap', () => {
     const robots = robotsTxt(ORIGIN);
     for (const p of ['/auth/', '/welcome', '/me', '/goodbye', '/ask', '/review'])
       expect(robots).toContain(`Disallow: ${p}\n`);
-    expect(robots).not.toMatch(/^Disallow: \/$/m);
     expect(robots).toContain(`Sitemap: ${ORIGIN}/sitemap.xml`);
+  });
+
+  /** The rules a crawler with this token follows: its own group if named, else "*" (RFC 9309). */
+  const rulesFor = (robots: string, agent: string): string[] => {
+    const groups: Array<{ agents: string[]; rules: string[] }> = [];
+    let current: { agents: string[]; rules: string[] } | null = null;
+    for (const line of robots.split('\n')) {
+      const [key = '', ...rest] = line.split(':');
+      const value = rest.join(':').trim();
+      if (key === 'User-agent') {
+        if (!current || current.rules.length) groups.push((current = { agents: [], rules: [] }));
+        current.agents.push(value);
+      } else if (key === 'Disallow' && current) current.rules.push(value);
+    }
+    return (groups.find(g => g.agents.includes(agent)) ?? groups.find(g => g.agents.includes('*')))?.rules ?? [];
+  };
+
+  it('never blocks the whole site for search, lets citing assistants in, and keeps training crawlers out', () => {
+    const robots = robotsTxt(ORIGIN);
+    const PRIVATE = ['/auth/', '/welcome', '/me', '/goodbye', '/ask', '/review'];
+    for (const agent of ['*', 'Googlebot', 'Bingbot', ...CITING_CRAWLERS]) {
+      const rules = rulesFor(robots, agent);
+      expect(rules, agent).not.toContain('/');
+      expect(rules, agent).toEqual(expect.arrayContaining(PRIVATE));
+    }
+    for (const agent of TRAINING_CRAWLERS) expect(rulesFor(robots, agent), agent).toEqual(['/']);
+    for (const agent of [...CITING_CRAWLERS, ...TRAINING_CRAWLERS])
+      expect(
+        robots.split('\n').filter(l => l === `User-agent: ${agent}`),
+        agent,
+      ).toHaveLength(1);
+  });
+
+  it('describes the site for AI assistants in llms.txt, with addresses on the site itself', () => {
+    const text = llmsTxt(ORIGIN);
+    expect(text.startsWith('# Graphinity\n\n> ')).toBe(true);
+    expect(text).toContain(`(${ORIGIN}/sitemap.xml)`);
+    expect(text).toMatch(/first-hand report, not a verified fact/);
+    for (const link of text.matchAll(/\]\(([^)]+)\)/g)) expect(link[1]?.startsWith(`${ORIGIN}/`), link[1]).toBe(true);
   });
 
   it('lists the home page with an absolute address, as valid XML', () => {

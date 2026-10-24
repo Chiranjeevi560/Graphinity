@@ -8,7 +8,20 @@ import { execFileSync, spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { chromium } from 'playwright';
 import lighthouse from 'lighthouse';
-import * as chromeLauncher from 'chrome-launcher';
+
+// In GitHub Actions, a failure before anything is measured (a busy port, a
+// server or browser that won't start) also shows on the run and its pull
+// request, not only in the log.
+const annotate = message => {
+  if (process.env.GITHUB_ACTIONS)
+    console.log(`::error title=Page speed could not run::${message.replace(/\r?\n/g, ' ')}`);
+};
+process.on('uncaughtException', err => {
+  annotate(err instanceof Error ? `${err.message} ${err.stack?.split('\n')[1]?.trim() ?? ''}` : String(err));
+  throw err;
+});
+
+const DEBUG_PORT = 9223;
 
 // Keep in step with CONSTRAINTS.md.
 const BUDGET = { performance: 95, accessibility: 100, bestPractices: 100, seo: 100, lcpMs: 2500, cls: 0.1, tbtMs: 200 };
@@ -22,7 +35,9 @@ for (const url of ['http://localhost:4174/', 'http://localhost:3000/health']) {
     () => false,
   );
   if (busy) {
-    console.error(`Something is already running at ${new URL(url).host}. Stop it, then run this again.`);
+    const message = `Something is already running at ${new URL(url).host}. Stop it, then run this again.`;
+    console.error(message);
+    annotate(message);
     process.exit(1);
   }
 }
@@ -61,14 +76,14 @@ let failed = false;
 try {
   await waitFor('http://localhost:4174/');
   await waitFor('http://localhost:3000/health');
-  const chrome = await chromeLauncher.launch({
-    chromePath: chromium.executablePath(),
-    chromeFlags: ['--headless=new'],
-  });
+  // Chromium started by Playwright, the way the browser tests start it (with the flags it needs
+  // on CI's Linux, where chrome-launcher's start never opened a debugging port), and opened to
+  // Lighthouse on a debugging port.
+  const browser = await chromium.launch({ args: [`--remote-debugging-port=${DEBUG_PORT}`] });
   try {
     for (const page of PAGES) {
       const { lhr } = await lighthouse(`http://localhost:4174${page}`, {
-        port: chrome.port,
+        port: DEBUG_PORT,
         output: 'json',
         logLevel: 'error',
         onlyCategories: ['performance', 'accessibility', 'best-practices', 'seo'],
@@ -88,12 +103,20 @@ try {
       if (lcp > BUDGET.lcpMs) misses.push(`LCP ${Math.round(lcp)}ms > ${BUDGET.lcpMs}ms`);
       if (cls > BUDGET.cls) misses.push(`CLS ${cls.toFixed(3)} > ${BUDGET.cls}`);
       if (tbt > BUDGET.tbtMs) misses.push(`TBT ${Math.round(tbt)}ms > ${BUDGET.tbtMs}ms`);
-      console.log(
-        `${page}  performance ${score('performance')}  accessibility ${score('accessibility')}  best-practices ${score('best-practices')}  seo ${score('seo')}  LCP ${Math.round(lcp)}ms  CLS ${cls.toFixed(3)}  TBT ${Math.round(tbt)}ms`,
-      );
+      const line = `${page}  performance ${score('performance')}  accessibility ${score('accessibility')}  best-practices ${score('best-practices')}  seo ${score('seo')}  LCP ${Math.round(lcp)}ms  CLS ${cls.toFixed(3)}  TBT ${Math.round(tbt)}ms`;
+      console.log(line);
+      // In GitHub Actions, the numbers also show on the run and its pull request, readable
+      // without the run's log (which only the owner can open).
+      if (process.env.GITHUB_ACTIONS) console.log(`::${misses.length ? 'error' : 'notice'} title=Page speed::${line}`);
       if (misses.length) {
         failed = true;
         console.error(`  over budget: ${misses.join('; ')}`);
+        if (process.env.GITHUB_ACTIONS) console.log(`::error title=Page speed over budget::${misses.join('; ')}`);
+        for (const ref of lhr.categories.performance.auditRefs) {
+          const audit = lhr.audits[ref.id];
+          if (ref.weight > 0 && audit.score !== null && audit.score < 1)
+            console.error(`  performance: ${ref.id} (${audit.title}) ${audit.displayValue ?? ''}`);
+        }
         // Name the checks that cost points, so the fix doesn't start with a guess.
         for (const key of ['best-practices', 'seo', 'accessibility']) {
           for (const ref of lhr.categories[key].auditRefs) {
@@ -105,7 +128,7 @@ try {
       }
     }
   } finally {
-    await chrome.kill();
+    await browser.close();
   }
 } finally {
   preview.kill();

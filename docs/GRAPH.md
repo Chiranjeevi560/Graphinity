@@ -42,25 +42,56 @@ spec's "4 exploit + 1 explore"). Within the field, each person gets the spec's s
 | Part | Weight | Learns from |
 |---|---|---|
 | φ1 Close in meaning | 24% | The closest, by meaning, of the questions they answered before (removed answers don't count) |
-| φ2 Field reputation | 18% | sigmoid((μ − 3σ − 25) / 8.33) of their TrueSkill in this field: picks, helpful marks, low ratings, verdicts |
+| φ2 Field reputation | 18% | 0.8 × sigmoid((μ − 3σ − 25) / 8.33) + 0.2 × field/country expertise weight learned from evaluated answers |
 | φ3 Country | 15% | 0.8 if they live there; 0.5 if one of their answers was picked on a question about there. No city data, so no 1.0 |
 | φ4 Graph trust | 12% | PageRank along who picked whose answers in this field, starting only from moderators (TrustRank), so a ring picking each other gains nothing. Zero for everyone until a moderator has picked someone; moderators themselves get none |
 | φ5 Helpful rate | 10% | Wilson lower bound of their answers here marked helpful or picked |
 | φ6 Pick rate | 8% | (picks + 1) / (answers + 4) |
 | φ7 Responsiveness | 6% | e^(−median reply / 4 h) × answered / asked (both smoothed; they get a day before one counts as ignored) |
-| φ8 Recent activity | 4% | Halves every two weeks since they last asked, answered or opened a question. No time-of-day part: we don't collect timezones |
+| φ8 Activity and local timing | 4% | Recent activity halves every two weeks, multiplied by daytime suitability centered at 14:00 using the profile country’s central IANA timezone. Unknown countries use neutral 0.5; no precise location or timezone is collected. |
 
 Then: the newcomer bonus, β 0.12 × √(2 ln N / (n + 1)) while someone has had fewer than 5 questions
 in the field, counted only in the newcomer place (it grows with the field and, in the main places,
 would outrank proven people); and the load dampener ((3 − used today) / 3)^1.5, so a person nearing
-the day's limit is asked less. φ9 (diversity) is left out: it needs person-to-person weights we
-don't have, and leaving it out lowers every score equally. No chance term: the same facts give the
-same wave. Reputation is per field: points in customs say nothing about programming. Every pick, helpful mark, verdict
-and ignored question changes the next routing; nothing needs retraining.
+the day's limit is asked less. φ9 (diversity) is one minus the maximum learned field-local co-answer
+affinity to an already selected recipient. Selection is greedy: each next candidate maximizes base Ψ
+plus α9 × φ9 × the load dampener. The affinity prior is 1 − exp(−0.08 × co-answer count), then
+answer outcomes reinforce or decay the edge. No chance term: the same facts give the same wave.
+Reputation is per field: points in customs say nothing about programming. Picks, helpful marks,
+ratings, verdicts, removals, and co-answers update learned values without retraining.
 
-Each route stores why it was made, at that moment, for "Why you got this".
+Each new route stores the algorithm version, final score, field/country expertise weight, local-time
+fit, and diversity fit alongside the original reason fields. `/questions/:id` returns these only to
+the recipient. These are decision snapshots, not calibrated probabilities. The nine weights
+(24%, 18%, 15%, 12%, 10%, 8%, 6%, 4%, 3%) sum to 1.0. Candidate evidence gathering scales with
+the candidate set and per-person history queries; greedy diversity selection is O(K²C) for C
+candidates and K selected people. The indexed affinity lookup is field-local. Database evidence
+counts may dominate in large fields, so measure before increasing candidate pools.
 
 ## How it's built
+
+The consented personal graph also has an asynchronous database projection path (ADR 0008):
+`personal_signal_events` acts as a bounded `SKIP LOCKED` queue, and each supported event produces
+an owner-scoped topic node, question node, and temporal evidence edge. Consent is rechecked at
+processing time; event deletion or expiry cascades to its edge. This path currently projects
+question interaction events only. It is not a general-purpose graph analytics engine.
+
+Personal graph nodes are typed and partitioned by their independently consented purpose: learning
+and expertise (`learning_expertise`), trust and interactions (`interaction_history`), ownership
+(`ownership`), purchase (`purchase_history`), experience (`travel_preferences` and
+`learning_expertise`), commercial preferences (`commercial_personalization`), notifications
+(`notification_preferences`), relationships (`relationship_graph`), and privacy controls (`identity`).
+The API refuses entity types under unrelated consent categories. Owners can add directed weighted
+edges with confidence and inspect/delete/export them.
+
+`POST /me/graph/insights` runs global weighted PageRank, seed-personalized PageRank (random walk with
+restart), deterministic weighted label propagation, and bounded random-walk co-occurrence embeddings
+on the owner's currently consented graph. Recommendations fuse personalized rank and embedding
+similarity; this graph-only score never enters commercial ranking. All code runs in-process without
+an inference API. The graph is capped at 1,000 nodes and 5,000 edges per analysis. This is not
+Leiden/Louvain, Node2Vec training, GraphSAGE, a global knowledge graph, or a learned recommendation
+model. `scripts/benchmark-personal-graph.mjs` measures the in-process algorithms at the maximum
+supported graph size; it does not measure PostgreSQL, HTTP, multi-user contention, or production load.
 
 - `apps/web/src/lib/graph-layout.ts` and `routing-layout.ts`: where everything sits and moves, pure
   maths with tests. `lib/canvas-loop.ts`: what every graph's canvas needs, once (sharp on any screen,

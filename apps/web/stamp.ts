@@ -7,11 +7,11 @@
 import { cpSync, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { pagesHeadersFile } from './headers.ts';
-import { robotsTxt, sitemapXml } from './seo.ts';
+import { llmsTxt, robotsTxt, sitemapXml } from './seo.ts';
 import type { SiteSettings } from './src/lib/settings.ts';
 
 /** The files a stamp writes; everything else is the build, byte for byte. */
-export const STAMPED_FILES = ['index.html', '_headers', 'robots.txt', 'sitemap.xml'] as const;
+export const STAMPED_FILES = ['index.html', '_headers', 'robots.txt', 'sitemap.xml', 'llms.txt'] as const;
 
 /** Addresses that would mean an environment slipped into the build itself. */
 const ENVIRONMENT_TRACES =
@@ -72,4 +72,5 @@ export function stampDist(
   );
   writeFileSync(join(out, 'robots.txt'), robotsTxt(settings.siteOrigin));
   writeFileSync(join(out, 'sitemap.xml'), sitemapXml(settings.siteOrigin));
+  writeFileSync(join(out, 'llms.txt'), llmsTxt(settings.siteOrigin));
 }

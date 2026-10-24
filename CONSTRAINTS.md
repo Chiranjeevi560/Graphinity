@@ -39,12 +39,14 @@ Checked by `node scripts/floor-guard.mjs` on everything changed since `origin/ma
 | Browser errors | Zero console errors or CSP violations (expected 404s aside) | A CSP violation means something was blocked | `npm run test:e2e` | task end, CI |
 | Engines | Chromium and WebKit locally; plus Firefox in CI | Firefox won't start on macOS 27 (see Known limits) | `npm run test:e2e`, CI | task end, CI |
 | Page speed | Lighthouse mobile: performance ≥ 95, accessibility 100, best practices 100, SEO 100, LCP ≤ 2500 ms, CLS ≤ 0.1, TBT ≤ 200 ms | LCP/CLS are Google's "good" thresholds; 95 holds today's 99 with room for noise | `npm run check:perf` | task end, CI |
-| Bundle size (brotli) | Main script ≤ 61.80 kB, styles ≤ 5.95 kB, all scripts ≤ 95.99 kB | Ratchet: today + 0.5%. Growth must be a decision | `npm run check:size` | task end, CI |
+| Bundle size (brotli) | Main script ≤ 61.80 kB, styles ≤ 6.37 kB, all scripts ≤ 99.51 kB | Ratchet: today + 0.5%. Growth must be a decision | `npm run check:size` | task end, CI |
 | Secrets | No findings in git history or uncommitted changes (values always redacted) | External judge | `npm run check:secrets` | task end, CI |
 | Dependencies | Nothing known-vulnerable at high or above | External database (OSV) | `npm run check:deps` | task end, CI |
 | Licences | Every dependency under one of: MIT, Apache-2.0, ISC, MPL-2.0, BSD-3-Clause, BSD-2-Clause, 0BSD, BlueOak-1.0.0, CC-BY-4.0, CC0-1.0, Python-2.0 | Today's list (2026-10-20): all permissive or file-level copyleft. A new licence (above all GPL or AGPL, which could oblige us to publish more than we choose) must be a decision | `npm run check:licenses` | task end, CI |
 | Code security | No Semgrep findings at ERROR (p/default, p/owasp-top-ten, p/typescript, p/react) | External rules | CI only (`semgrep`) | CI |
 | Supply chain | Exact versions, lockfile, install scripts off, nothing published in the last 2 weeks, CI actions pinned to commits | Owner's brief | review, `.npmrc`, CI | every change |
+| Migrations | Lint clean (no data-losing change without a `-- contract:` reason); no shipped migration edited; an upgrade from the base ends in exactly the schema of a fresh install | Drift between environments is invisible until it breaks a deploy | `node scripts/check-migrations.mjs` (lint in `check:fast`; all three in CI) | every edit, CI |
+| API image | Builds from the commit, runs as a non-root user, starts in production mode and answers `/health` with that commit | A release only promotes an image that has started | CI (`API image` step) | CI |
 
 One command per stage: `npm run check:fast` (seconds), `npm run check:task` (about a minute),
 `npm run check:full` (several minutes, includes browsers and Lighthouse).
@@ -54,13 +56,13 @@ One command per stage: `npm run check:fast` (seconds), `npm run check:task` (abo
 | Metric | Today | Direction |
 |---|---|---|
 | Lighthouse best practices, missing-profile page | 96 (logged 404) | must not fall |
+| API image: Debian base findings at high or critical (osv-scanner) | first measured by CI on this change | must not grow; fixed by a newer base digest (Dependabot) |
 
 ## Exceptions
 
 | ID | Rule | Path | Reason | Owner | Expires |
 |---|---|---|---|---|---|
-
-None open.
+| E1 | Supply chain: nothing published in the last 2 weeks | `package-lock.json`: fastify 5.12.6 (2026-10-13), fast-uri 3.1.9 and 4.2.3 (2026-10-19), zod 4.6.6 (2026-10-11) | Security fixes the dependency check requires (GHSA-389g-gv7q-r4x8, GHSA-333x-w4r6-6crp and three more fast-uri advisories, GHSA-mrhx-c7xc-m3w5); the owner asked for the fixed versions. Registry signatures verified; fast-uri and zod also have build provenance | owner | 2026-11-02 (all past two weeks by then; remove the row) |
 
 ## Known limits of the checks
 

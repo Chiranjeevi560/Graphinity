@@ -3,8 +3,11 @@ import { MU0, SIGMA0 } from '../src/reputation.ts';
 import {
   ALPHA,
   BETA_COLD,
+  affinityToSelected,
+  circadianFit,
   coldBonus,
   factors,
+  greedyDiverse,
   loadDampener,
   pageRank,
   psi,
@@ -14,6 +17,7 @@ import {
 const base: Candidate = {
   proximity: null,
   skill: { mu: MU0, sigma: SIGMA0 },
+  expertiseWeight: 0.5,
   resident: false,
   pickedInCountry: false,
   trust: 0,
@@ -26,11 +30,13 @@ const base: Candidate = {
   daysSinceActive: null,
   routesInField: 10,
   usedToday: 0,
+  circadianFit: 1,
+  maxAffinityWithSelected: 0,
 };
 const field = { routes: 100, dailyLimit: 3 };
 
 describe('the spec’s routing weights (§11.2)', () => {
-  it('are the table’s, adding up to 1 with diversity (left out: no person-to-person weights yet)', () => {
+  it('are the table’s and add up to 1 across the nine score factors', () => {
     expect(ALPHA).toEqual({
       proximity: 0.24,
       reputation: 0.18,
@@ -40,8 +46,9 @@ describe('the spec’s routing weights (§11.2)', () => {
       selection: 0.08,
       responsiveness: 0.06,
       activity: 0.04,
+      diversity: 0.03,
     });
-    expect(Object.values(ALPHA).reduce((a, b) => a + b, 0) + 0.03).toBeCloseTo(1, 10);
+    expect(Object.values(ALPHA).reduce((a, b) => a + b, 0)).toBeCloseTo(1, 10);
     expect(BETA_COLD).toBe(0.12);
   });
 });
@@ -54,11 +61,12 @@ describe('each factor, 0 to 1', () => {
   });
 
   it('φ2: sigmoid of the cautious reputation, (μ − 3σ − 25) / 8.33', () => {
-    expect(factors(base).reputation).toBeCloseTo(1 / (1 + Math.exp(3.0012)), 3);
+    expect(factors(base).reputation).toBeCloseTo(0.8 * (1 / (1 + Math.exp(3.0012))) + 0.1, 3);
     expect(factors({ ...base, skill: { mu: 40, sigma: 3 } }).reputation).toBeCloseTo(
-      1 / (1 + Math.exp(-(40 - 9 - 25) / 8.33)),
+      0.8 * (1 / (1 + Math.exp(-(40 - 9 - 25) / 8.33))) + 0.1,
       10,
     );
+    expect(factors({ ...base, expertiseWeight: 0.9 }).reputation).toBeGreaterThan(factors(base).reputation);
   });
 
   it('φ3: 0.8 living there, 0.5 picked before about there, else 0', () => {
@@ -85,10 +93,25 @@ describe('each factor, 0 to 1', () => {
     expect(factors(base).responsiveness).toBeCloseTo(0.5 * 0.5, 10);
   });
 
-  it('φ8: fades with time since they were last active, half in two weeks', () => {
+  it('φ8: combines recent activity with circadian suitability', () => {
     expect(factors({ ...base, daysSinceActive: 0 }).activity).toBe(1);
     expect(factors({ ...base, daysSinceActive: 14 }).activity).toBeCloseTo(0.5, 10);
     expect(factors(base).activity).toBe(0);
+    expect(factors({ ...base, daysSinceActive: 0, circadianFit: 0.2 }).activity).toBeCloseTo(0.2, 10);
+  });
+
+  it('φ9: reduces scores for candidates connected to the already selected clique', () => {
+    expect(factors({ ...base, maxAffinityWithSelected: 0 }).diversity).toBe(1);
+    expect(factors({ ...base, maxAffinityWithSelected: 0.8 }).diversity).toBeCloseTo(0.2, 10);
+    expect(factors({ ...base, maxAffinityWithSelected: 2 }).diversity).toBe(0);
+  });
+
+  it('infers approximate local daytime from country without a signup timezone', () => {
+    const utc = new Date('2026-10-22T08:00:00.000Z');
+    expect(circadianFit('IN', utc)).toBeGreaterThan(circadianFit('IN', new Date('2026-10-22T20:00:00.000Z')));
+    expect(circadianFit('SG', utc)).toBeGreaterThan(circadianFit('SG', new Date('2026-10-22T00:00:00.000Z')));
+    expect(circadianFit('XX', utc)).toBe(0.5);
+    expect(circadianFit('IN', new Date(Number.NaN))).toBe(0.5);
   });
 });
 
@@ -105,6 +128,40 @@ describe('the newcomer bonus and the load dampener', () => {
     expect(loadDampener(1, 3)).toBeCloseTo((2 / 3) ** 1.5, 10);
     expect(loadDampener(3, 3)).toBe(0);
     expect(loadDampener(5, 3)).toBe(0);
+  });
+});
+
+describe('greedy diversity selection', () => {
+  it('measures maximum selected affinity with sorted pair keys and bounded weights', () => {
+    expect(affinityToSelected('c', [], new Map())).toBe(0);
+    expect(
+      affinityToSelected(
+        'b',
+        ['a', 'c'],
+        new Map([
+          ['a:b', 0.7],
+          ['b:c', 1.4],
+        ]),
+      ),
+    ).toBe(1);
+  });
+
+  it('prefers independent candidates after the first high-scoring choice', () => {
+    const options = [
+      { id: 'a', score: 0.5, candidate: { usedToday: 0 } },
+      { id: 'b', score: 0.49, candidate: { usedToday: 0 } },
+      { id: 'c', score: 0.48, candidate: { usedToday: 0 } },
+    ];
+    expect(greedyDiverse(options, 2, new Map([['a:b', 0.99]])).map(option => option.id)).toEqual(['a', 'c']);
+  });
+
+  it('uses the selected set and stable ids for equal marginal scores', () => {
+    const options = [
+      { id: 'b', score: 0.4, candidate: { usedToday: 0 } },
+      { id: 'a', score: 0.4, candidate: { usedToday: 0 } },
+    ];
+    const affinities = new Map([['a:already', 1]]);
+    expect(greedyDiverse(options, 1, affinities, ['already']).map(option => option.id)).toEqual(['b']);
   });
 });
 

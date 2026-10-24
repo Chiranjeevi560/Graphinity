@@ -1,3 +1,11 @@
 # Deliberately fake keys in tests. Each line is a gitleaks fingerprint.
 5b7151cc86870d496a4c06a60516dca974802e24:apps/api/test/config.test.ts:generic-api-key:12
 apps/api/test/config.test.ts:generic-api-key:12
+# The website's settings test: a made-up publishable key (publishable keys are public by design).
+f15a40d84073f3ee5a9ffd9ce0bb08bec74fb844:apps/web/test/settings.test.ts:generic-api-key:8
+apps/web/test/settings.test.ts:generic-api-key:8
+
+# A Copilot checkpoint kept only on this computer (refs/copilot/checkpoints/..., never pushed):
+# a CI smoke-test line with dummy values (the hash key is hex digits counting up, over and over;
+# the other key is labelled ci-only).
+37e911f27d83dc5f9835704263f00b2458f3cd61:.github/workflows/ci.yml:generic-api-key:96

@@ -80,3 +80,23 @@ Render or Supabase.** Limits checked on the services' own pages on 2026-10-17 ar
    locally; semantic search and answer consensus left for the owner's decision, see GRAPH.md).
 8. Launch prep: privacy policy, terms, hostile review, phone checks, accounts, deploy (server
    first, then website), verify live.
+
+## Owner's 2026-10-22 product extension
+
+The owner asked to extend Graphinity into a consent-first first-party intelligence and commercial
+platform. This is a new scope, not a claim that launch prep is complete.
+
+| Stage | Status |
+|---|---|
+| Purpose-specific consent catalog, private settings, append-only audit | ✅ Implemented in migrations 0003–0004 and `/me/consents` |
+| Personal graph layers, owner RLS, consent-gated nodes/edges, and evidence-linked event projection | 🟡 Typed consent categories, relationship writes, event projection, and owner-only PageRank/PPR/label propagation/walk embeddings/recommendations implemented with bounded graph input; broader collection and learned graph models remain |
+| Data controls and export | 🟡 Basic screen, individual/bulk graph deletion, and documented JSON export implemented; browser QA and export audit ongoing |
+| Automatic first-party event collection with retention cleanup | 🟡 Question interaction and consented search/view signals are captured; bounded async projection and aggregate queue-depth/lag warnings exist; provider alert routing and broader collectors remain |
+| Consent-aware personalization and explainability | 🟡 Limited: finite opt-in question discovery and source-specific reasons exist; offline ranking metrics added, but no trained model or production evaluation dataset |
+| Commercial ranking firewall and affiliate disclosures | ⬜ Not implemented |
+| Named-recipient partner authorization and audit | ⬜ Not implemented |
+| Suppressed enterprise intelligence and differential privacy | ⬜ Not implemented |
+| Production cost/capacity, deployment and accessibility gates | ⬜ Not completed for this extension |
+
+See `docs/adr/0003-consent-based-data-and-commercial-intelligence.md` and `project report.md` for
+the exact current state and the next delivery sequence.

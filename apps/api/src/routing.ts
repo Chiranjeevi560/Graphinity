@@ -3,14 +3,23 @@
 // minutes if fewer than 3 of them have opened it or answered; 5 more at 60
 // minutes while there's no consensus yet (fewer than 3 answers: consensus
 // needs at least 3). Experts' attention is scarce: at most 3 a day each.
-// The database (db/schema.sql, app.routes) enforces that limit and never
+// The database (db/migrations, app.routes) enforces that limit and never
 // routes to the asker.
 import type { Database, Queryable } from './db.ts';
 import type { Events } from './events.ts';
 import { errorKind } from './jobs.ts';
 import { replay } from './reputation.ts';
 import { judgements } from './routes/points.ts';
-import { pageRank, psi } from './routing-score.ts';
+import {
+  ALPHA,
+  affinityToSelected,
+  circadianFit as countryCircadianFit,
+  greedyDiverse,
+  loadDampener,
+  pageRank,
+  psi,
+  type Candidate,
+} from './routing-score.ts';
 
 /** Minutes after asking. */
 export const WAVES = [
@@ -41,6 +50,9 @@ export interface Reasons {
 
 interface PoolRow {
   id: string;
+  country_code: string;
+  now_epoch: number;
+  expertise_weight: number;
   same_country: boolean;
   picked_in_country: boolean;
   field_points: number;
@@ -58,6 +70,14 @@ interface PoolRow {
   used_today: number;
 }
 
+interface RankedCandidate extends Reasons {
+  id: string;
+  candidate: Candidate;
+  score: number;
+  explore: boolean;
+  fieldRoutes: number;
+}
+
 /**
  * People for one wave, best first, by the spec's score Ψ (routing-score.ts).
  * Only people who list the question's field; never the asker, anyone
@@ -70,12 +90,23 @@ async function candidates(
   questionId: string,
   limit: number,
   newcomersOnly: boolean,
-): Promise<Array<{ id: string } & Reasons>> {
+): Promise<RankedCandidate[]> {
   if (limit <= 0) return [];
+  await q.query(
+    `INSERT INTO app.expertise_edge_weights (profile_id, field, country)
+     SELECT p.id, t.field, COALESCE(t.country, p.country)
+     FROM app.questions t
+     JOIN app.profile_fields pf ON pf.field = t.field
+     JOIN app.profiles p ON p.id = pf.profile_id
+     WHERE t.id = $1 AND p.id <> t.asker_id
+     ON CONFLICT (profile_id, field, country) DO NOTHING`,
+    [questionId],
+  );
   const pool = (
     await q.query<PoolRow>(
       `WITH target AS (SELECT id, asker_id, field, country FROM app.questions WHERE id = $1)
-     SELECT p.id,
+     SELECT p.id, p.country AS country_code, (extract(epoch FROM clock_timestamp()) * 1000)::float8 AS now_epoch,
+            coalesce(ee.weight, 0.5)::float8 AS expertise_weight,
             coalesce(p.country = t.country, false) AS same_country,
             EXISTS (SELECT 1 FROM app.selections s JOIN app.answers a ON a.id = s.answer_id JOIN app.questions sq ON sq.id = s.question_id
                     WHERE a.answerer_id = p.id AND sq.field = t.field AND sq.country = t.country) AS picked_in_country,
@@ -105,6 +136,8 @@ async function candidates(
      FROM app.profiles p
      JOIN target t ON true
      JOIN app.profile_fields pf ON pf.profile_id = p.id AND pf.field = t.field
+     LEFT JOIN app.expertise_edge_weights ee
+       ON ee.profile_id = p.id AND ee.field = t.field AND ee.country = COALESCE(t.country, p.country)
      -- Questions put to them in the last 60 days, and how many they
      -- answered. One sent in the last day counts only once answered: they
      -- still have time. A removed answer doesn't count as answering (row-level
@@ -174,34 +207,41 @@ async function candidates(
     moderators,
   );
 
-  const scored = pool.map(r => ({
-    row: r,
-    score: psi(
-      {
-        proximity: proximity.get(r.id) ?? null,
-        skill: replay(games.get(r.id)?.get(field.field) ?? []),
-        resident: r.same_country,
-        pickedInCountry: r.picked_in_country,
-        trust: trust.get(r.id) ?? 0,
-        helped: r.helped,
-        answers: r.answers,
-        picks: r.picks,
-        medianReplySeconds: r.median_reply,
-        asked: r.asked,
-        answered: r.answered,
-        daysSinceActive: r.days_since_active,
-        routesInField: r.routes_in_field,
-        usedToday: r.used_today,
-      },
-      { routes: field.routes, dailyLimit: DAILY_LIMIT },
-      { explore: newcomersOnly },
-    ),
-  }));
+  const scored = pool.map(r => {
+    const candidate: Candidate = {
+      proximity: proximity.get(r.id) ?? null,
+      skill: replay(games.get(r.id)?.get(field.field) ?? []),
+      expertiseWeight: r.expertise_weight,
+      resident: r.same_country,
+      pickedInCountry: r.picked_in_country,
+      trust: trust.get(r.id) ?? 0,
+      helped: r.helped,
+      answers: r.answers,
+      picks: r.picks,
+      medianReplySeconds: r.median_reply,
+      asked: r.asked,
+      answered: r.answered,
+      daysSinceActive: r.days_since_active,
+      routesInField: r.routes_in_field,
+      usedToday: r.used_today,
+      circadianFit: countryCircadianFit(r.country_code, new Date(r.now_epoch)),
+      maxAffinityWithSelected: 1,
+    };
+    return {
+      row: r,
+      candidate,
+      score: psi(candidate, { routes: field.routes, dailyLimit: DAILY_LIMIT }, { explore: newcomersOnly }),
+    };
+  });
   // Best first; equal scores in a stable order, so the same facts give the same wave.
   scored.sort((a, b) => b.score - a.score || (a.row.id < b.row.id ? -1 : 1));
   const pct = (part: number, whole: number) => (whole > 0 ? Math.round((100 * part) / whole) : null);
-  return scored.slice(0, limit).map(({ row: r }) => ({
+  return scored.slice(0, limit).map(({ row: r, candidate, score }) => ({
     id: r.id,
+    candidate,
+    score,
+    explore: newcomersOnly,
+    fieldRoutes: field.routes,
     sameCountry: r.same_country,
     fieldPoints: r.field_points,
     trustPct: pct(r.trust_correct, r.trust_total),
@@ -216,15 +256,68 @@ async function candidates(
  * spec's "4 exploit + 1 explore".
  */
 export async function routeWave(q: Queryable, questionId: string, wave: number, size: number): Promise<string[]> {
-  const newcomers = await candidates(q, questionId, Math.ceil(size * NEWCOMER_SHARE), true);
-  const rest = await candidates(q, questionId, size, false);
-  const people = [...new Map([...newcomers, ...rest].map(p => [p.id, p])).values()].slice(0, size);
+  const exploreCount = Math.ceil(size * NEWCOMER_SHARE);
+  const newcomers = await candidates(q, questionId, Math.max(1, exploreCount) * 5, true);
+  const rest = await candidates(q, questionId, size * 5, false);
+  const pool = [...new Map([...newcomers, ...rest].map(person => [person.id, person])).values()];
+  const ids = pool.map(person => person.id);
+  const questionField = (
+    await q.query<{ field: string }>('SELECT field FROM app.questions WHERE id = $1', [questionId])
+  ).rows[0]?.field;
+  const affinityRows = questionField
+    ? (
+        await q.query<{ user_low: string; user_high: string; weight: number }>(
+          `SELECT user_low, user_high, weight FROM app.epistemic_affinity_edges
+           WHERE field = $1 AND user_low = ANY($2::uuid[]) AND user_high = ANY($2::uuid[])`,
+          [questionField, ids],
+        )
+      ).rows
+    : [];
+  const affinities = new Map(affinityRows.map(edge => [`${edge.user_low}:${edge.user_high}`, edge.weight]));
+  const explorePicks = greedyDiverse(newcomers, exploreCount, affinities, [], DAILY_LIMIT);
+  const selectedIds = explorePicks.map(person => person.id);
+  const exploitPool = rest.filter(person => !selectedIds.includes(person.id));
+  const exploitPicks = greedyDiverse(exploitPool, size - selectedIds.length, affinities, selectedIds, DAILY_LIMIT);
+  const chosen = [...explorePicks, ...exploitPicks];
+  let selectedBefore: string[] = [];
+  const people = chosen.map(person => {
+    const diversity = 1 - affinityToSelected(person.id, selectedBefore, affinities);
+    const dampener = loadDampener(person.candidate.usedToday, DAILY_LIMIT);
+    const rankingScore = person.score + ALPHA.diversity * diversity * dampener;
+    selectedBefore = [...selectedBefore, person.id];
+    return {
+      id: person.id,
+      sameCountry: person.sameCountry,
+      fieldPoints: person.fieldPoints,
+      trustPct: person.trustPct,
+      answeredPct: person.answeredPct,
+      newcomer: person.newcomer,
+      rankingScore,
+      expertiseWeight: person.candidate.expertiseWeight,
+      circadianFit: person.candidate.circadianFit,
+      diversityFit: diversity,
+    };
+  });
   const asked: string[] = [];
   for (const p of people) {
     const res = await q.query(
-      `INSERT INTO app.routes (question_id, profile_id, wave, same_country, field_points, trust_pct, answered_pct, newcomer)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING`,
-      [questionId, p.id, wave, p.sameCountry, p.fieldPoints, p.trustPct, p.answeredPct, p.newcomer],
+      `INSERT INTO app.routes (question_id, profile_id, wave, same_country, field_points, trust_pct, answered_pct, newcomer,
+                               ranking_score, expertise_weight, circadian_fit, diversity_fit, ranking_version)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 1) ON CONFLICT DO NOTHING`,
+      [
+        questionId,
+        p.id,
+        wave,
+        p.sameCountry,
+        p.fieldPoints,
+        p.trustPct,
+        p.answeredPct,
+        p.newcomer,
+        p.rankingScore,
+        p.expertiseWeight,
+        p.circadianFit,
+        p.diversityFit,
+      ],
     );
     if (res.rowCount) asked.push(p.id);
   }

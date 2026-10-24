@@ -11,16 +11,19 @@ built it": never ship anything that looks or behaves like generic AI output.
 **The specification is `docs/SPEC.md`.** Read the sections a task touches before
 planning it. `docs/adr/0001-adopting-the-spec.md` records how it applies to this codebase (the
 owner chose to evolve the existing app, not rewrite it per `docs/BUILD_PLAYBOOK.md`) and tracks each
-section's status; update that table in the same commit as the work. Spec anti-goals are hard rules:
-no feed or trending, no following or follower counts, no global reputation (per field, per country),
-no AI-written answers (AI only for embeddings, duplicate detection, number extraction, spam), no
-reply threads under answers. No placeholders: no `TODO`, stubs or mocked returns in shipped code.
+section's status; update that table in the same commit as the work. Product anti-goals: no
+engagement-maximizing infinite feed, no following or follower counts, no global reputation (per
+field, per country), no AI-written answers, and no reply threads under answers. The owner's later
+directives allow finite consented discovery and require self-hosted AI/ML; see current ADRs and the
+production report for implemented scope. No placeholders: no `TODO`, stubs or mocked returns in
+shipped code.
 
 **For any task, run the `graphinity-build` skill first** (`.claude/skills/graphinity-build`): it
 is every chosen skill combined into one pipeline, with the bar and the lessons this project paid
 for. **Read `CONSTRAINTS.md` before writing code. Do not weaken it to make a change pass.** Run
 `npm run check:fast` after edits and `npm run check:task` before saying a task is done. Commit and
-push only with `sh scripts/ship.sh <message-file> <paths…>`, which pushes only if every check passed.
+push only with `sh scripts/ship.sh <message-file> <paths…>`, which commits on a branch and pushes it for a
+pull request only if every check passed; `main` changes only through merged pull requests.
 
 ## Hard rules
 
@@ -79,7 +82,8 @@ code we would run.
 - `apps/web`: React 19 + TypeScript + Vite, static on Cloudflare Pages. No UI framework.
 - `apps/api`: Node 24 + Fastify 5 on Render (Singapore). `buildServer(deps)` takes every outside
   dependency as an argument; no test-mode switches in production code.
-- `db/schema.sql`: Supabase Postgres (Singapore). One file, safe to run twice, additive only.
+- `db/migrations`: Supabase Postgres (Singapore). Numbered forward-only files, applied by
+  `apps/api/src/migrations.ts`; never edit one that shipped (its README has the rules).
 - Sign-in: Google ID token (nonce + state, returns to our site), exchanged at Supabase Auth, called
   directly (no supabase-js, no Google script). Scope `openid email` only. Access token in
   memory, refresh token in sessionStorage, never localStorage. The API verifies every token.
@@ -125,13 +129,13 @@ fade half-way: measure state with JavaScript before calling it a bug.
   fill checked at 4.5:1 or more.
 - Screens are lazy-loaded route chunks (default exports); components are named exports.
 - New tables: `ENABLE` + `FORCE ROW LEVEL SECURITY`, explicit grants to `app_api`, policies, and a
-  matching integration test. Bump the version in `app.schema_meta`.
+  matching integration test, in a new migration file. Raise `app.schema_meta` when the API depends on it.
 
 ## Commits
 
 One concern per commit. The message says what was wrong, the root cause with evidence, what
-changed, and what was verified (including what wasn't). Push to `origin main` after committing
-when the owner has asked for pushes.
+changed, and what was verified (including what wasn't). Ship to a branch with `ship.sh` and open a
+pull request; the owner merges on GitHub with **Rebase and merge** once CI passes. Never push to `main`.
 
 ## Docs to keep current in the same commit
 

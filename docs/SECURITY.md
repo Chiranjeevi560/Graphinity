@@ -59,7 +59,7 @@ These must stay true. If one stops being true, revisit everything that depends o
 | Someone posting as another person, or answering their own question | RLS: questions and answers only as `app.current_user_id()`; the answer policy also refuses the asker. No UPDATE or DELETE granted yet | `questions.integration.test.ts`; fails when the policy check is removed |
 | Learning who was asked, or who someone is, from the graph | `/graph` nodes are field sets with no names or ids, freshly sampled; the asker gets per-wave counts only, through `app.routing_summary`, which returns nothing to anyone else; "why you got this" reads the viewer's own route, which row-level security limits to them | `graph.integration.test.ts`; fail when the function's asker check is removed |
 | Gaming the routing score | Points need a real pick from another person (pair cap applies); answering counts only answers moderators haven't removed. Graph trust (φ4, 12%) flows only from moderators along picks (TrustRank), so accounts picking each other in a ring gain nothing; the routing job alone may read the moderator list (`moderators_system`). Closeness in meaning (φ1) comes from `app.experience_proximity`, which answers only the routing job and leaves out hidden and removed posts. The newcomer bonus counts only in the newcomer place, so it can't push proven people out. Known gap: fake accounts acting as askers can still raise someone's reputation and pick rate (φ2, φ5, φ6: 36% together); the pair cap and new-account limits slow this | `routing.integration.test.ts`, `routing-score.test.ts`; each rule fails a test when removed |
-| Using up the free embedding allowance | The precheck is public: visitor rate limits bound it, drafts under 10 characters aren't sent, and a cache keeps repeated text from being sent twice. At the limit Cloudflare refuses (no bill) and search falls back to words; no one is ever stopped from asking | `precheck.integration.test.ts`, `embeddings.test.ts` |
+| Using an embedding provider or sending draft text without consent | Visitor rate limits bound precheck; drafts under 10 characters aren't sent; only signed-in users with active `ai_personalization` consent can send content to an embedding provider. With the legacy Cloudflare adapter configured it makes a hosted inference request; otherwise search fails closed to word matching in production. The owner's 2026-10-22 self-hosting directive is not yet fulfilled: no self-hosted model runtime or capacity has been deployed. | `precheck.integration.test.ts`, `embeddings.test.ts` |
 | Middlemen soliciting through answers ("DM me on WhatsApp +91…") | Answers with phone numbers (10+ digits, any separators, full-width digits normalised), email addresses or messaging links and invitations are refused with a plain reason, in the API and by a database check with the same patterns. Refused, not silently edited. Known gap: numbers spelled out in words, or split by other characters, get through; moderators and reports remain the backstop | `solicitation.test.ts`, `questions.integration.test.ts` |
 | Hidden or spoofing characters in posts | Control characters (C0, DEL, C1) and direction overrides and isolates (U+202A-202E, U+2066-2069, which make text display in another order) refused in the API and by database checks on titles, bodies, answers, report notes and block reasons; the marks right-to-left writing needs (U+200E, U+200F, U+061C) stay allowed; titles one line with single spaces. Lookalike letters from other scripts (homoglyphs) are not refused: real names and languages use them | `text.test.ts` and database tests |
 | Getting points that didn't happen | See T8a. Every rule tested by an attack that must fail, and each test proven to fail when its rule is removed | `points.db.integration.test.ts`, `points.integration.test.ts` |
@@ -102,6 +102,24 @@ Each line answers: *if a hostile researcher spent a day on this, what would they
 - `app.pending_auth_deletions` holds a deleted person's user id **only** while Supabase has not yet
   confirmed removing their sign-in. It is the one value needed to finish the deletion, and the row is
   removed the moment Supabase confirms. Normally that is within the same request.
+
+## Consent and personal graph
+
+Optional first-party graph data is separate from public Q&A and defaults to off by purpose. The API
+checks active consent before writing a personal graph node; the database repeats the check through
+forced RLS. The system-owned projection function rechecks the event's active category before adding
+generated graph nodes or edges. A revoked choice blocks future graph inserts and must be excluded by
+every future personalization reader. The owner can still inspect and remove stored data after revocation. Consent
+history allows API-role reads and inserts only, never edits or deletes; account deletion cascades it.
+
+Known gaps: the finite question recommender enforces feed, search-history, and reading-history
+consent. An owner-only graph insights route runs bounded PageRank, personalized PageRank, label
+propagation, and graph recommendation over active categories; this is not global graph analytics.
+The graph projection is limited to question interactions. Signal-event expiry is enforced
+by an hourly, narrow definer purge function, but restore/retention drills are still pending. Partner
+sharing, enterprise outputs, differential privacy, and named-recipient authorization are not
+implemented. The JSON export covers documented content and interaction categories; re-audit it
+whenever a user-linked table is added.
 
 ## Known gaps
 

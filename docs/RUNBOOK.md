@@ -19,7 +19,7 @@ in the same commit.
 | What | Command |
 |---|---|
 | Start the local database (creates it the first time) | `npm run db:start` |
-| Re-apply the schema after editing `db/schema.sql` | `npm run db:apply` |
+| Apply new migrations to the local database (`db/migrations`) | `npm run db:apply` |
 | Run the local sign-in stand-in (replaces Google + Supabase Auth) | `npm run dev:auth` |
 | Run the API against the local stand-in (no accounts needed) | `npm run dev:api:local` |
 | Run the API against your real Supabase project (values in `.local/api.env`) | `npm run dev:api` |
@@ -93,28 +93,125 @@ the Home Screen.
 
 - **Browser tests** (`npm run test:e2e`) drive the production build in Chromium and WebKit
   against the real API and the sign-in stand-in, with axe, every width from 320 to 1280 and tap
-  targets. `AUDIT_SHOTS=1` also saves screenshots. They need the local database, and they write to
-  it: test people, questions, answers, a moderator and a blocked account pile up there with each
-  run. That is harmless locally, and the tests make fresh names each run.
-  Never point them at the real Supabase project.
+  targets. `AUDIT_SHOTS=1` also saves screenshots. One file per journey in `apps/web/e2e`
+  (`screens`, `answers`, `moderation`, `resilience`, `graph`), sharing `helpers.ts`.
+  Each run gets its own fresh database, `graphinity_e2e`, made by `scripts/e2e-api.mjs`
+  (dropped, created, migrated as a Supabase-shaped owner, new API login each time): nothing a
+  test writes outlives the run, and your development database is never touched. It starts the
+  local database server itself if it isn't running. Never point them at the real Supabase project.
 - **Lighthouse** (`npm run check:perf`) builds the site, serves it on port 4174 with the API on
   3000, and measures it like a visitor would. It refuses to start if something already uses either
   port, since it would measure that instead.
 
 When adding a rule that matters, break it on purpose, confirm a test fails, and then restore it.
 
-To commit and push, use `sh scripts/ship.sh <message-file> <paths…>`. It runs every check first,
-commits only the listed paths, and pushes only if the floor guard agrees. It refuses when other
-files have changes, because the checks would then have tested something other than the commit:
-list them too, or stash them first.
+## Changing the code: branches and pull requests
+
+`main` changes only through pull requests, merged on GitHub once every check has passed
+(docs/plans/architecture-migration.md, phase 0).
+
+1. **Ship a change:** `sh scripts/ship.sh <message-file> <paths…>`.
+   - It runs every check first, then commits only the listed paths (`.` for all of them).
+   - It refuses when other files have changes, because the checks would then have tested something
+     other than the commit: list them too, or stash them first.
+   - From `main`, it starts a branch named after the message's first line (`change/<date>-<words>`).
+     On a branch, it adds the commit there: one pull request can hold several one-concern commits.
+   - It pushes the branch only if the floor guard agrees, and prints the pull request link.
+2. **Open the pull request** from that link. CI runs on it: format, lint, types, tests, migrations,
+   build, browsers, scanners.
+3. **Merge on GitHub** with **Rebase and merge**, once every check is green. That keeps each commit
+   and its full message, which are part of the record. Then delete the branch (GitHub offers to).
+4. **Back on your computer:** `git switch main && git pull --ff-only`. `ship.sh` refuses to start a
+   new branch from an out-of-date `main`.
+
+Once on a new computer: `git config blame.ignoreRevsFile .git-blame-ignore-revs`, so `git blame`
+skips formatting-only commits.
 
 ## Schema changes
 
-- Edit `db/schema.sql`. It must stay safe to run twice and additive only: add, never rename or
-  drop in the same release as the code that stops using something.
-- Bump the version in the `INSERT INTO app.schema_meta` line (now 16).
+- Add a numbered file to `db/migrations` (how, and the rules, in its README). Never edit one that
+  has shipped; CI refuses it.
+- Removing or renaming takes two releases (expand, then contract); the lint refuses it otherwise.
+- If the API depends on the change, raise the version in `app.schema_meta` (now 16).
 - Every new table needs `ENABLE` and `FORCE ROW LEVEL SECURITY`, explicit grants to `app_api`,
   and policies. The integration test fails if RLS is missing.
+
+## Kill switches (feature flags)
+
+Parts that can be switched off without a deploy, from the Supabase **SQL Editor**. Every server
+picks a change up within 30 seconds and logs `feature flag changed`. Off is always a working state.
+
+| Flag | Off means |
+|---|---|
+| `embeddings` | No calls to Cloudflare Workers AI; duplicate and similar-question matching by words only |
+| `push` | No notifications to devices; everything still shows on the site |
+
+```sql
+UPDATE app.feature_flags SET enabled = false, note = 'Cloudflare errors, 2026-10-21', updated_at = now()
+WHERE name = 'embeddings';
+SELECT name, enabled, note, updated_at FROM app.feature_flags;
+```
+
+The API can read the flags but never change them. If the database can't be reached, servers keep
+the last values they read. A new flag is a migration (see `0002_feature_flags.sql`) plus its name
+in `apps/api/src/flags.ts`.
+
+## Consent and personal graph
+
+The API drains up to 100 pending personal graph events immediately at startup and every 15 seconds.
+Successful batches log only the projected count; failures log a sanitized error kind and are retried
+on the next pass. The database function uses `SKIP LOCKED`, so multiple API instances may drain in
+parallel. Once a minute the API logs aggregate queue depth and the oldest event age. A backlog older
+than five minutes is a warning; configure the hosting provider's log alert for
+`personal graph projection queue lag exceeded five minutes`. This is a structured-log warning, not
+a built-in SLO dashboard or paging integration. Signal expiry still runs hourly; expired evidence
+edges cascade when their source events are deleted.
+
+Migration `0003_consent_controls.sql` adds the purpose inventory, private current settings, and an
+append-only audit table. Optional categories default off. Migration `0004_personal_knowledge_graph.sql`
+adds user-owned graph records. The database enforces RLS and refuses graph inserts unless the
+category is enabled; disabling a choice prevents future writes and personalization use. Existing
+records stay visible to their owner for inspection and removal. The API currently offers individual
+node deletion, and account deletion cascades all consent and graph records.
+
+Personal signal events expire within 365 days. `interaction_history` captures typed question, answer,
+selection, helpful, and report actions without content text. Separate `search_history` stores opted-in
+search text, and `reading_history` stores opted-in question identifiers (not reading duration). AI
+embeddings and background backfill require `ai_personalization`; revoking it clears the account’s
+stored question vectors and removes them from semantic search. Revocation stops future capture; events
+remain visible and removable by their owner. The API runs a narrow
+database-owned purge function
+on startup and hourly; it deletes only expired events and logs only the number removed. If the purge
+fails, it retries on the next hourly run and does not affect requests.
+
+To check schema readiness, inspect `GET /health` for schema version 29. Do not manually edit a
+user's consent rows in SQL; a manual change bypasses the user's authenticated action and audit flow.
+For incident response, the owner can turn off the `embeddings`, `push`, or `recommendations` kill
+switches as above. Turning off recommendations stops the scoring query globally; per-user consent
+remains an independent control.
+Consent categories are not feature flags: disabling consent is per user and must be respected by
+every future collector and recommender at the data-use boundary.
+
+New routed questions have a seven-second recipient-only pass/undo window. The selected routing score,
+field expertise weight, country-based local-time fit and diversity fit are saved with algorithm
+version 1 and returned only to the recipient. Older routes have null snapshots. See `docs/GRAPH.md`
+for the score definition and complexity notes.
+
+The finite `For you` list uses `feed_personalization` as its own default-off choice. `feed-rrf-v2`
+fuses bounded PostgreSQL source rankings for selected fields, lexical search matches, related
+questions from consented views, and recency using reciprocal-rank fusion (`1 / (60 + rank)`). Each
+result explains its strongest source; no click or engagement optimization is used, and the response
+is not retained. Revoking search or reading consent immediately removes that source from the query.
+The bounded 2,450-candidate in-process algorithm benchmark is `node scripts/benchmark-recommendations.mjs`;
+it excludes database and HTTP latency. Changing the formula requires a version change and evaluation
+against judged fixtures.
+
+Current limitations: graph nodes are user-entered/imported records; purchase, travel, and learning
+event capture are not wired. Feed RRF is a deterministic rank-fusion algorithm, not a trained or
+adaptive model. It has synthetic benchmark latency but no production DB/API latency or relevance
+measurement. Partner sharing, enterprise aggregate products, and differential privacy are not
+implemented. Routing and recommendation values are retrieval scores, not calibrated predictions;
+ranking changes require a new algorithm version and judged-data evaluation.
 
 ## Deploy
 
@@ -122,8 +219,9 @@ Order matters: **database, then server, then website.** A website that needs a n
 go live before that API does. The owner's click-by-click steps are in SETUP-ACCOUNTS.md (Parts G–I);
 this is the order and what to check.
 
-1. **Database.** Apply `db/schema.sql` in the Supabase SQL editor (safe to run again). Check the
-   result says the new version (`SELECT version FROM app.schema_meta`).
+1. **Database.** `npm run db:migrate:remote`, with the owner's connection in
+   `.local/migrate.env` (SETUP-ACCOUNTS.md, Part I). It prints each migration it applied and the
+   schema version. Not the SQL editor any more: the runner keeps the record of what ran.
 2. **API login role**, once per environment, with a password generated on your computer and stored
    only in Render: `CREATE ROLE graphinity_api LOGIN PASSWORD '…' IN ROLE app_api;`
 3. **Server on Render** from `render.yaml` (free plan, Singapore; deploys only after CI passes).
@@ -141,8 +239,8 @@ this is the order and what to check.
    `VITE_SUPABASE_PUBLISHABLE_KEY`, and `VITE_GOOGLE_CLIENT_ID` in that Pages environment. The
    command first creates the neutral `dist`, then stamps a copy into `dist-pages`; missing or
    invalid deployment values fail the build instead of shipping a blank page. These five values
-   are public configuration only, not secrets. Functions come from `/functions` (question link
-   previews and the sitemap; only `/q/*` and `/sitemap.xml` run them, per the built `_routes.json`).
+   are public configuration only, not secrets. Functions come from `apps/web/functions`, inside the Root directory, because Cloudflare looks for
+   `functions/` there (question link previews, the readable question page, and the live sitemap; only `/q/*` and `/sitemap.xml` run them, per the built `_routes.json`).
    In the Pages project's settings choose **Fail open**, so pages still load if the free daily
    allowance of 100,000 Function requests is ever used up. For the one-build promotion flow, run
    the neutral build from the repository root and stamp each environment with
@@ -153,5 +251,8 @@ this is the order and what to check.
 8. **Check live**: sign in with Google (the screen should name the site), ask, answer from a second
    account, pick, turn on notifications on a phone and receive one, report and review, delete a
    test account. At 320, 375 and 430 wide plus desktop, light and dark. Response headers,
-   `<site>/robots.txt`, `<site>/sitemap.xml`, and the link preview in a chat app.
+   `<site>/robots.txt`, `<site>/sitemap.xml`, `<site>/llms.txt`, and the link preview in a chat app.
+   To see a question page as a crawler does (no scripts): `curl -s <site>/q/<id>` shows the question and its
+   answers inside `<div id="root">`. To let Gemini answer from Graphinity, remove `Google-Extended`
+   from `TRAINING_CRAWLERS` in `apps/web/seo.ts` (it also allows Gemini training).
 9. **Google Search Console**: add the site and submit the sitemap.

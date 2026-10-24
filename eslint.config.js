@@ -11,6 +11,7 @@ export default tseslint.config(
     ignores: [
       '**/dist/**',
       '**/dist-local/**',
+      '**/dist-pages/**',
       '**/node_modules/**',
       '.local/**',
       '**/coverage/**',
@@ -42,7 +43,7 @@ export default tseslint.config(
   // The notification worker runs in the browser as a service worker.
   { files: ['apps/web/public/sw.js'], languageOptions: { globals: globals.serviceworker } },
   // The keep-awake Cloudflare Worker (module syntax, Workers runtime).
-  { files: ['workers/**/*.js', 'functions/**/*.ts'], languageOptions: { globals: globals.serviceworker } },
+  { files: ['workers/**/*.js', 'apps/web/functions/**/*.ts'], languageOptions: { globals: globals.serviceworker } },
 
   // The website: browser globals, React hooks rules, accessibility rules.
   {

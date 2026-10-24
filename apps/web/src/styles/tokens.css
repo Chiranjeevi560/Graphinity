@@ -102,16 +102,16 @@
   --red: var(--status-danger);
   --red-text: var(--status-danger);
   /* Red text on a grey fill (destructive buttons). */
-  --red-on-fill: #c00014;
+  --red-on-fill: oklch(0.5081 0.2070 26.88);
   /* A shade deeper than the spec's green, so it holds 4.5:1 on the picked
      answer's green-tinted card too (test/contrast.test.ts). */
   --green-text: oklch(0.5 0.145 158);
   /* The picked answer's card: the consensus green, faintly, over the surface. */
   --green-tint: oklch(0.52 0.145 158 / 0.08);
   /* Medal names as text: each checked at 4.5:1 (test/contrast.test.ts). */
-  --medal-gold: #8a6100;
-  --medal-silver: #5b6470;
-  --medal-bronze: #8e4a1c;
+  --medal-gold: oklch(0.5221 0.1082 79.73);
+  --medal-silver: oklch(0.4998 0.0222 255.62);
+  --medal-bronze: oklch(0.4846 0.1086 50.96);
   --material: var(--surface-glass);
   --material-solid: var(--surface-canvas);
   --shadow-card: 0 1px 2px oklch(0.15 0.01 255 / 0.04), 0 8px 24px oklch(0.15 0.01 255 / 0.04);
@@ -120,11 +120,11 @@
   /* Behind a dialog: dims the page so the task in front is clear. */
   --scrim: oklch(0 0 0 / 0.25);
   /* The logo's own colour, the same as the app icons (the owner kept the mark). */
-  --brand: #5856d6;
+  --brand: oklch(0.5295 0.1910 278.34);
   /* Google's sign-in button must use Google's own colours (their branding rules). */
-  --google-surface: #ffffff;
-  --google-label: #1f1f1f;
-  --google-edge: #747775;
+  --google-surface: oklch(1 0 0);
+  --google-label: oklch(0.23929 0 0);
+  --google-edge: oklch(0.56604 0.00472 157.095);
 }
 
 @media (min-resolution: 2dppx) {
@@ -157,20 +157,20 @@
     --status-variance-text: var(--status-variance);
     --red: var(--status-danger);
     --red-text: var(--status-danger);
-    --red-on-fill: #ffa39d;
+    --red-on-fill: oklch(0.8058 0.1103 23.86);
     --green-text: var(--status-consensus);
     --green-tint: oklch(0.71 0.14 158 / 0.08);
-    --medal-gold: #ffd60a;
-    --medal-silver: #c7ccd4;
-    --medal-bronze: #e8a87c;
+    --medal-gold: oklch(0.8849 0.1805 94.78);
+    --medal-silver: oklch(0.8437 0.0124 259.82);
+    --medal-bronze: oklch(0.7823 0.0957 55.34);
     --material: var(--surface-glass);
     --material-solid: var(--surface-card);
     --shadow-card: inset 0 1px 0 oklch(1 0 0 / 0.07);
     --scrim: oklch(0 0 0 / 0.5);
-    --brand: #5e5ce6;
-    --google-surface: #131314;
-    --google-label: #e3e3e3;
-    --google-edge: #8e918f;
+    --brand: oklch(0.5564 0.2032 278.15);
+    --google-surface: oklch(0.18717 0.002 286.205);
+    --google-label: oklch(0.91583 0 0);
+    --google-edge: oklch(0.65354 0.00455 157.123);
   }
 }
 
