@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { questionHead, questionPage, sitemap, type QuestionPage, type ShareEnv } from '../share.ts';
+import { questionBody, questionHead, questionPage, sitemap, type QuestionPage, type ShareEnv } from '../share.ts';
 
 const SITE = 'https://graphinity.pages.dev';
 // The real page head, as the build makes it.
@@ -222,5 +222,53 @@ describe('the sitemap function', () => {
         )
       ).text(),
     ).toBe('STATIC SITEMAP');
+  });
+});
+
+describe('the question, readable before any script runs (for crawlers that never run one)', () => {
+  const agreeing: QuestionPage = {
+    ...page(question, answers, { answerId: '8' }),
+    consensus: {
+      confidence: 0.55,
+      clusters: [
+        { currency: 'AED', lowMinor: 120000, highMinor: 125000, share: 0.67, answers: 2 },
+        { currency: 'AED', lowMinor: 0, highMinor: 0, share: 0.33, answers: 1 },
+      ],
+    },
+  };
+
+  it('fills the page with the question, the answers in order, and the asker’s pick', () => {
+    const out = questionHead(html, agreeing, SITE);
+    const root = /<div id="root">([\s\S]*?)<\/div>\s*<\/body>|<div id="root">([\s\S]*)/.exec(out)?.[0] ?? '';
+    expect(root).toContain('<h1>How do I import a watch into the UAE?</h1>');
+    expect(root).toContain('<p>Bought in Geneva.<br>Shipping to Dubai.</p>');
+    expect(root.indexOf('answer-7')).toBeLessThan(root.indexOf('answer-8'));
+    expect(root).toMatch(/<li id="answer-8"><p><strong>Picked by the asker/);
+    expect(root).not.toMatch(/<li id="answer-7"><p><strong>Picked/);
+    expect(root).toContain('@vikram');
+    expect(root).toContain('<h2>2 answers</h2>');
+  });
+
+  it('says how far the answers agree, in words, and uses that as the description', () => {
+    const out = questionHead(html, agreeing, SITE);
+    expect(out).toContain('<h2>What the answers report</h2><p>People partly agree: ');
+    expect(/<meta name="description" content="([^"]*)"/.exec(out)?.[1]).toMatch(/^People partly agree: /);
+  });
+
+  it('leaves out hidden answers, and keeps hostile text as text', () => {
+    const body = questionBody(
+      page({ ...question, title: '<img src=x onerror=alert(1)>' }, [
+        { id: '9', body: '</div><script>alert(1)</script>', createdAt: question.createdAt, answerer: { handle: 'x' } },
+        { id: '10', body: 'Hidden one', createdAt: question.createdAt, answerer: { handle: 'y' }, hidden: true },
+      ]),
+    );
+    expect(body).not.toMatch(/<script|<img/);
+    expect(body).toContain('&lt;/div&gt;&lt;script&gt;');
+    expect(body).not.toContain('Hidden one');
+    expect(body).toContain('<h2>1 answer</h2>');
+  });
+
+  it('says so when there are no answers yet', () => {
+    expect(questionBody(page())).toContain('<h2>0 answers</h2><p>No answers yet.</p>');
   });
 });

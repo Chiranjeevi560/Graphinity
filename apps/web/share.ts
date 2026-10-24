@@ -4,7 +4,7 @@
 // pure and tested, so the logic runs under our tests, not only at the host.
 import { securityHeaders } from './headers.ts';
 import { sitemapXml } from './seo.ts';
-import { questionPath } from './src/lib/questions.ts';
+import { consensusSentence, questionPath, type Consensus } from './src/lib/questions.ts';
 
 export interface ShareEnv {
   /** The static site, as built. */
@@ -35,6 +35,8 @@ export interface QuestionPage {
   question: Question;
   answers: PageAnswer[];
   selection: { answerId: string | null } | null;
+  /** How far the answers' amounts agree, once 3 report one. */
+  consensus?: Consensus | null;
 }
 
 /** Suggested answers listed for search engines besides the accepted one (Google reads a few). */
@@ -100,8 +102,12 @@ export function questionHead(html: string, page: QuestionPage, siteOrigin: strin
   const url = new URL(questionPath(q), siteOrigin).toString();
   const title = escapeHtml(`${q.title} – Graphinity`);
   const answers = q.answerCount === 1 ? '1 answer' : `${String(q.answerCount)} answers`;
+  // Where the answers agree on an amount, that is the line worth quoting.
+  const agreement = page.consensus ? consensusSentence(page.consensus) : '';
   const description = escapeHtml(
-    shorten(q.body || `${answers} from people who know ${q.field.name}. Ask once, reach people who’ve done it.`),
+    shorten(
+      agreement || q.body || `${answers} from people who know ${q.field.name}. Ask once, reach people who’ve done it.`,
+    ),
   );
   const setMeta = (doc: string, attr: 'name' | 'property', key: string, value: string) =>
     doc.replace(
@@ -122,7 +128,55 @@ export function questionHead(html: string, page: QuestionPage, siteOrigin: strin
   const json = qaPageJson(page, url);
   out = setMeta(out, 'name', 'robots', json ? 'index, follow, max-image-preview:large' : 'noindex, follow');
   if (json) out = out.replace('</head>', () => `<script type="application/ld+json">${json}</script>\n</head>`);
+  // The question itself, readable without running the app: most AI
+  // assistants' crawlers never run scripts, so without this they would see
+  // an empty page. The app replaces it when it starts (createRoot).
+  out = out.replace('<div id="root"></div>', () => `<div id="root">${questionBody(page)}</div>`);
   return out;
+}
+
+/** Most answers written into the page before the app starts; the app shows the rest. */
+const BODY_ANSWERS_MAX = 50;
+
+const paragraphs = (text: string) =>
+  text
+    .split(/\n{2,}/)
+    .map(p => p.trim())
+    .filter(Boolean)
+    .map(p => `<p>${escapeHtml(p).replace(/\n/g, '<br>')}</p>`)
+    .join('');
+
+const dateOnly = (iso: string) => escapeHtml(iso.slice(0, 10));
+
+/**
+ * The question, how far its answers agree, and the visible answers, as
+ * plain escaped HTML in the order the page shows them. Hidden answers never
+ * appear; the one the asker picked says so.
+ */
+export function questionBody(page: QuestionPage): string {
+  const q = page.question;
+  const visible = page.answers.filter(a => !a.hidden);
+  const picked = page.selection?.answerId ?? null;
+  const agreement = page.consensus ? consensusSentence(page.consensus) : '';
+  const answers = visible
+    .slice(0, BODY_ANSWERS_MAX)
+    .map(
+      a =>
+        `<li id="answer-${escapeHtml(a.id)}">${a.id === picked ? '<p><strong>Picked by the asker as the answer that helped</strong></p>' : ''}${paragraphs(a.body)}<p>@${escapeHtml(a.answerer.handle)} · <time datetime="${escapeHtml(a.createdAt)}">${dateOnly(a.createdAt)}</time></p></li>`,
+    );
+  const count = visible.length === 1 ? '1 answer' : `${String(visible.length)} answers`;
+  return [
+    '<main class="page"><article>',
+    `<h1>${escapeHtml(q.title)}</h1>`,
+    `<p>${escapeHtml(q.field.name)} · Asked by @${escapeHtml(q.asker.handle)} · <time datetime="${escapeHtml(q.createdAt)}">${dateOnly(q.createdAt)}</time></p>`,
+    q.body ? paragraphs(q.body) : '',
+    '</article>',
+    agreement
+      ? `<section aria-label="What the answers report"><h2>What the answers report</h2><p>${escapeHtml(agreement)}</p></section>`
+      : '',
+    `<section aria-label="${count}"><h2>${count}</h2>${answers.length ? `<ol>${answers.join('')}</ol>` : '<p>No answers yet.</p>'}</section>`,
+    '</main>',
+  ].join('');
 }
 
 function headersFor(env: ShareEnv): Headers {
