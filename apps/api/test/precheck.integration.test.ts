@@ -2,6 +2,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { embedMissing } from '../src/backfill.ts';
 import { localEmbedder, type Embedder } from '../src/embeddings.ts';
+import { speller, trainSpelling } from '../src/ml/spelling.ts';
 import { startApp, type TestApp } from './helpers/app.ts';
 import { must } from './helpers/must.ts';
 
@@ -376,6 +377,58 @@ describe('without meaning (out of the free allowance, or offline)', () => {
       expect(rows).toEqual([{ has: true }]);
     } finally {
       await off.close();
+    }
+  });
+});
+
+describe('with Graphinity’s own spelling model', () => {
+  it('finds a question through typos, while searching what was typed as typed', async () => {
+    const learned = speller(
+      trainSpelling(
+        Array.from({ length: 5 }, () => 'customs duty on a camera lens at the airport'),
+        { lambda: 4, mu: 5, minCount: 2, keep: -1000 },
+      ),
+    );
+    const app = await startApp(() => Date.now(), { embedder, speller: learned });
+    try {
+      const p = await app.person();
+      expect(
+        (
+          await app.call('POST', '/me/profile', p.token, {
+            handle: 'spell.one',
+            country: 'IN',
+            fields: ['imports-customs'],
+            adult: true,
+          })
+        ).statusCode,
+      ).toBe(201);
+      expect(
+        (
+          await app.call('PUT', '/me/consents', p.token, {
+            choices: [{ category: 'ai_personalization', enabled: true }],
+          })
+        ).statusCode,
+      ).toBe(200);
+      const asked = await app.call('POST', '/questions', p.token, {
+        title: 'Customs duty on a camera lens',
+        field: 'imports-customs',
+      });
+      expect(asked.statusCode).toBe(201);
+      const id = must(asked.json<{ question: { id: string } }>().question.id);
+      const check = async (title: string, token?: string) =>
+        (await app.call('POST', '/questions/precheck', token, { title })).json<Precheck>();
+
+      // Words only (a visitor: no meaning without consent): no typed word is in the question.
+      expect(await check('Cusotms for my camrea please')).toMatchObject({ verdict: 'related', questions: [{ id }] });
+      // With meaning: every word, once corrected, is in it, so it's shown even if meanings differ.
+      expect(await check('Cusotms duty camrea lens', p.token)).toMatchObject({
+        verdict: 'related',
+        questions: [{ id }],
+      });
+      // A word it doesn't know is searched as typed, never swapped for a guess.
+      expect(await check('Zxqvbn for my wjkdhf please')).toEqual({ verdict: 'clear', questions: [] });
+    } finally {
+      await app.close();
     }
   });
 });

@@ -140,7 +140,10 @@ and has an answer from the last 180 days; `related` from 0.72, or when a questio
 meaning is unavailable; `clear` otherwise, with no questions. Up to 5 are returned: a recent duplicate
 first, then those holding every word, then the rest in fused order. `similarity` is `null` for a match
 by words alone.
-Titles under 10 characters aren't searched. Hidden questions never appear. Meaning comes from
+Titles under 10 characters aren't searched. Hidden questions never appear. Once Graphinity's own
+spelling model serves (ADR 0011), typos widen the word search: "cusotms" also looks for "customs",
+except in the last word while it may still be half-typed, and a question holding every corrected
+word counts as holding every word typed. Corrections are not returned; the text is never changed. Meaning comes from
 Graphinity's own model (ADR 0010), computed on Graphinity's server; nothing is sent to an outside AI.
 Until a model has been promoted (or with the `embeddings` switch off) it answers by words only, and
 never says `duplicate`. Authentication is optional. A query's meaning is computed only when the

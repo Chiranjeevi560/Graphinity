@@ -10,6 +10,8 @@ import { blockedMessage, isBlocked } from './moderation.ts';
 import { consensus, reportedAmount, type Amount, type Claim } from '../consensus.ts';
 import { vectorLiteral, type Embedder } from '../embeddings.ts';
 import { fuse, shortlist, verdict } from '../precheck.ts';
+import type { Speller } from '../ml/spelling.ts';
+import { tokenize } from '../ml/text-embedding.ts';
 import { contactDetails, solicitationMessage } from '../solicitation.ts';
 import { answerRank, specificity, wilsonLowerBound } from '../reputation.ts';
 import { MAX_CHANGES, standing } from './points.ts';
@@ -114,7 +116,12 @@ const PRECHECK_POOL = 25;
 
 export function registerQuestionRoutes(
   app: FastifyInstance,
-  { db, events, embedder }: { db: Database; events: Events; embedder: Embedder | null },
+  {
+    db,
+    events,
+    embedder,
+    speller,
+  }: { db: Database; events: Events; embedder: Embedder | null; speller: Pick<Speller, 'correctDraft'> | null },
 ) {
   /** An embedding, or null when there's no embedder or it failed: callers fall back to words. */
   async function embed(text: string): Promise<number[] | null> {
@@ -242,8 +249,24 @@ export function registerQuestionRoutes(
         userId && (await consentEnabled(userId, 'ai_personalization'))
           ? await embed(questionText(title, cleanBody(body.details ?? '')))
           : null;
-      const words = prefixQuery(title);
+      // Graphinity's own spelling model (ADR 0011) widens the word search: "cusotms" also
+      // looks for "customs". What was typed is searched as typed too, and never changed.
+      const corrections = speller?.correctDraft(title) ?? [];
+      const words = prefixQuery(
+        title,
+        'any',
+        corrections.map(c => c.to),
+      );
       const everyWord = prefixQuery(title, 'all');
+      const fixed = new Map(corrections.map(c => [c.from, c.to]));
+      const everyCorrectedWord = corrections.length
+        ? prefixQuery(
+            tokenize(title)
+              .map(w => fixed.get(w) ?? w)
+              .join(' '),
+            'all',
+          )
+        : null;
       const found = await db.withUser(null, async q => {
         const byMeaning =
           vector && embedder
@@ -257,11 +280,13 @@ export function registerQuestionRoutes(
         const byWords = words
           ? (
               await q.query<{ id: string; every_word: boolean }>(
-                `SELECT q.id::text AS id, q.search @@ to_tsquery('english', $3) AS every_word
+                `SELECT q.id::text AS id,
+                q.search @@ to_tsquery('english', $3)
+                  OR coalesce(q.search @@ to_tsquery('english', $4::text), false) AS every_word
          FROM app.questions q, to_tsquery('english', $1) query
          WHERE q.search @@ query AND ($2::text IS NULL OR q.field = $2)
          ORDER BY ts_rank_cd(q.search, query) DESC, q.id DESC LIMIT ${String(PRECHECK_POOL)}`,
-                [words, field, everyWord],
+                [words, field, everyWord, everyCorrectedWord],
               )
             ).rows
           : [];

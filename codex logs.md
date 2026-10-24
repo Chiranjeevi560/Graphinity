@@ -182,3 +182,7 @@ All of the work recorded above is now committed on `change/20261024-one-line-of-
 ## Own models (2026-10-25, Claude)
 
 The learning platform's first subsystem is in: model registry, `model_training` consent and kill switch, Graphinity's own PPMI-SVD-SIF text embedding, a statistical quality gate, and a daily worker-thread training job. See ADR 0010 and the matching section in `project report.md`, including the honest benchmark result (the gate refused to promote on synthetic data where words already win).
+
+## Spelling correction (2026-10-25, Claude)
+
+Spelling correction learned from Graphinity's own posts is in, on the same branch, registry, consent and daily job as the text model: SymSpell candidates, optimal string alignment over graphemes, a noisy channel with a tuned "leave it as written" score, and a Wilson-bound precision gate on held-out posts. The precheck uses corrections only as extra search words. See ADR 0011 and the matching section in `project report.md`.

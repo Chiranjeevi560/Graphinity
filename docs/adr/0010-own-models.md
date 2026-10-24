@@ -98,8 +98,8 @@ free-tier pages; if training ever risks it, switch `model_training` off.
 - **Rollback**: switch `model_training` off to stop training; to stop serving a version,
   `UPDATE app.ml_models SET status = 'retired', retired_at = now() WHERE name = 'text-embedding'
   AND status = 'production';` and restart the API (it then falls back to words).
-- Not yet built (next steps of the owner's list): spelling correction from Graphinity's own
-  character statistics, learned ranking from picks and helpful marks (needs a feature store),
+- Spelling correction from Graphinity's own posts is ADR 0011. Not yet built (next steps of the
+  owner's list): learned ranking from picks and helpful marks (needs a feature store),
   spam and fraud models, the commerce graph and affiliate engine, enterprise analytics with
   k-anonymity and differential privacy. Each will reuse this registry, consent and gate pattern.
 - Two servers would each run training; the registry's lock prevents duplicate versions but not

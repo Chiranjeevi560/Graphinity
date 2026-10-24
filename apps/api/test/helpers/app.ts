@@ -4,6 +4,7 @@
 import { randomUUID } from 'node:crypto';
 import { createTokenVerifier } from '../../src/auth.ts';
 import type { Embedder } from '../../src/embeddings.ts';
+import type { Speller } from '../../src/ml/spelling.ts';
 import { createEvents } from '../../src/events.ts';
 import { buildServer, defaultLimits } from '../../src/server.ts';
 import { createTestDatabase } from './database.ts';
@@ -13,7 +14,12 @@ export const IP_HASH_KEY = Buffer.alloc(32, 9);
 
 export async function startApp(
   now: () => number,
-  opts: { vapidPublicKey?: string; embedder?: Embedder; recommendationsEnabled?: () => boolean } = {},
+  opts: {
+    vapidPublicKey?: string;
+    embedder?: Embedder;
+    speller?: Pick<Speller, 'correctDraft'>;
+    recommendationsEnabled?: () => boolean;
+  } = {},
 ) {
   const t = await createTestDatabase();
   const issuer = await testIssuer();
@@ -35,6 +41,7 @@ export async function startApp(
     events,
     vapidPublicKey: opts.vapidPublicKey ?? null,
     embedder: opts.embedder ?? null,
+    speller: opts.speller ?? null,
     ...(opts.recommendationsEnabled ? { recommendationsEnabled: opts.recommendationsEnabled } : {}),
     // Generous limits: these tests are about behaviour, not rate limiting.
     limits: {

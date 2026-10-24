@@ -145,7 +145,7 @@ picks a change up within 30 seconds and logs `feature flag changed`. Off is alwa
 |---|---|
 | `embeddings` | No calls to Cloudflare Workers AI; duplicate and similar-question matching by words only |
 | `push` | No notifications to devices; everything still shows on the site |
-| `model_training` | No daily training of Graphinity's own models; the serving model (if any) keeps serving |
+| `model_training` | No daily training of Graphinity's own models (text and spelling); serving versions keep serving |
 
 ```sql
 UPDATE app.feature_flags SET enabled = false, note = 'Cloudflare errors, 2026-10-21', updated_at = now()
@@ -225,8 +225,17 @@ SELECT version, status, reason, metrics ->> 'mrr' AS mrr, baseline ->> 'mrr' AS 
 FROM app.ml_models WHERE name = 'text-embedding' ORDER BY version DESC;
 ```
 
-Logs show `model training` with the status and scores (numbers only). To benchmark on this machine:
-`node scripts/benchmark-text-embedding.mjs 10000 50000`.
+Spelling correction (ADR 0011) trains in the same daily run; its versions are `name = 'spelling'`:
+
+```sql
+SELECT version, status, reason, metrics ->> 'precision' AS precision, metrics ->> 'recall' AS recall,
+       metrics ->> 'typos' AS test_typos, params ->> 'lambda' AS lambda, params ->> 'mu' AS mu, created_at
+FROM app.ml_models WHERE name = 'spelling' ORDER BY version DESC;
+```
+
+Logs show `model training` with the model, status and scores (numbers only). To benchmark on this
+machine: `node scripts/benchmark-text-embedding.mjs 10000 50000` and
+`node scripts/benchmark-spelling.mjs 2000 10000 40000`.
 
 ## Deploy
 
