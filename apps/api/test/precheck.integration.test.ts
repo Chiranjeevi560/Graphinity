@@ -194,6 +194,14 @@ describe('has it been asked already?', () => {
     expect(res.questions[0]?.similarity).toBeGreaterThanOrEqual(0.88);
   });
 
+  it('finds a question written in Telugu by its words, and not by fragments of them', async () => {
+    const q = await ask('దుబాయ్ నుండి వాచ్ తెస్తే కస్టమ్స్ డ్యూటీ ఎంత కట్టాలి?');
+    await answer(q);
+    expect((await precheck('కస్టమ్స్ డ్యూటీ ఎంత కట్టాలి')).questions.map(x => x.id)).toContain(q);
+    // Shares only single letters with it: split at vowel signs, this used to match.
+    expect((await precheck('తెలంగాణలో వర్షాలు ఎప్పుడు')).questions.map(x => x.id)).not.toContain(q);
+  });
+
   it('finds a question from half-typed words that mean little by themselves', async () => {
     const q = await ask('Is the BOE-II form needed for a courier parcel valued under 5000?');
     await answer(q);

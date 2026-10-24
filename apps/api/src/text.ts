@@ -51,7 +51,7 @@ export function textProblem(text: string, min: number, max: number): TextProblem
  * Null when there is nothing to match.
  */
 export function prefixQuery(raw: string, match: 'any' | 'all' = 'any'): string | null {
-  const words = [...new Set(raw.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [])]
+  const words = [...new Set(raw.toLowerCase().match(/[\p{L}\p{M}\p{N}]+/gu) ?? [])]
     .filter(w => codePoints(w).length >= 2)
     .slice(0, 12);
   return words.length ? words.map(w => `${w}:*`).join(match === 'all' ? ' & ' : ' | ') : null;
