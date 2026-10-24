@@ -42,7 +42,9 @@ Release artifacts are kept 90 days; images until deleted.
 - `.dockerignore` admits only what the Dockerfile copies: `.local` (secrets) can never reach a build.
 - Refuses to build without `RELEASE=<full commit hash>`.
 - Every pull request builds it, scans it (osv-scanner; Debian findings reported, npm findings at
-  high already fail `check:deps`), and starts it in production mode against CI's database.
+  high already fail `check:deps`), and starts it in production mode against CI's database, locked
+  down: read-only filesystem, every Linux capability dropped, no privilege escalation, and the
+  declared user must be `node`.
 
 ## Rolling back
 
