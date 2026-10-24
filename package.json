@@ -38,17 +38,17 @@
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
     "@eslint/js": "9.39.5",
-    "@playwright/test": "1.63.0",
-    "@size-limit/file": "14.1.0",
+    "@playwright/test": "1.64.0",
+    "@size-limit/file": "14.2.0",
     "@vitest/coverage-v8": "5.0.3",
     "eslint": "9.39.5",
     "eslint-plugin-jsx-a11y": "6.10.2",
     "eslint-plugin-react-hooks": "7.1.1",
     "globals": "17.13.0",
     "lighthouse": "13.5.0",
-    "prettier": "3.9.9",
-    "size-limit": "14.1.0",
-    "typescript-eslint": "8.71.0"
+    "prettier": "3.9.10",
+    "size-limit": "14.2.0",
+    "typescript-eslint": "8.71.1"
   },
   "size-limit": [
     {
