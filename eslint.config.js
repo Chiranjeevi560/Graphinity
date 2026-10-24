@@ -11,6 +11,7 @@ export default tseslint.config(
     ignores: [
       '**/dist/**',
       '**/dist-local/**',
+      '**/dist-pages/**',
       '**/node_modules/**',
       '.local/**',
       '**/coverage/**',
