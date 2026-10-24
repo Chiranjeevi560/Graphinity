@@ -132,3 +132,27 @@ export function timeAgo(iso: string, now: number): string {
   if (days < 30) return relative.format(-days, 'day');
   return dateFormat.format(new Date(iso));
 }
+
+const answersWord = (n: number) => (n === 1 ? '1 answer' : `${String(n)} answers`);
+
+/**
+ * The agreement bar in one sentence, for readers who don't see the bar: search
+ * snippets, AI assistants citing the page, and the page before its script
+ * runs. "Most people agree: ₹95,000–₹96,000 (67%, 2 answers). Also reported:
+ * ₹1,40,000 (33%, 1 answer). From 3 answers that give an amount, weighed by
+ * each person's record in this field." The same words as the bar's.
+ */
+export function consensusSentence(consensus: Consensus): string {
+  const part = (c: Consensus['clusters'][number]) =>
+    `${formatRange(c.lowMinor, c.highMinor, c.currency)} (${String(Math.round(c.share * 100))}%, ${answersWord(c.answers)})`;
+  const [first, ...rest] = consensus.clusters;
+  if (!first) return '';
+  const total = consensus.clusters.reduce((n, c) => n + c.answers, 0);
+  return [
+    `${agreementWords(consensus.confidence)}: ${part(first)}.`,
+    rest.length ? `Also reported: ${rest.map(part).join('; ')}.` : '',
+    `From ${answersWord(total)} that give an amount, weighed by each person’s record in this field.`,
+  ]
+    .filter(Boolean)
+    .join(' ');
+}

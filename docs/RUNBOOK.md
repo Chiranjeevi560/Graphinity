@@ -251,5 +251,8 @@ this is the order and what to check.
 8. **Check live**: sign in with Google (the screen should name the site), ask, answer from a second
    account, pick, turn on notifications on a phone and receive one, report and review, delete a
    test account. At 320, 375 and 430 wide plus desktop, light and dark. Response headers,
-   `<site>/robots.txt`, `<site>/sitemap.xml`, and the link preview in a chat app.
+   `<site>/robots.txt`, `<site>/sitemap.xml`, `<site>/llms.txt`, and the link preview in a chat app.
+   To see a question page as a crawler does (no scripts): `curl -s <site>/q/<id>` shows the question and its
+   answers inside `<div id="root">`. To let Gemini answer from Graphinity, remove `Google-Extended`
+   from `TRAINING_CRAWLERS` in `apps/web/seo.ts` (it also allows Gemini training).
 9. **Google Search Console**: add the site and submit the sitemap.
