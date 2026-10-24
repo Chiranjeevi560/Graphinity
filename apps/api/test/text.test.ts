@@ -55,6 +55,9 @@ describe('matching while typing', () => {
   it('can ask for all of the words instead of any of them', () => {
     expect(prefixQuery('Importing a watch to Dub', 'all')).toBe('importing:* & watch:* & to:* & dub:*');
     expect(prefixQuery('visa & work:* | (permit)', 'all')).toBe('visa:* & work:* & permit:*');
+    // Indian scripts write vowel signs as combining marks: they stay inside the word.
+    expect(prefixQuery('తెలుగులో కస్టమ్స్ డ్యూటీ ఎంత?')).toBe('తెలుగులో:* | కస్టమ్స్:* | డ్యూటీ:* | ఎంత:*');
+    expect(prefixQuery('हिंदी में कस्टम ड्यूटी', 'all')).toBe('हिंदी:* & में:* & कस्टम:* & ड्यूटी:*');
   });
 
   it('lets nothing through that could change the query', () => {

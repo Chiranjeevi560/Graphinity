@@ -38,7 +38,7 @@ export function localEmbedder(): Embedder {
             text
               .normalize('NFC')
               .toLowerCase()
-              .match(/[\p{L}\p{N}]+/gu) ?? [];
+              .match(/[\p{L}\p{M}\p{N}]+/gu) ?? [];
           const grams = [...words, ...words.slice(1).map((w, i) => `${words[i] ?? ''} ${w}`)];
           for (const g of grams) {
             const h = createHash('sha256').update(g).digest();

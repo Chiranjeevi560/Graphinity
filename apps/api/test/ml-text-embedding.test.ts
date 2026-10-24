@@ -104,6 +104,11 @@ describe('the artifact', () => {
 });
 
 describe('tokenize', () => {
+  it('keeps words in Indian scripts whole: vowel signs are combining marks, part of the word', () => {
+    expect(tokenize('తెలుగులో కస్టమ్స్ డ్యూటీ ఎంత?')).toEqual(['తెలుగులో', 'కస్టమ్స్', 'డ్యూటీ', 'ఎంత']);
+    expect(tokenize('हिंदी में कस्टम ड्यूटी')).toEqual(['हिंदी', 'में', 'कस्टम', 'ड्यूटी']);
+  });
+
   it('splits on anything that is not a letter or digit, in any script, lowercased', () => {
     expect(tokenize('Customs: ₹95,000 at Chennai — BOE-II? 日本')).toEqual([
       'customs',

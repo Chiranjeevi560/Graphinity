@@ -56,7 +56,7 @@ export function tokenize(text: string): string[] {
     text
       .normalize('NFC')
       .toLowerCase()
-      .match(/[\p{L}\p{N}]+/gu) ?? []
+      .match(/[\p{L}\p{M}\p{N}]+/gu) ?? []
   );
 }
 
