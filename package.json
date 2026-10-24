@@ -16,7 +16,7 @@
     "db:migrate:remote": "node --env-file=.local/migrate.env apps/api/src/migrate-main.ts",
     "dev:api": "npm --workspace apps/api run dev",
     "dev:web": "npm --workspace apps/web run dev",
-    "typecheck": "npm --workspaces run typecheck && tsc -p functions --noEmit && tsc -p apps/web/e2e --noEmit",
+    "typecheck": "npm --workspaces run typecheck && tsc -p apps/web/functions --noEmit && tsc -p apps/web/e2e --noEmit",
     "test": "npm --workspaces --if-present run test",
     "build": "npm --workspaces run build",
     "dev:auth": "DEV_AUTH_SECRET_KEY=dev_local_secret_0123456789 node scripts/dev-auth.mjs",

@@ -1,6 +1,6 @@
 // What a link to one question shows before any script runs: its own title
 // and description for search engines and chat apps (which don't run the
-// page). Used by the Cloudflare Pages Functions in /functions; kept here,
+// page). Used by the Cloudflare Pages Functions in apps/web/functions; kept here,
 // pure and tested, so the logic runs under our tests, not only at the host.
 import { securityHeaders } from './headers.ts';
 import { sitemapXml } from './seo.ts';

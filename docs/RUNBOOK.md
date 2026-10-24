@@ -239,8 +239,8 @@ this is the order and what to check.
    `VITE_SUPABASE_PUBLISHABLE_KEY`, and `VITE_GOOGLE_CLIENT_ID` in that Pages environment. The
    command first creates the neutral `dist`, then stamps a copy into `dist-pages`; missing or
    invalid deployment values fail the build instead of shipping a blank page. These five values
-   are public configuration only, not secrets. Functions come from `/functions` (question link
-   previews and the sitemap; only `/q/*` and `/sitemap.xml` run them, per the built `_routes.json`).
+   are public configuration only, not secrets. Functions come from `apps/web/functions`, inside the Root directory, because Cloudflare looks for
+   `functions/` there (question link previews, the readable question page, and the live sitemap; only `/q/*` and `/sitemap.xml` run them, per the built `_routes.json`).
    In the Pages project's settings choose **Fail open**, so pages still load if the free daily
    allowance of 100,000 Function requests is ever used up. For the one-build promotion flow, run
    the neutral build from the repository root and stamp each environment with
