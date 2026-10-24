@@ -178,3 +178,41 @@ The project targets $0 monthly bootstrap infrastructure. No current-price or quo
 - Synthetic CPU benchmark: 1,000 nodes / 5,000 edges, 5 warmups and 20 measured rounds: p50 41.584 ms, p95 45.975 ms, p99/max 46.826 ms, process max RSS 189,504 KiB. This measures the in-process graph algorithms on synthetic data only; it does not measure Postgres, HTTP, concurrent accounts, production traffic, or memory attributable solely to the operation.
 - Unit and database integration tests now cover algorithm determinism, ranking neighborhood, community separation, limits, active-consent filtering, cross-account endpoint refusal, revocation, system-only worker/status access, and malformed queue IDs. `npm run check:fast` and `npm run check:task` passed: API 421 tests (96.87% lines / 86.18% branches), web 200 tests (87.78% lines), 14 migrations, production builds and size limits.
 - All 22 configured Chromium/WebKit E2E journeys passed, including axe/responsive screen audits. Lighthouse passed at performance 97, accessibility 100, best practices 100, SEO 100, LCP 2,316 ms, CLS 0.000 and TBT 45 ms. Gitleaks reported no leaks; OSV and npm audit reported zero vulnerabilities; allowed-license scan passed. These checks do not replace a dedicated concurrency/load test, multi-user capacity validation, provider-level alert configuration, or production deployment. Feature store, training pipeline, model registry, trained recommendation models, semantic search, model-based personalized embeddings, and self-hosted text inference remain unimplemented.
+
+## Consolidation into one line of history (2026-10-24, Claude)
+
+Before this, Graphinity existed in seven copies: `main` (16e9dfb), my unmerged pull request #1 and three branches stacked on it, uncommitted work by Codex in the main checkout, and four GitHub Copilot worktrees (`/Users/Chiranjeevi/copilot-worktrees/graphinity/*`) with uncommitted changes built on the old single `db/schema.sql`. Cloudflare Pages could not build `main`.
+
+Now on `change/20261024-one-line-of-history`, on top of `main`, in order:
+
+1. The Cloudflare build fix: the browser tests have their own TypeScript project and are no longer compiled into the website (reproduced Cloudflare's 39 errors with a fresh clone built from `apps/web`, then the same steps passed).
+2. Pull request #1 (branch-and-PR shipping, the migration plan, secret-scan fixes, browser-test fixes for WebKit and Firefox, Lighthouse in CI).
+3. Numbered migrations with CI drift checks; removal of `/questions/similar`.
+4. The API container image and release workflow; browser tests split by journey, each run on its own fresh database.
+5. A `.gitleaksignore` entry for dummy values in a local Copilot checkpoint ref.
+6. The feature flags and all of Codex's consent / personal-graph / discovery work (migrations 0002-0014), recovered intact: another tool's `git stash` on 2026-10-23 had taken the edits to existing files out of the working tree.
+7. The CI image smoke test locked down (read-only, no capabilities), taken from Copilot's `container-smoke.mjs`.
+
+Copilot work reviewed and not brought in:
+
+| Worktree | Content | Why not |
+|---|---|---|
+| turbo-robot | Its own copy of migrations, Dockerfile, release workflow; `promote.yml`; Workers AI smoke script | Duplicates items 3-4 above; `promote.yml` calls deploy hooks and GitHub Environments that don't exist yet (Phase 4/5); the Workers AI check conflicts with the self-hosted direction. Its container lockdown was ported (item 7) |
+| supreme-adventure | `ml-platform.ts`, `knowledge-graph.ts`, operations/telemetry routes, edits to `db/schema.sql` | Interfaces and types with no implementation behind them (the owner's directive rules these out); built on the pre-migration schema file |
+| verbose-umbrella | `graph-algorithms.ts` (PageRank), `ml-platform.ts` wrapper, load-test script | PageRank duplicates Codex's tested `personal-graph-algorithms.ts`; the wrapper only labels the existing embedder |
+| musical-succotash | Single-flight embedding cache; PageRank convergence reporting | Real but small. The cache change also turns batched embedding calls into one call per text (more Cloudflare calls for the backfill); the PageRank change overlaps Codex's rewrite of `routing-score.ts`, and its seed de-duplication fixes a case that can't occur (seeds come from a primary key). Worth a separate, measured change |
+| symmetrical-succotash | First draft of the Cloudflare build fix | Superseded by item 1 |
+
+Every patch is kept for reference in this session's scratch folder and still in the worktrees themselves; nothing in them was deleted.
+
+Open question for the owner: migration 0009 puts the meaning-based duplicate check behind each asker's optional "AI personalization" consent and clears the embeddings of questions whose askers haven't opted in. Optional consents start off, so duplicate detection works by words for almost everyone. A question's public text is not personal data; this looks like a miscategorisation, but it's a product decision.
+
+Verification of the combined branch: see the next section once the browser suite and Lighthouse finish.
+
+### Verification of the combined branch (2026-10-24)
+
+- `npm run check:task` (through `ship.sh`, Node 24, local Postgres): typecheck including the browser tests' own project, lint, formatting, floor guard, 14 migrations lint-clean, API 421 tests, web 200 tests, builds, bundle budgets.
+- Browser suite, Chromium and WebKit: 21 of 22 passed on the first run. "answers that report amounts" failed once in WebKit: one of its three answers (the ₹96,000 one) was missing from the question page, though the test had seen it appear right after posting. The same test then passed twice in a row in WebKit. Not diagnosed: the failure's trace was overwritten by the re-run. Open; next step is to keep its trace on the next failure and read the answer's POST and the later GET.
+- Lighthouse: performance 98, accessibility 100, best practices 100, SEO 100, LCP 2,131 ms, CLS 0.000, TBT 37 ms.
+- Before Lighthouse could run, the local API refused to start: "password authentication failed for user graphinity_api". Two Copilot worktrees have their own `.local/api.env`; `scripts/db.sh start` creates the API login with a new random password when its checkout has no `api.env`, and all checkouts share one Postgres, so a Copilot run replaced the password. Restored to this checkout's value. Those two worktrees' logins will now fail instead; they are paused.
+- Not run here: Firefox (won't start on this Mac; CI runs it), the API image build and the release workflow (no Docker here; CI runs the image step), and the live Supabase migration.
