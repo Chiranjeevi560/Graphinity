@@ -20,6 +20,44 @@ async function createPerson(handle: string) {
 }
 
 describe('consent controls', () => {
+  it('asks once about improving search for everyone: any answer ends the asking, for good', async () => {
+    const person = await createPerson('consent.once');
+    const read = async () =>
+      (await h.call('GET', '/me/consents', person.token)).json<{
+        awaitingAnswer: string[];
+        categories: Array<{ name: string; enabled: boolean }>;
+      }>();
+    const first = await read();
+    expect(first.awaitingAnswer).toEqual(['search_improvement']);
+    expect(first.categories.find(c => c.name === 'search_improvement')?.enabled).toBe(false);
+    // "Not now" is an answer too.
+    expect(
+      (
+        await h.call('PUT', '/me/consents', person.token, {
+          choices: [{ category: 'search_improvement', enabled: false }],
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect((await read()).awaitingAnswer).toEqual([]);
+    // Changing their mind later, either way, never brings the question back.
+    for (const enabled of [true, false])
+      await h.call('PUT', '/me/consents', person.token, { choices: [{ category: 'search_improvement', enabled }] });
+    expect((await read()).awaitingAnswer).toEqual([]);
+  });
+
+  it('describes what really happens: nothing goes to an outside AI, and when reading time is measured', async () => {
+    const person = await createPerson('consent.text');
+    const categories = (await h.call('GET', '/me/consents', person.token)).json<{
+      categories: Array<{ name: string; dataDescription: string; recipients: string; policyVersion: number }>;
+    }>().categories;
+    const ai = categories.find(c => c.name === 'ai_personalization');
+    expect(ai?.recipients).toBe('Graphinity only. No outside AI service is used.');
+    expect(ai?.policyVersion).toBe(3);
+    expect(JSON.stringify(categories)).not.toMatch(/Cloudflare/);
+    expect(categories.find(c => c.name === 'reading_history')?.dataDescription).toMatch(/only if "improve search/);
+    expect(categories.find(c => c.name === 'search_improvement')?.dataDescription).toMatch(/nothing from before/);
+  });
+
   it('shows every purpose and defaults optional collection off', async () => {
     const person = await createPerson('consent.read');
     const response = await h.call('GET', '/me/consents', person.token);

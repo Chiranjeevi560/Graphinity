@@ -245,10 +245,8 @@ export function registerQuestionRoutes(
       const userId = req.user?.id;
       const field = body.field ?? null;
       if (userId && (await consentEnabled(userId, 'search_history'))) await saveSearchHistory(userId, title, field);
-      const vector =
-        userId && (await consentEnabled(userId, 'ai_personalization'))
-          ? await embed(questionText(title, cleanBody(body.details ?? '')))
-          : null;
+      // Meaning, on Graphinity's own server, for everyone (migration 0019).
+      const vector = await embed(questionText(title, cleanBody(body.details ?? '')));
       // Graphinity's own spelling model (ADR 0011) widens the word search: "cusotms" also
       // looks for "customs". What was typed is searched as typed too, and never changed.
       const corrections = speller?.correctDraft(title) ?? [];
@@ -676,9 +674,7 @@ export function registerQuestionRoutes(
       const detailsProblem = textProblem(details, LIMITS.details.min, LIMITS.details.max);
       if (detailsProblem) return refuseText(reply, 'details', detailsProblem);
       // Its meaning, for finding it again (a missed one is filled in later by the background job).
-      const vector = (await consentEnabled(user.id, 'ai_personalization'))
-        ? await embed(questionText(title, details))
-        : null;
+      const vector = await embed(questionText(title, details));
       let id: string | null;
       try {
         id = await db.withUser(user.id, async q => {

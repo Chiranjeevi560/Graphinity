@@ -1,6 +1,6 @@
 # ADR 0009: Consented personal graph analysis
 
-- **Status:** Accepted; implemented in `personal-graph-v1`. Its community detection, embeddings,
+- **Status:** Accepted; implemented in `personal-graph-v1`. (Migration 0009's gating of meaning-based matching behind `ai_personalization` is lifted by migration 0019, ADR 0015: meaning runs on Graphinity's own server.) Its community detection, embeddings,
   recommendation score and edge weighting are superseded by ADR 0012 (`personal-graph-v2`), after
   measurement found label propagation collapsing and the blended score mixing scales.
 - **Date:** 2026-10-22

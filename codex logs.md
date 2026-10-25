@@ -198,3 +198,7 @@ Routing decisions now record their factors (`app.route_factors`, system-only, 18
 ## Routing exploration (2026-10-25, Claude)
 
 Gated Thompson sampling for each wave's last place, from the routing model's Laplace posterior plus per-person effects updated from each person's record. It records reasons and propensities, has a weekly exploration cap (also in the database, locked), and automatic demotion by calibration in the monitor and the promotion gate. The `routing_exploration` switch is off by default. Chosen over ε-greedy, GLM-UCB, ungated Thompson and the spec's newcomer place in a 12-seed online simulation. See ADR 0014 and `project report.md`.
+
+## Search, part 1 (2026-10-25, Claude)
+
+Consent made accurate and purpose-based before any search data exists: the AI choice's Cloudflare text corrected and meaning opened to everyone (owner decision), a separate `search_improvement` purpose asked once through a one-time sheet, and dialog spacing fixed. ANN measured: the default `ef_search` misses 23% at 100k, and zero-padded storage wastes most of the space. See ADR 0015.

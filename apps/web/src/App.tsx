@@ -24,6 +24,8 @@ const Goodbye = lazy(() => import('./routes/Goodbye.tsx'));
 const NotFound = lazy(() => import('./routes/NotFound.tsx'));
 // Live updates only matter once signed in: loaded then, not by every reader.
 const LiveBanner = lazy(() => import('./components/LiveBanner.tsx').then(m => ({ default: m.LiveBanner })));
+// Asked once, signed in only (ADR 0015): its own chunk, so readers never download it.
+const PrivacyUpdate = lazy(() => import('./components/PrivacyUpdate.tsx').then(m => ({ default: m.PrivacyUpdate })));
 // A gallery of the design system for reviewing it; never part of a production build.
 const Design = import.meta.env.DEV ? lazy(() => import('./routes/Design.tsx')) : null;
 
@@ -136,6 +138,13 @@ export function App() {
       {live && (
         <Suspense fallback={null}>
           <LiveBanner />
+        </Suspense>
+      )}
+      {/* Its own boundary: in a shared one, React hides everything (display: none) while a
+          sibling loads, which hid this open dialog in WebKit and left it stuck. */}
+      {live && (
+        <Suspense fallback={null}>
+          <PrivacyUpdate />
         </Suspense>
       )}
     </>

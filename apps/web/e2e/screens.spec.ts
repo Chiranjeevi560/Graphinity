@@ -1,5 +1,15 @@
 // Every screen, measured against the quality bar (helpers.ts, audit).
-import { audit, clearConsoleErrors, consoleErrors, expect, realErrors, reports, runWords, test } from './helpers.ts';
+import {
+  answerPrivacyUpdateWhenAsked,
+  audit,
+  clearConsoleErrors,
+  consoleErrors,
+  expect,
+  realErrors,
+  reports,
+  runWords,
+  test,
+} from './helpers.ts';
 
 test.beforeEach(clearConsoleErrors);
 
@@ -117,9 +127,11 @@ test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
   await page.getByRole('button', { name: 'Imports & Customs' }).click();
   await page.getByText('I’m 18 or older').click();
   await audit(page, 'welcome 3: fields');
+  const answered = answerPrivacyUpdateWhenAsked(page);
   await page.getByRole('button', { name: 'Create profile' }).click();
 
   await expect(page.getByRole('link', { name: `Your profile, @${handle}` })).toBeVisible();
+  await answered.done;
   await expect(page.getByRole('link', { name: 'Ask a question' })).toBeVisible();
   await audit(page, 'home (signed in)');
 
@@ -211,8 +223,10 @@ test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
   await page.getByRole('button', { name: 'Continue' }).click();
   await page.getByRole('button', { name: 'Imports & Customs' }).click();
   await page.getByText('I’m 18 or older').click();
+  const answeredToo = answerPrivacyUpdateWhenAsked(page);
   await page.getByRole('button', { name: 'Create profile' }).click();
   await expect(page).toHaveURL(new RegExp(`${questionUrl}$`));
+  await answeredToo.done;
   await page
     .getByLabel('Your answer')
     .fill('Declare it on arrival and keep the Swiss export papers.\nDuty was 5% for me.');
