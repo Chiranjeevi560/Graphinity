@@ -239,6 +239,13 @@
 }
 .dialog-body {
   color: var(--label-secondary);
+  /* Paragraphs inside a dialog had no space between them: they read as one block. */
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.dialog-body strong {
+  color: var(--label);
 }
 .dialog-actions {
   display: flex;

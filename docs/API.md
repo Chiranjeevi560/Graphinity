@@ -146,9 +146,9 @@ except in the last word while it may still be half-typed, and a question holding
 word counts as holding every word typed. Corrections are not returned; the text is never changed. Meaning comes from
 Graphinity's own model (ADR 0010), computed on Graphinity's server; nothing is sent to an outside AI.
 Until a model has been promoted (or with the `embeddings` switch off) it answers by words only, and
-never says `duplicate`. Authentication is optional. A query's meaning is computed only when the
-signed-in account has enabled `ai_personalization`; anonymous and opted-out requests use word
-search. A signed-in query is saved only with separate `search_history` consent, at most once per exact
+never says `duplicate`. Authentication is optional. Meaning is computed for every request, signed in
+or not, on Graphinity's own server (ADR 0015, migration 0019); it no longer depends on
+`ai_personalization`. A signed-in query is saved only with separate `search_history` consent, at most once per exact
 query and field every five minutes, and expires within 365 days. No query is sent to a commercial partner.
 
 ### `GET /questions/:id`
@@ -342,6 +342,8 @@ In its first day an account can ask 3 questions and give 10 answers (429 `new_ac
 Returns the purpose inventory and current choices. Optional categories default to `enabled: false`.
 Each category includes its purpose, information description, retention statement, recipients, and
 policy version. `identity` is required to provide the account service and cannot be disabled here.
+`awaitingAnswer` lists the ask-once purposes (today `search_improvement`) the caller has never answered:
+the web app asks about them once, and any answer recorded through `PUT` removes them for good.
 
 ### `PUT /me/consents` (signed in, counts as a write)
 

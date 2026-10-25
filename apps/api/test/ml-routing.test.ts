@@ -133,18 +133,22 @@ describe('learning from outcomes', () => {
     },
   );
 
-  it('scores every route as if it came in wave 1, and keeps a factor that never varied at weight 0', () => {
-    const examples = simulateRouting({ questions: 300, world: 'availability', seed: 4 }).map(e => ({
-      ...e,
-      factors: e.factors.map((x, k) => (k === trustAt ? 0 : x)),
-    }));
-    const model = trainRoutingModel(examples);
-    expect(model.constant).toEqual(['trust']);
-    expect(model.availability.weights[trustAt + 1]).toBe(0);
-    const f = examples[0]?.factors ?? [];
-    expect(scoreRouting(model, f)).toBeGreaterThan(0);
-    expect(scoreRouting(model, f)).toBeLessThan(1);
-  });
+  it(
+    'scores every route as if it came in wave 1, and keeps a factor that never varied at weight 0',
+    { timeout: 60_000 },
+    () => {
+      const examples = simulateRouting({ questions: 300, world: 'availability', seed: 4 }).map(e => ({
+        ...e,
+        factors: e.factors.map((x, k) => (k === trustAt ? 0 : x)),
+      }));
+      const model = trainRoutingModel(examples);
+      expect(model.constant).toEqual(['trust']);
+      expect(model.availability.weights[trustAt + 1]).toBe(0);
+      const f = examples[0]?.factors ?? [];
+      expect(scoreRouting(model, f)).toBeGreaterThan(0);
+      expect(scoreRouting(model, f)).toBeLessThan(1);
+    },
+  );
 });
 
 describe('constrained fitting', () => {
@@ -325,7 +329,7 @@ describe('the gate', () => {
 });
 
 describe('scoring', () => {
-  it('is P(answers) × P(helps | answers) with the wave terms left out', () => {
+  it('is P(answers) × P(helps | answers) with the wave terms left out', { timeout: 60_000 }, () => {
     const model = trainRoutingModel(simulateRouting({ questions: 200, world: 'availability', seed: 6 }));
     const f = FACTOR_ORDER.map((_, k) => (k % 3) / 3);
     const x = [

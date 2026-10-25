@@ -333,8 +333,11 @@ test('asking something already answered offers those answers first without block
   await page.getByLabel('Your question').fill(title);
   const card = page.getByRole('region', { name: 'This was asked and answered recently' });
   const matches = page.getByRole('region', { name: 'Similar questions already asked' });
-  await expect(matches).toBeVisible();
-  await expect(matches.getByRole('link').filter({ hasText: title })).toHaveAttribute(
+  // Matching by meaning is on for everyone now (ADR 0015): the same question is offered first, in
+  // the "asked and answered" card when it's a recent duplicate, otherwise in the similar list.
+  const offered = card.or(matches);
+  await expect(offered.first()).toBeVisible();
+  await expect(offered.getByRole('link').filter({ hasText: title }).first()).toHaveAttribute(
     'href',
     new RegExp(`^${questionUrl.split('/').slice(0, 3).join('/')}`),
   );

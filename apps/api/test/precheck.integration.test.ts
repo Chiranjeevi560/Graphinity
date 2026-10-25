@@ -72,7 +72,7 @@ const precheck = async (title: string, field?: string, token = searcher) =>
   (await h.call('POST', '/questions/precheck', token, { title, ...(field ? { field } : {}) })).json<Precheck>();
 
 describe('has it been asked already?', () => {
-  it('does not send question content to the embedding provider without AI consent', async () => {
+  it('matches by meaning for everyone, on Graphinity’s own model, without the AI choice (migration 0019)', async () => {
     const person = await h.person();
     expect(
       (
@@ -85,19 +85,22 @@ describe('has it been asked already?', () => {
       ).statusCode,
     ).toBe(201);
     const beforePrecheck = embedCalls;
+    // Signed in without the AI choice, and a visitor: both get meaning.
     await h.call('POST', '/questions/precheck', person.token, {
       title: 'How do I clear a camera lens through customs at the airport?',
     });
-    expect(embedCalls).toBe(beforePrecheck);
+    await h.call('POST', '/questions/precheck', undefined, {
+      title: 'How do I clear a camera lens through customs at the airport?',
+    });
+    expect(embedCalls).toBe(beforePrecheck + 2);
     const response = await h.call('POST', '/questions', person.token, {
       title: 'How do I clear a camera lens through customs at the airport?',
       field: 'imports-customs',
     });
     const id = response.json<{ question: { id: string } }>().question.id;
-    expect((await h.t.owner.query('SELECT embedding FROM app.questions WHERE id = $1', [id])).rows).toEqual([
-      { embedding: null },
-    ]);
-    expect(await embedMissing(h.t.database, embedder)).toBe(0);
+    expect(
+      (await h.t.owner.query('SELECT embedding IS NOT NULL AS has FROM app.questions WHERE id = $1', [id])).rows,
+    ).toEqual([{ has: true }]);
   });
 
   it('records searches and question views only under their independent consents', async () => {
@@ -157,17 +160,9 @@ describe('has it been asked already?', () => {
     expect(rows).toEqual([{ model: embedder.model, has: true }]);
   });
 
-  it('clears stored question vectors as soon as AI consent is revoked', async () => {
+  it('keeps a question’s meaning when its asker turns the AI choice off: it no longer depends on it', async () => {
     const q = await ask('How do I declare a camera lens at customs in Mumbai?');
     const ownerToken = must(searcher, 'signed-in asker token');
-    expect(
-      (
-        await h.t.owner.query<{ has: boolean }>(
-          'SELECT embedding IS NOT NULL AS has FROM app.questions WHERE id = $1',
-          [q],
-        )
-      ).rows,
-    ).toEqual([{ has: true }]);
     expect(
       (
         await h.call('PUT', '/me/consents', ownerToken, {
@@ -177,13 +172,23 @@ describe('has it been asked already?', () => {
     ).toBe(200);
     expect(
       (
-        await h.t.owner.query<{ embedding: unknown; model: string | null }>(
-          'SELECT embedding, embedding_model AS model FROM app.questions WHERE id = $1',
+        await h.t.owner.query<{ has: boolean }>(
+          'SELECT embedding IS NOT NULL AS has FROM app.questions WHERE id = $1',
           [q],
         )
       ).rows,
-    ).toEqual([{ embedding: null, model: null }]);
-    searcher = (await member()).token;
+    ).toEqual([{ has: true }]);
+    // And it is found by meaning, for anyone: its own vector finds it first.
+    const own = (
+      await h.t.owner.query<{ v: string }>('SELECT embedding::text AS v FROM app.questions WHERE id = $1', [q])
+    ).rows[0]?.v;
+    const found = await h.t.database.withUser(null, tx =>
+      tx.query<{ id: string }>('SELECT id::text AS id FROM app.nearest_questions($1, $2, NULL, 5)', [
+        own,
+        embedder.model,
+      ]),
+    );
+    expect(found.rows[0]?.id).toBe(q);
   });
 
   it('offers an answered question asked the same way as the one to read first', async () => {
@@ -295,12 +300,20 @@ describe('has it been asked already?', () => {
 });
 
 describe('the background job', () => {
-  it('does nothing when every question has its meaning, and waits when Cloudflare can’t answer', async () => {
+  it('fills in any question’s missing meaning, whatever its asker chose about AI, and waits when the model can’t answer', async () => {
     while ((await embedMissing(h.t.database, embedder)) > 0) {
       /* catch up on this file's questions */
     }
     expect(await embedMissing(h.t.database, embedder)).toBe(0);
     const qid = await ask('What does the courier charge to clear a parcel of books in Delhi?');
+    // Meaning no longer depends on the AI choice (migration 0019): an asker who turned it off is embedded too.
+    expect(
+      (
+        await h.call('PUT', '/me/consents', must(searcher, 'asker token'), {
+          choices: [{ category: 'ai_personalization', enabled: false }],
+        })
+      ).statusCode,
+    ).toBe(200);
     expect(
       (
         await h.t.owner.query(
@@ -310,10 +323,8 @@ describe('the background job', () => {
           [qid],
         )
       ).rows,
-    ).toEqual([{ enabled: true }]);
-    await h.t.owner.query(
-      'UPDATE app.questions SET embedding = NULL, embedding_model = NULL WHERE embedding_model IS NOT NULL AND id = (SELECT max(id) FROM app.questions)',
-    );
+    ).toEqual([{ enabled: false }]);
+    await h.t.owner.query('UPDATE app.questions SET embedding = NULL, embedding_model = NULL WHERE id = $1', [qid]);
     const down: Embedder = {
       model: embedder.model,
       dims: embedder.dims,
@@ -321,6 +332,14 @@ describe('the background job', () => {
     };
     expect(await embedMissing(h.t.database, down)).toBe(0);
     expect(await embedMissing(h.t.database, embedder)).toBe(1);
+    expect(
+      (
+        await h.t.owner.query<{ model: string | null }>(
+          'SELECT embedding_model AS model FROM app.questions WHERE id = $1',
+          [qid],
+        )
+      ).rows,
+    ).toEqual([{ model: embedder.model }]);
   });
 });
 
@@ -389,46 +408,44 @@ describe('with Graphinity’s own spelling model', () => {
         { lambda: 4, mu: 5, minCount: 2, keep: -1000 },
       ),
     );
-    const app = await startApp(() => Date.now(), { embedder, speller: learned });
-    try {
-      const p = await app.person();
-      expect(
-        (
-          await app.call('POST', '/me/profile', p.token, {
-            handle: 'spell.one',
-            country: 'IN',
-            fields: ['imports-customs'],
-            adult: true,
-          })
-        ).statusCode,
-      ).toBe(201);
-      expect(
-        (
-          await app.call('PUT', '/me/consents', p.token, {
-            choices: [{ category: 'ai_personalization', enabled: true }],
-          })
-        ).statusCode,
-      ).toBe(200);
-      const asked = await app.call('POST', '/questions', p.token, {
-        title: 'Customs duty on a camera lens',
-        field: 'imports-customs',
-      });
-      expect(asked.statusCode).toBe(201);
-      const id = must(asked.json<{ question: { id: string } }>().question.id);
-      const check = async (title: string, token?: string) =>
-        (await app.call('POST', '/questions/precheck', token, { title })).json<Precheck>();
-
-      // Words only (a visitor: no meaning without consent): no typed word is in the question.
-      expect(await check('Cusotms for my camrea please')).toMatchObject({ verdict: 'related', questions: [{ id }] });
-      // With meaning: every word, once corrected, is in it, so it's shown even if meanings differ.
-      expect(await check('Cusotms duty camrea lens', p.token)).toMatchObject({
-        verdict: 'related',
-        questions: [{ id }],
-      });
-      // A word it doesn't know is searched as typed, never swapped for a guess.
-      expect(await check('Zxqvbn for my wjkdhf please')).toEqual({ verdict: 'clear', questions: [] });
-    } finally {
-      await app.close();
+    // Words only (no model serving) and with meaning: the corrections must work in both.
+    for (const withMeaning of [false, true]) {
+      const app = await startApp(() => Date.now(), { ...(withMeaning ? { embedder } : {}), speller: learned });
+      try {
+        const p = await app.person();
+        expect(
+          (
+            await app.call('POST', '/me/profile', p.token, {
+              handle: 'spell.one',
+              country: 'IN',
+              fields: ['imports-customs'],
+              adult: true,
+            })
+          ).statusCode,
+        ).toBe(201);
+        const asked = await app.call('POST', '/questions', p.token, {
+          title: 'Customs duty on a camera lens',
+          field: 'imports-customs',
+        });
+        expect(asked.statusCode).toBe(201);
+        const id = must(asked.json<{ question: { id: string } }>().question.id);
+        const check = async (title: string) =>
+          (await app.call('POST', '/questions/precheck', undefined, { title })).json<Precheck>();
+        if (withMeaning) {
+          // Every word, once corrected, is in it, so it's shown even where meanings differ.
+          expect(await check('Cusotms duty camrea lens')).toMatchObject({ verdict: 'related', questions: [{ id }] });
+        } else {
+          // Words alone: no typed word is in the question; the corrections find it.
+          expect(await check('Cusotms for my camrea please')).toMatchObject({
+            verdict: 'related',
+            questions: [{ id }],
+          });
+          // A word it doesn't know is searched as typed, never swapped for a guess.
+          expect(await check('Zxqvbn for my wjkdhf please')).toEqual({ verdict: 'clear', questions: [] });
+        }
+      } finally {
+        await app.close();
+      }
     }
   });
 });

@@ -47,7 +47,8 @@ beforeAll(async () => {
     Buffer.from(JSON.stringify(model)),
   );
   return h.close;
-});
+  // Trains a model first: longer than the default hook limit under coverage.
+}, 120_000);
 
 async function member(field: string, joinedDaysAgo = 30) {
   const p = await h.person();

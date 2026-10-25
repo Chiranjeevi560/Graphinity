@@ -3,7 +3,14 @@ import { SquircleLayers } from './Squircle.tsx';
 
 interface Props {
   open: boolean;
+  /** The dialog closed, for any reason (including the page closing it). */
   onClose: () => void;
+  /**
+   * The person dismissed it (Escape). Defaults to onClose. Separate for a
+   * dialog whose dismissal is itself an answer: a close the page makes after
+   * an answer must not count as a second one.
+   */
+  onCancel?: () => void;
   title: string;
   children: ReactNode;
   /** The buttons, most important last (Apple puts the action on the right). */
@@ -14,7 +21,7 @@ interface Props {
  * A modal built on the native <dialog>: the browser traps focus inside it,
  * closes it with Escape, and hides the page behind it from screen readers.
  */
-export function Dialog({ open, onClose, title, children, actions }: Props) {
+export function Dialog({ open, onClose, onCancel, title, children, actions }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
   // Each dialog its own id: a page can hold several (one per answer).
   const titleId = useId();
@@ -34,7 +41,7 @@ export function Dialog({ open, onClose, title, children, actions }: Props) {
       onClose={onClose}
       onCancel={e => {
         e.preventDefault();
-        onClose();
+        (onCancel ?? onClose)();
       }}
     >
       <div className="dialog-panel sq-host">

@@ -301,3 +301,16 @@ Measured (simulation, 12 seeds, ± standard error, regret against an oracle, dif
 Tests: 578 API tests, branch coverage 86.23% (bar 85.65%). 18 rules broken on purpose, all caught; three survived first (the safety gate, routing reading each candidate's record, and the cap's lock, whose race test couldn't see the race) and their tests were sharpened.
 
 Not verified: real people (no live routes yet). The application-level fallback after a database cap refusal happens only in a race and isn't exercised end to end (the lock itself is tested with two concurrent transactions). Exploration isn't shown to the routed person. Before merging: run `npm run db:migrate:remote` (0015–0018), then merge.
+
+## Search, part 1: consent (2026-10-25, Claude)
+
+Owner request: a production-grade semantic search, on both the Ask check and a new Search screen (owner's choice), with meaning for everyone and purpose-based consent asked only once. ADR 0015 records the decisions and the plan in parts; a fresh-eyes review of the whole design found three consent blockers first (bundled purposes, old data used under a new purpose, and a "deleted on revoke" that wasn't true), which reshaped this part.
+
+Built and verified:
+- **Fixed a false privacy text:** `ai_personalization` said question text goes to Cloudflare, which stopped being true when Cloudflare was removed. It is now corrected (policy version 3), and meaning-based matching no longer depends on it. The precheck, question creation, backfill and `nearest_questions` are updated, the vector-clearing trigger is dropped, and the change is announced once in the app.
+- **A new optional purpose,** `search_improvement` (off, separate from search history, nothing from before), asked once through `awaitingAnswer` and a "Two privacy updates" sheet. Any answer, including closing it, ends the asking for good. Reading history's text now says truthfully when reading time is measured.
+- **Dialog spacing:** paragraphs had no space between them in every dialog; fixed.
+- **Tests:** API tests for asking once, the corrected texts, and meaning without the choice (three old tests that encoded the gating were rewritten, see the commit). In a real browser the sheet was checked at 320, 375, 430 and desktop in light and dark: 44 px targets, contrast 7.6:1 and 19:1, no sideways scroll, and an answer is never asked again. There is an end-to-end test with the accessibility audit, and sign-in helpers that answer the sheet only when the app asks.
+- **ANN measured before it's tuned:** pgvector's default `ef_search` 40 finds only 77% of the true nearest questions at 100k. 640 of the 768 stored dimensions are zeros, so storage is about 370 MB at 100k against a 500 MB free database. Both are fixed in the ANN part.
+
+Not done yet (the later parts in ADR 0015): the engine and `POST /search`, logs with delete-on-revoke, the Search screen, 128-dimension storage, learning, and load tests.

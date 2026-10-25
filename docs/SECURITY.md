@@ -59,7 +59,7 @@ These must stay true. If one stops being true, revisit everything that depends o
 | Someone posting as another person, or answering their own question | RLS: questions and answers only as `app.current_user_id()`; the answer policy also refuses the asker. No UPDATE or DELETE granted yet | `questions.integration.test.ts`; fails when the policy check is removed |
 | Learning who was asked, or who someone is, from the graph | `/graph` nodes are field sets with no names or ids, freshly sampled; the asker gets per-wave counts only, through `app.routing_summary`, which returns nothing to anyone else; "why you got this" reads the viewer's own route, which row-level security limits to them | `graph.integration.test.ts`; fail when the function's asker check is removed |
 | Gaming the routing score | Points need a real pick from another person (pair cap applies); answering counts only answers moderators haven't removed. Graph trust (φ4, 12%) flows only from moderators along picks (TrustRank), so accounts picking each other in a ring gain nothing; the routing job alone may read the moderator list (`moderators_system`). Closeness in meaning (φ1) comes from `app.experience_proximity`, which answers only the routing job and leaves out hidden and removed posts. The newcomer bonus counts only in the newcomer place, so it can't push proven people out. Known gap: fake accounts acting as askers can still raise someone's reputation and pick rate (φ2, φ5, φ6: 36% together); the pair cap and new-account limits slow this | `routing.integration.test.ts`, `routing-score.test.ts`; each rule fails a test when removed |
-| Using an embedding provider or sending draft text without consent | Visitor rate limits bound precheck; drafts under 10 characters aren't sent; only signed-in users with active `ai_personalization` consent can send content to an embedding provider. Meaning is computed by Graphinity's own model on its own server (ADR 0010): no query or post goes to an outside AI; with no model promoted, search fails closed to word matching in production. The owner's 2026-10-22 self-hosting directive is not yet fulfilled: no self-hosted model runtime or capacity has been deployed. | `precheck.integration.test.ts`, `embeddings.test.ts` |
+| Using an embedding provider or sending draft text without consent | Visitor rate limits bound precheck; drafts under 10 characters aren't sent; no content goes to any embedding provider: meaning is computed by Graphinity's own model on its own server (ADR 0010) for everyone, no longer behind `ai_personalization` (owner decision, ADR 0015, announced once in the app); with no model promoted, search fails closed to word matching in production. The owner's 2026-10-22 self-hosting directive is not yet fulfilled: no self-hosted model runtime or capacity has been deployed. | `precheck.integration.test.ts`, `embeddings.test.ts` |
 | Middlemen soliciting through answers ("DM me on WhatsApp +91…") | Answers with phone numbers (10+ digits, any separators, full-width digits normalised), email addresses or messaging links and invitations are refused with a plain reason, in the API and by a database check with the same patterns. Refused, not silently edited. Known gap: numbers spelled out in words, or split by other characters, get through; moderators and reports remain the backstop | `solicitation.test.ts`, `questions.integration.test.ts` |
 | Hidden or spoofing characters in posts | Control characters (C0, DEL, C1) and direction overrides and isolates (U+202A-202E, U+2066-2069, which make text display in another order) refused in the API and by database checks on titles, bodies, answers, report notes and block reasons; the marks right-to-left writing needs (U+200E, U+200F, U+061C) stay allowed; titles one line with single spaces. Lookalike letters from other scripts (homoglyphs) are not refused: real names and languages use them | `text.test.ts` and database tests |
 | Getting points that didn't happen | See T8a. Every rule tested by an attack that must fail, and each test proven to fail when its rule is removed | `points.db.integration.test.ts`, `points.integration.test.ts` |
@@ -183,6 +183,16 @@ whenever a user-linked table is added.
   its predictions (99%, and below 80%), and the promotion gate applies the same check, so a
   retired model can't return the next night. Exploration is off until the owner turns on
   `routing_exploration`.
+
+## Consent for search (ADR 0015)
+
+- Learning from searches is its own optional purpose, `search_improvement`, separate from
+  `search_history`, so declining it costs nothing else. It covers only data collected while it is on.
+- Ask-once purposes are asked a single time (`awaitingAnswer`); any answer is recorded with the
+  consent audit log and ends the asking. Nothing is collected under `search_improvement` until the
+  search tables exist with their delete-on-revoke trigger (part 3).
+- `ai_personalization` text no longer claims question text goes to Cloudflare; nothing goes to any
+  outside AI.
 
 ## Known gaps
 

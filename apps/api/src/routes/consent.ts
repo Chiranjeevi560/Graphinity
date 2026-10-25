@@ -14,7 +14,7 @@ const choicesSchema = {
     choices: {
       type: 'array',
       minItems: 1,
-      maxItems: 18,
+      maxItems: 32,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -33,18 +33,27 @@ export function registerConsentRoutes(app: FastifyInstance, deps: ConsentDeps) {
   app.get('/me/consents', { config: { auth: 'required' } }, async req => {
     const user = signedIn(req);
     return deps.db.withUser(user.id, async q => {
-      const { rows } = await q.query(
+      const { rows } = await q.query<{ name: string; awaitingAnswer: boolean } & Record<string, unknown>>(
         `SELECT c.name, c.purpose, c.data_description AS "dataDescription", c.retention,
                 c.recipients, c.policy_version AS "policyVersion",
                 c.required_for_service AS "requiredForService",
                 COALESCE(s.enabled, c.required_for_service) AS enabled,
-                s.updated_at AS "updatedAt"
+                s.updated_at AS "updatedAt",
+                -- Asked once (migration 0019): waiting while the person has never answered it.
+                (c.prompt_once AND s.user_id IS NULL) AS "awaitingAnswer"
          FROM app.consent_categories c
          LEFT JOIN app.user_consent_settings s ON s.category = c.name AND s.user_id = $1
          ORDER BY c.required_for_service DESC, c.name`,
         [user.id],
       );
-      return { categories: rows };
+      return {
+        categories: rows,
+        // The one-time privacy update: purposes to ask about now. Any answer, yes or no, is recorded
+        // through PUT, after which they never appear here again.
+        awaitingAnswer: rows
+          .filter(r => (r as { awaitingAnswer: boolean }).awaitingAnswer)
+          .map(r => (r as { name: string }).name),
+      };
     });
   });
 
