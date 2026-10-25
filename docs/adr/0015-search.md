@@ -1,7 +1,7 @@
 # ADR 0015: Search, built in measured slices
 
 - **Status:** In progress. Part 1 (consent) accepted and built 2026-10-25. Part 2 (the engine)
-  and part 5 (ANN) built 2026-10-26. Later parts are recorded here as they land.
+  part 5 (ANN) and part 3 (search logs) built 2026-10-26. Later parts are recorded here as they land.
 - **Owner decisions (2026-10-25):**
   1. **Both surfaces, one engine:** a Search screen and the Ask screen's "has this been asked?"
      check.
@@ -191,6 +191,37 @@ Verified for part 2: see the commit. Tests through the API and the database:
 - Wildcard escaping; the API role refused on the statistics; the kill switch; per-person and
   per-address limits; the exact keys returned.
 
+## Part 3: what learning needs, recorded only under the choice (migration 0022, schema 37)
+
+Recorded, only for a signed-in person with `search_improvement` on, and only from the Search screen
+(never Ask-screen drafts):
+
+- **Each search:** query, field, the ranker and meaning model that ordered it, and the consent version
+  the person accepted.
+- **The results shown, in order,** with what the ranking knew about each at that moment: word and
+  meaning ranks, similarity, every-word, answer count, answer age. Point-in-time, so a model learns
+  from what the ranking actually saw.
+- **Which were opened,** and the longest time reported on each (`PUT /searches/:searchId/opens/:position`).
+
+Guarantees, each tested:
+
+- **Enforced twice in the database:**
+  - row-level policies (own rows, choice on);
+  - a trigger that locks the person's consent row `FOR SHARE` and refuses when the choice is off.
+  A race with turning it off leaves nothing behind in either order; both orders are tested with the
+  other session blocked on the lock.
+- **Off deletes all** of it, whatever the change to the consent row. On again never resurrects it. A
+  search begun before an off-and-on records nothing, because the consent row must be unchanged since
+  it began.
+- **The database sets the dates and the consent version;** the API role can't send them.
+- **Ids are random,** at most 365 days are kept, purged hourly, in the export, gone with the account.
+- **A fresh-eyes review** found five issues before this stood; all fixed (docs/SECURITY.md).
+
+The 6 survivors of 23 rules broken on purpose are layers that another layer also enforces:
+
+- the API's own checks over the database's;
+- the own-rows check, which the invoker-run consent check already implies.
+
 ## Part 5: meaning at the model's own size, searched as measured (migration 0021, schema 36)
 
 Taken out of order: part 2's benchmark showed the meaning stage missing the latency target at
@@ -281,9 +312,7 @@ What this shows:
 ## Remaining parts, in order (each lands with its own evidence)
 
 2. ~~The engine~~: built (above). Synonyms come with learning (part 6).
-3. **Search logs:** shown rows only, with point-in-time features; each row carries its consent;
-   inserts checked in the database; deleted on revoke (trigger); export and deletion coverage. No
-   numbers about other people (trust, reputation) reach the client: reasons are words.
+3. ~~Search logs~~: built (above).
 4. **The Search screen,** and the Ask check on the same engine.
 5. ~~ANN~~: built (above).
 6. **Learning:**

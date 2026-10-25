@@ -48,6 +48,8 @@ export interface Limits {
   userWrites: BucketOptions;
   /** Searches per signed-in person, or per visitor address (POST /search). */
   search: BucketOptions;
+  /** Opens and reading times recorded per person (PUT /searches/:id/opens/:position). */
+  searchEvents: BucketOptions;
 }
 
 export const defaultLimits: Limits = {
@@ -62,6 +64,8 @@ export const defaultLimits: Limits = {
   // results, well short of scraping. Generous per address for the same
   // carrier reason as the visitor limit.
   search: { capacity: 30, refillPerSecond: 0.5, maxKeys: 50_000 },
+  // An open and a reading time per result read: twice the search allowance.
+  searchEvents: { capacity: 60, refillPerSecond: 1, maxKeys: 50_000 },
 };
 
 /** Everything the server needs from outside, so tests can swap any of it. */
@@ -298,6 +302,7 @@ export async function buildServer(deps: Deps) {
     enabled: deps.searchEnabled ?? (() => true),
     clock,
     limit: limits.search,
+    eventLimit: limits.searchEvents,
     keySecret: config.ipHashKey,
   });
   registerLiveRoutes(app, { events, clock });

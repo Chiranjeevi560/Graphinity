@@ -41,6 +41,8 @@ export interface Retrieval {
   corrections: Array<{ from: string; to: string }>;
   /** Whether meaning took part: false when no model serves, it failed, or it is switched off. */
   meaningUsed: boolean;
+  /** The model that gave meaning, when it took part. */
+  meaningModel: string | null;
   timings: Timings;
 }
 
@@ -205,7 +207,13 @@ export function createSearchEngine({
           ];
         });
       });
-      return { found, corrections, meaningUsed: vector !== null, timings };
+      return {
+        found,
+        corrections,
+        meaningUsed: vector !== null,
+        meaningModel: vector !== null && embedder ? embedder.model : null,
+        timings,
+      };
     },
   };
 }

@@ -338,6 +338,19 @@ export function registerPersonalGraphRoutes(app: FastifyInstance, deps: Personal
          FROM app.personal_collections WHERE user_id = $1 ORDER BY created_at`,
         [user.id],
       );
+      // Collected under "improve search for everyone" (migration 0022), with what was shown and opened.
+      const searches = await q.query(
+        `SELECT s.public_id::text AS id, s.query, s.field, s.ranker, s.meaning_model AS "meaningModel",
+                s.consent_version AS "consentVersion", s.created_at AS "searchedAt", s.expires_at AS "expiresAt",
+                coalesce((SELECT jsonb_agg(jsonb_build_object(
+                    'position', r.position, 'questionId', r.question_id::text, 'opened', o.opened_at,
+                    'dwellMs', o.dwell_ms) ORDER BY r.position)
+                  FROM app.search_results r
+                  LEFT JOIN app.search_opens o ON o.search_id = r.search_id AND o.position = r.position
+                  WHERE r.search_id = s.id), '[]'::jsonb) AS shown
+         FROM app.searches s WHERE s.user_id = $1 ORDER BY s.created_at`,
+        [user.id],
+      );
       return {
         exportedAt: new Date().toISOString(),
         profile: profile.rows[0] ?? null,
@@ -360,6 +373,7 @@ export function registerPersonalGraphRoutes(app: FastifyInstance, deps: Personal
           signals: signals.rows,
           collections: collections.rows,
         },
+        searchImprovement: { searches: searches.rows },
       };
     });
   });

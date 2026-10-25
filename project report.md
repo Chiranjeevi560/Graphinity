@@ -333,3 +333,8 @@ Found, not yet fixed: at 100k questions the meaning stage (unchanged, already us
 - Meaning moved to `app.question_embeddings` at the model's own size (128 numbers, not 768 padded), one HNSW index per size (m 24), searched with `ef_search` 400 and an iterative scan. Chosen by measurement at 100,000 questions: recall@50 0.98 at 4.6 ms p50; the index is 68 MB instead of 195 MB.
 - Two more costs found and removed from both search functions: the hidden-question check ran on every candidate (15 of 17 ms; now checked on the top results only), and a cached generic plan walked every question (20 ms; the main query is now planned per call).
 - Whole search at 100,000 questions: 11.9 ms p50, 16.8 ms p95 (target 30 / 100), from 48 / 210. 10 new tests; 19 rules broken on purpose, all caught (two first survived and got tests).
+
+## Search, part 3: search logs (2026-10-26, Claude)
+
+- What learning a ranking needs: each search, the results shown with what the ranking knew, and what was opened and read. Recorded only for people with "improve search for everyone" on, from the Search screen only. The database enforces it with policies and a consent-row lock, deletes everything when it is turned off (even mid-write, both orders tested), sets dates and consent version itself, and keeps 365 days at most. Random search ids; in the export; gone with the account.
+- A fresh-eyes review found five issues (a race test that didn't race, a revoke a column change could slip past, writer-chosen dates, an off-and-on window, sequential ids); all fixed and tested. 13 tests; 23 rules broken on purpose; the 6 survivors are layers another layer also enforces.

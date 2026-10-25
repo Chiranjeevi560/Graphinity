@@ -55,6 +55,7 @@ export async function startApp(
       visitor: { capacity: 10_000, refillPerSecond: 1000, maxKeys: 10 },
       userWrites: { capacity: 1000, refillPerSecond: 100, maxKeys: 100 },
       search: { capacity: 10_000, refillPerSecond: 1000, maxKeys: 100 },
+      searchEvents: { capacity: 10_000, refillPerSecond: 1000, maxKeys: 100 },
       ...opts.limits,
     },
     logStream: { write: () => {} },
