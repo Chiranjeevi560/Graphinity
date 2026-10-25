@@ -20,6 +20,7 @@ import {
   trainTextEmbeddingJob,
 } from './ml/training.ts';
 import { purgeOldRouteFactors } from './ml/routing-data.ts';
+import { purgeExpiredSearches } from './search/log.ts';
 import { monitorRouting } from './ml/routing-monitor.ts';
 import { deserializeRoutingModel, scoreRouting, scoreRoutingAt, type RoutingModel } from './ml/routing-model.ts';
 import { personalGraphQueueStatus, projectPersonalGraphSignals, purgeExpiredPersonalSignals } from './personal-data.ts';
@@ -171,6 +172,15 @@ const purgeSignals = () => {
     },
     (err: unknown) => {
       app.log.warn({ kind: errorKind(err) }, 'routing factor expiry failed');
+    },
+  );
+  // Searches recorded to improve search are kept 365 days at most (migration 0022).
+  purgeExpiredSearches(db).then(
+    deleted => {
+      if (deleted) app.log.info({ deleted }, 'expired searches removed');
+    },
+    (err: unknown) => {
+      app.log.warn({ kind: errorKind(err) }, 'search expiry failed');
     },
   );
 };

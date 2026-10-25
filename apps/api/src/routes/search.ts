@@ -8,6 +8,7 @@ import { RELATED_AT } from '../precheck.ts';
 import { TokenBuckets, visitorAddress, visitorKey, type BucketOptions, type Clock } from '../rate-limit.ts';
 import { serverTiming, type Found, type SearchEngine } from '../search/engine.ts';
 import { recordOwnSearch } from '../search/history.ts';
+import { improvementSince, recordOpen, recordSearch } from '../search/log.ts';
 import { cleanLine, textProblem } from '../text.ts';
 import { fail } from './common.ts';
 
@@ -44,6 +45,7 @@ const messages = {
   invalid: 'That search has characters that can’t be searched. Remove them and try again.',
   off: 'Search is paused for a few minutes. Try again soon.',
   tooMany: 'That’s a lot of searches in a short time. Wait a minute, then try again.',
+  notRecorded: 'That search isn’t recorded, so there is nothing to add to it.',
 } as const;
 
 export function registerSearchRoutes(
@@ -54,6 +56,7 @@ export function registerSearchRoutes(
     enabled,
     clock,
     limit,
+    eventLimit,
     keySecret,
   }: {
     db: Pick<Database, 'withUser'>;
@@ -63,12 +66,15 @@ export function registerSearchRoutes(
     clock: Clock;
     /** Searches per person (signed in) or per address (visitors), on top of the server-wide limits. */
     limit: BucketOptions;
+    /** Opens and reading times per person: two per result read, so apart from searches. */
+    eventLimit: BucketOptions;
     keySecret: Buffer;
   },
 ) {
   // Each search embeds text and runs three queries, so it gets its own allowance:
   // the general one is sized for page views, which cost far less.
   const buckets = new TokenBuckets(limit, clock);
+  const eventBuckets = new TokenBuckets(eventLimit, clock);
 
   app.post(
     '/search',
@@ -104,27 +110,86 @@ export function registerSearchRoutes(
       if (problem) return fail(reply, 400, 'invalid_query', messages.invalid, { reason: problem });
       const field = body.field ?? null;
       if (userId) await recordOwnSearch(db, userId, 'search', query, field);
-      const { found, corrections, meaningUsed, timings } = await engine.retrieve({
+      // Read before searching: a choice changed while the search runs records nothing.
+      const since = userId ? await improvementSince(db, userId) : null;
+      const { found, corrections, meaningUsed, meaningModel, timings } = await engine.retrieve({
         text: query,
         field,
         pool: SEARCH_POOL,
       });
       reply.header('server-timing', serverTiming(timings));
-      const results = found
+      const shown = found
         .flatMap(f => {
           const reasons = reasonsFor(f);
           return reasons ? [{ f, reasons }] : [];
         })
-        .slice(0, SEARCH_RESULTS)
-        .map(({ f, reasons }) => ({
-          id: f.id,
-          title: f.title,
-          field: f.field,
-          answerCount: f.answerCount,
-          lastAnsweredAt: f.lastAnsweredAt?.toISOString() ?? null,
-          reasons,
-        }));
-      return { results, corrections, meaning: meaningUsed };
+        .slice(0, SEARCH_RESULTS);
+      const results = shown.map(({ f, reasons }) => ({
+        id: f.id,
+        title: f.title,
+        field: f.field,
+        answerCount: f.answerCount,
+        lastAnsweredAt: f.lastAnsweredAt?.toISOString() ?? null,
+        reasons,
+      }));
+      // Only with "improve search for everyone" on; the database refuses it otherwise.
+      const searchId =
+        userId && since
+          ? await recordSearch(db, {
+              userId,
+              since,
+              query,
+              field,
+              meaningModel,
+              shown: shown.map(({ f }, i) => ({ position: i + 1, found: f })),
+              now: new Date(clock.now()),
+            })
+          : null;
+      return { results, corrections, meaning: meaningUsed, ...(searchId ? { searchId } : {}) };
+    },
+  );
+
+  // A result opened from a recorded search, and later how long it was read
+  // (the page sends the time when it is left). Nothing to record answers 404.
+  app.put(
+    '/searches/:id/opens/:position',
+    {
+      config: { auth: 'required' },
+      schema: {
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['id', 'position'],
+          properties: {
+            id: { type: 'string', pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' },
+            position: { type: 'string', pattern: '^([1-9]|1[0-9]|20)$' },
+          },
+        },
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { dwellMs: { type: 'integer', minimum: 0, maximum: 3_600_000 } },
+        },
+      },
+    },
+    async (req, reply) => {
+      const user = req.user;
+      if (!user) return fail(reply, 401, 'signed_out', 'You’re signed out. Sign in again to continue.');
+      const allowed = eventBuckets.take(user.id);
+      if (!allowed.ok) {
+        reply.header('retry-after', String(allowed.retryAfterSeconds));
+        return fail(reply, 429, 'rate_limited', messages.tooMany);
+      }
+      const { id, position } = req.params as { id: string; position: string };
+      const dwell = (req.body as { dwellMs?: number } | undefined)?.dwellMs ?? null;
+      const recorded = await recordOpen(db, {
+        userId: user.id,
+        searchId: id,
+        position: Number(position),
+        dwellMs: dwell,
+      });
+      if (!recorded) return fail(reply, 404, 'not_recorded', messages.notRecorded);
+      return reply.code(204).send();
     },
   );
 }

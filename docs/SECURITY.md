@@ -220,6 +220,37 @@ whenever a user-linked table is added.
 - **Known trade-off:** every new question updates one shared row (`app.search_corpus`), so question
   inserts briefly queue behind each other. Fine at today's rate; revisit if inserts ever contend.
 
+## Searches recorded to improve search (ADR 0015 part 3)
+
+- **Only under the choice.** `app.searches`, `app.search_results` and `app.search_opens` are written
+  only while the person has `search_improvement` on. The database enforces it twice: row-level policies
+  (own rows, choice on), and a trigger that locks the person's consent row `FOR SHARE` and refuses when
+  it is off. Each is tested with the other switched off where they can be separated.
+- **No row survives turning it off,** in either order of a race. A write that started first holds the
+  lock, so the revoke waits and then deletes it; a write that arrives during a revoke waits and is
+  refused. Both orders are tested with held transactions.
+- **Turning it off deletes everything recorded under it,** whatever the change to the consent row
+  (turned off, deleted, or moved, which no request can do: the API role may update only `enabled`,
+  `policy_version`, `source` and `updated_at`). Turning it back on never brings anything back, and a
+  search begun before an off-and-on is not recorded under the new "on": the insert requires the
+  consent row unchanged since the search began.
+- **The database sets the facts:** creation and expiry dates, the opened time and the consent version
+  (the one the person accepted) are set by the trigger, and the API role can't send them at all
+  (column grants). Search ids given to clients are random (`public_id`), so they reveal nothing about
+  how many others searched.
+- **Retention:** 365 days at most, checked by the database; purged hourly; in the person's export;
+  deleted with the account (`ON DELETE CASCADE`).
+- **Only the Search screen:** drafts typed into the Ask check are never recorded here.
+- **Nobody reads another person's rows;** only the training job (`app.is_system()`) reads everyone's.
+- **Reviewed:** a fresh-eyes review found a race test that didn't race, a revoke that a column change
+  could slip past, writer-chosen dates and consent versions, an off-and-on window, and sequential ids;
+  all fixed and tested (the race tests now wait until the other session is blocked on the lock).
+- **Known overlap:** the own-rows check and the consent check can't be tested apart.
+  `app.search_improvement_on` runs as the caller, and row-level security shows a person only their own
+  consent row, so the consent check alone already restricts writes to oneself. The API's own checks
+  (consent before writing, the searcher's own search for opens) are defence in depth over the database
+  and can't be told apart from it by any request.
+
 ## Question vectors (ADR 0015 part 5)
 
 - `app.question_embeddings` has row-level security forced. A request may only add the vector of a

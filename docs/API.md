@@ -174,6 +174,19 @@ returned: no authors, trust, reputation or scores. Hidden questions never appear
 - With the `search` switch off: 503 `search_off`.
 - A signed-in search is saved to the person's own `search_history` only with that consent, as above.
 - `Server-Timing` as for the precheck.
+- With `search_improvement` on (and only then), the search, the results shown in order with what the
+  ranking knew about each, are recorded to improve search (ADR 0015 part 3), and the response carries
+  `searchId`, a random id. Without it, there is no `searchId` and nothing is recorded. Visitors are
+  never recorded. A choice turned off and on again while a search runs records nothing for it.
+
+### `PUT /searches/:searchId/opens/:position` (signed in)
+
+`{ dwellMs? }` → 204. Records that the result at `position` (1 to 20) of a recorded search was
+opened, and, sent again when the person leaves the question, how long it was read (`dwellMs`, 0 to
+3,600,000; the longest reported is kept). Only the person who searched, only while
+`search_improvement` is on. Nothing to record against (someone else's search, a position not shown,
+the choice turned off): 404 `not_recorded`. Its own allowance per person (60, then one a second).
+Unknown properties and wrong types are 400.
 
 ### `GET /questions/:id`
 
