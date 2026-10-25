@@ -4,29 +4,30 @@
 import { DIMS, EmbeddingError, type Embedder } from '../embeddings.ts';
 import { ALGORITHM, deserializeModel, embedText, hashedVector, type TextEmbeddingModel } from './text-embedding.ts';
 
-/** Vectors are zero-padded to the database's 768 columns: cosine and the HNSW index are unchanged by zeros. */
-function padded(v: ArrayLike<number>): number[] {
-  const out = new Array<number>(DIMS).fill(0);
-  for (let i = 0; i < v.length && i < DIMS; i++) out[i] = v[i] ?? 0;
-  return out;
-}
+/**
+ * The most numbers a stored vector may have (app.question_embeddings). The
+ * database indexes the own model's size, 128 (migration 0021); other sizes
+ * are compared exactly until a migration adds their index.
+ */
+export const MAX_DIMS = 2000;
 
 export function modelName(version: number): string {
   return `graphinity:${ALGORITHM}:v${String(version)}`;
 }
 
 export function ownEmbedder(model: TextEmbeddingModel, version: number): Embedder {
-  if (model.dims > DIMS)
-    throw new EmbeddingError(`a ${String(model.dims)}-dimension model doesn't fit the ${String(DIMS)} columns`);
+  if (model.dims > MAX_DIMS)
+    throw new EmbeddingError(`a ${String(model.dims)}-dimension model is larger than ${String(MAX_DIMS)} numbers`);
   return {
     model: modelName(version),
-    dims: DIMS,
+    // Stored at the model's own size: padding to 768 made the index three times larger (ADR 0015 part 5).
+    dims: model.dims,
     embed: texts =>
       Promise.resolve(
         texts.map(text => {
           const v = embedText(model, text);
           // Text with no words at all still gets a stable vector, matching only itself.
-          return padded(v.some(x => x !== 0) ? v : hashedVector(text.trim(), model.dims));
+          return Array.from(v.some(x => x !== 0) ? v : hashedVector(text.trim(), model.dims));
         }),
       ),
   };

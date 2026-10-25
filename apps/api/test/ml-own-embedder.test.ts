@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { DIMS, EmbeddingError } from '../src/embeddings.ts';
-import { modelName, ownEmbedder, ownEmbedderFromArtifact, swappableEmbedder } from '../src/ml/own-embedder.ts';
+import {
+  MAX_DIMS,
+  modelName,
+  ownEmbedder,
+  ownEmbedderFromArtifact,
+  swappableEmbedder,
+} from '../src/ml/own-embedder.ts';
 import { serializeModel, trainTextEmbedding } from '../src/ml/text-embedding.ts';
 
 const model = trainTextEmbedding(
@@ -9,12 +15,12 @@ const model = trainTextEmbedding(
 );
 
 describe('the own embedder', () => {
-  it('names its version and pads to the database’s columns, which leaves similarity unchanged', async () => {
+  it('names its version and keeps the model’s own size, with no padding', async () => {
     const e = ownEmbedder(model, 4);
     expect(e.model).toBe(modelName(4));
+    expect(e.dims).toBe(model.dims);
     const [v] = await e.embed(['customs duty']);
-    expect(v).toHaveLength(DIMS);
-    expect(v?.slice(model.dims).every(x => x === 0)).toBe(true);
+    expect(v).toHaveLength(model.dims);
     expect(Math.hypot(...(v ?? []))).toBeCloseTo(1, 6);
   });
 
@@ -26,10 +32,11 @@ describe('the own embedder', () => {
     expect(a).not.toEqual(c);
   });
 
-  it('loads from its artifact, and refuses a model too wide for the columns', async () => {
+  it('loads from its artifact, and refuses a model larger than the database stores', async () => {
     const loaded = ownEmbedderFromArtifact(serializeModel(model), 2);
     expect(await loaded.embed(['import tax'])).toEqual(await ownEmbedder(model, 2).embed(['import tax']));
-    expect(() => ownEmbedder({ ...model, dims: DIMS + 1 }, 1)).toThrow(EmbeddingError);
+    expect(() => ownEmbedder({ ...model, dims: MAX_DIMS + 1 }, 1)).toThrow(EmbeddingError);
+    expect(() => ownEmbedder({ ...model, dims: MAX_DIMS }, 1)).not.toThrow();
   });
 });
 

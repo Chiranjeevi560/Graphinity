@@ -169,7 +169,17 @@ leaves them wrong, and word search then ranks badly or finds nothing. Recount, i
 SELECT app.rebuild_search_stats();
 ```
 
-It takes a lock that briefly holds back new questions (about half a second per 100,000 questions)
+Question vectors live in `app.question_embeddings` at the model's own size (128 numbers; migration
+0021), searched through the `question_embeddings_128` index with `ef_search` 400. After a new text
+model is promoted, the background job re-embeds every question for it, 500 a minute, newest first,
+then removes older models' vectors, 5,000 a minute. While it catches up, matching by meaning sees
+only the questions already re-embedded; words are unaffected. To check progress:
+
+```sql
+SELECT model, count(*) FROM app.question_embeddings GROUP BY model;
+```
+
+The recount above takes a lock that briefly holds back new questions (about half a second per 100,000 questions)
 and is safe to run any time. Each response from `POST /search` and `POST /questions/precheck`
 carries a `Server-Timing` header (`embed`, `words`, `meaning`, `fetch`, in milliseconds), visible in
 the browser's network panel, to see which stage is slow.

@@ -583,23 +583,23 @@ export function registerQuestionRoutes(
       try {
         id = await db.withUser(user.id, async q => {
           if (await isBlocked(q)) return null;
-          return inserted(
+          const newId = inserted(
             (
               await q.query<{ id: string }>(
-                `INSERT INTO app.questions (asker_id, field, country, title, body, embedding, embedding_model)
-           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id::text AS id`,
-                [
-                  user.id,
-                  body.field,
-                  body.country ?? null,
-                  title,
-                  details,
-                  vector ? vectorLiteral(vector) : null,
-                  vector && embedder ? embedder.model : null,
-                ],
+                `INSERT INTO app.questions (asker_id, field, country, title, body)
+           VALUES ($1, $2, $3, $4, $5) RETURNING id::text AS id`,
+                [user.id, body.field, body.country ?? null, title, details],
               )
             ).rows,
           );
+          // In the same transaction: a question is never findable by words but not by meaning.
+          if (vector && embedder)
+            await q.query('INSERT INTO app.question_embeddings (question_id, model, embedding) VALUES ($1, $2, $3)', [
+              newId,
+              embedder.model,
+              vectorLiteral(vector),
+            ]);
+          return newId;
         });
       } catch (err) {
         if (isNewAccountLimit(err)) return fail(reply, 429, 'new_account_limit', newAccountMessage);

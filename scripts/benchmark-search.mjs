@@ -96,9 +96,9 @@ for (const size of sizes.length ? sizes : [10_000, 100_000]) {
       "INSERT INTO app.profiles (id, handle, country, adult_confirmed_at, created_at) VALUES ($1, 'bench.asker', 'IN', now(), '2020-01-01')",
       [asker],
     );
-    // Built once after the load, with the migration's parameters: far faster than
-    // maintaining it through 100,000 inserts, and the same index at the end.
-    await db.owner.query('DROP INDEX app.questions_embedding');
+    // Built once after the load, with the migration's parameters (0021): far
+    // faster than maintaining it through 100,000 inserts, and the same index at the end.
+    await db.owner.query('DROP INDEX app.question_embeddings_128');
     t = performance.now();
     const idOf = new Map();
     for (let start = 0; start < questions.length; start += 1000) {
@@ -107,10 +107,17 @@ for (const size of sizes.length ? sizes : [10_000, 100_000]) {
       const bodies = batch.map(q => (isHeldOut(q.id) ? '' : q.body));
       const vectors = await embedder.embed(batch.map((q, i) => (bodies[i] ? `${q.title}\n${bodies[i]}` : q.title)));
       const { rows } = await db.owner.query(
-        `INSERT INTO app.questions (asker_id, field, title, body, embedding, embedding_model)
-         SELECT $1, 'imports-customs', t, b, v::extensions.halfvec(768), $5
-         FROM unnest($2::text[], $3::text[], $4::text[]) AS x(t, b, v)
-         RETURNING id::text AS id, title`,
+        `WITH qs AS (
+           INSERT INTO app.questions (asker_id, field, title, body)
+           SELECT $1, 'imports-customs', t, b FROM unnest($2::text[], $3::text[]) WITH ORDINALITY AS x(t, b, n)
+           ORDER BY n RETURNING id, title
+         ), numbered AS (SELECT id, title, row_number() OVER (ORDER BY id) AS n FROM qs),
+         stored AS (
+           INSERT INTO app.question_embeddings (question_id, model, embedding)
+           SELECT numbered.id, $5, v.v::extensions.halfvec
+           FROM numbered JOIN unnest($4::text[]) WITH ORDINALITY AS v(v, n) ON v.n = numbered.n
+         )
+         SELECT id::text AS id, title FROM numbered`,
         [asker, batch.map(q => q.title), bodies, vectors.map(vectorLiteral), embedder.model],
       );
       for (const r of rows) idOf.set(r.title, r.id);
@@ -118,43 +125,36 @@ for (const size of sizes.length ? sizes : [10_000, 100_000]) {
     await db.owner.query("SET session_replication_role = 'origin'");
     await db.owner.query("SET maintenance_work_mem = '512MB'");
     await db.owner.query(
-      'CREATE INDEX questions_embedding ON app.questions USING hnsw (embedding extensions.halfvec_cosine_ops) WITH (m = 24, ef_construction = 200)',
+      `CREATE INDEX question_embeddings_128 ON app.question_embeddings
+       USING hnsw ((embedding::extensions.halfvec(128)) extensions.halfvec_cosine_ops) WITH (m = 24, ef_construction = 200)
+       WHERE extensions.vector_dims(embedding) = 128`,
     );
     // The bulk load skipped the triggers that keep word counts: recount, as the runbook says.
     await db.owner.query('SELECT app.rebuild_search_stats()');
     await db.owner.query('ANALYZE app.questions');
+    await db.owner.query('ANALYZE app.question_embeddings');
     const loadMs = Math.round(performance.now() - t);
+    const sizes = (
+      await db.owner.query(
+        `SELECT pg_relation_size('app.question_embeddings_128') AS index, pg_table_size('app.question_embeddings') AS vectors`,
+      )
+    ).rows[0];
 
-    if (process.env.EXPLAIN_MEANING) {
-      // The body of app.nearest_questions, as its owner runs it, for the plan.
-      const v = vectorLiteral((await embedder.embed([heldOut[0].body]))[0]);
-      const plan = await db.owner.query(
-        `EXPLAIN (ANALYZE, BUFFERS) SELECT q.id, 1 - (q.embedding OPERATOR(extensions.<=>) $1::extensions.halfvec(768))
-         FROM app.questions q
-         WHERE q.embedding IS NOT NULL AND q.embedding_model = $2 AND NOT app.is_question_hidden(q.id)
-         ORDER BY q.embedding OPERATOR(extensions.<=>) $1::extensions.halfvec(768) LIMIT 50`,
-        [v, embedder.model],
-      );
-      console.error(plan.rows.map(r => r['QUERY PLAN']).join('\n'));
-      const toast = await db.owner.query(
-        `SELECT pg_size_pretty(pg_relation_size('app.questions')) AS heap,
-                pg_size_pretty(pg_total_relation_size(reltoastrelid)) AS toast,
-                (SELECT attstorage FROM pg_attribute WHERE attrelid = 'app.questions'::regclass AND attname = 'embedding') AS storage
-         FROM pg_class WHERE oid = 'app.questions'::regclass`,
-      );
-      console.error(JSON.stringify(toast.rows[0]));
-    }
     const words = createSearchEngine({ db: db.database, embedder: null, speller: null });
     const fused = createSearchEngine({ db: db.database, embedder, speller: null });
     const sample = heldOut.slice(0, QUERIES);
     const runs = { before: [], words: [], meaning: [], fused: [], rrfEqual: [], rrfWordsHeavy: [] };
     const beforeMs = [];
     const timings = { embed: [], words: [], meaning: [], fetch: [], total: [] };
+    // The ranking before migration 0020 in a pass of its own: it reads much of the
+    // table, and interleaved it would evict the engine's pages from the cache.
+    for (const q of sample) {
+      t = performance.now();
+      runs.before.push(judged(await tsRankPrefix(db.database, q.body, SEARCH_POOL), idOf.get(q.title)));
+      beforeMs.push(performance.now() - t);
+    }
     for (const q of sample) {
       const target = idOf.get(q.title);
-      t = performance.now();
-      runs.before.push(judged(await tsRankPrefix(db.database, q.body, SEARCH_POOL), target));
-      beforeMs.push(performance.now() - t);
       const w = await words.retrieve({ text: q.body, field: null, pool: SEARCH_POOL });
       const wordIds = w.found.map(f => f.id);
       runs.words.push(judged(wordIds, target));
@@ -204,6 +204,8 @@ for (const size of sizes.length ? sizes : [10_000, 100_000]) {
         beforeTimeouts,
         beforeWordsMs: { p50: pct(beforeMs, 0.5), p95: pct(beforeMs, 0.95), p99: pct(beforeMs, 0.99) },
         rssMB: Math.round(process.memoryUsage().rss / 1e6),
+        meaningIndexMB: +(Number(sizes.index) / 1e6).toFixed(1),
+        vectorTableMB: +(Number(sizes.vectors) / 1e6).toFixed(1),
         latencyMs: Object.fromEntries(
           Object.entries(timings).map(([k, v]) => [k, { p50: pct(v, 0.5), p95: pct(v, 0.95), p99: pct(v, 0.99) }]),
         ),
@@ -215,3 +217,5 @@ for (const size of sizes.length ? sizes : [10_000, 100_000]) {
     else await db.close();
   }
 }
+// A kept database holds connections open; nothing else is left to do.
+if (process.env.KEEP) process.exit(0);

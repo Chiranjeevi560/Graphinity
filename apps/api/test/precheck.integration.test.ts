@@ -99,7 +99,11 @@ describe('has it been asked already?', () => {
     });
     const id = response.json<{ question: { id: string } }>().question.id;
     expect(
-      (await h.t.owner.query('SELECT embedding IS NOT NULL AS has FROM app.questions WHERE id = $1', [id])).rows,
+      (
+        await h.t.owner.query('SELECT EXISTS (SELECT 1 FROM app.question_embeddings WHERE question_id = $1) AS has', [
+          id,
+        ])
+      ).rows,
     ).toEqual([{ has: true }]);
   });
 
@@ -154,7 +158,7 @@ describe('has it been asked already?', () => {
   it('stores each new question’s meaning, from the model that made it', async () => {
     const q = await ask('How much customs duty did you pay importing a watch through Chennai airport?');
     const { rows } = await h.t.owner.query<{ model: string; has: boolean }>(
-      'SELECT embedding_model AS model, embedding IS NOT NULL AS has FROM app.questions WHERE id = $1',
+      'SELECT model, true AS has FROM app.question_embeddings WHERE question_id = $1',
       [q],
     );
     expect(rows).toEqual([{ model: embedder.model, has: true }]);
@@ -173,14 +177,17 @@ describe('has it been asked already?', () => {
     expect(
       (
         await h.t.owner.query<{ has: boolean }>(
-          'SELECT embedding IS NOT NULL AS has FROM app.questions WHERE id = $1',
+          'SELECT EXISTS (SELECT 1 FROM app.question_embeddings WHERE question_id = $1) AS has',
           [q],
         )
       ).rows,
     ).toEqual([{ has: true }]);
     // And it is found by meaning, for anyone: its own vector finds it first.
     const own = (
-      await h.t.owner.query<{ v: string }>('SELECT embedding::text AS v FROM app.questions WHERE id = $1', [q])
+      await h.t.owner.query<{ v: string }>(
+        'SELECT embedding::text AS v FROM app.question_embeddings WHERE question_id = $1',
+        [q],
+      )
     ).rows[0]?.v;
     const found = await h.t.database.withUser(null, tx =>
       tx.query<{ id: string }>('SELECT id::text AS id FROM app.nearest_questions($1, $2, NULL, 5)', [
@@ -268,7 +275,7 @@ describe('has it been asked already?', () => {
   it('never compares meanings made by different models', async () => {
     const q = await ask('How long does a FedEx customs hold take for a laptop in Bangalore?');
     await answer(q);
-    await h.t.owner.query("UPDATE app.questions SET embedding_model = 'an-older-model' WHERE id = $1", [q]);
+    await h.t.owner.query("UPDATE app.question_embeddings SET model = 'an-older-model' WHERE question_id = $1", [q]);
     const res = await precheck('How long does a FedEx customs hold take for a laptop in Bangalore?');
     // Found by words at most, never judged by meaning.
     expect(res.verdict).not.toBe('duplicate');
@@ -324,7 +331,7 @@ describe('the background job', () => {
         )
       ).rows,
     ).toEqual([{ enabled: false }]);
-    await h.t.owner.query('UPDATE app.questions SET embedding = NULL, embedding_model = NULL WHERE id = $1', [qid]);
+    await h.t.owner.query('DELETE FROM app.question_embeddings WHERE question_id = $1', [qid]);
     const down: Embedder = {
       model: embedder.model,
       dims: embedder.dims,
@@ -335,7 +342,7 @@ describe('the background job', () => {
     expect(
       (
         await h.t.owner.query<{ model: string | null }>(
-          'SELECT embedding_model AS model FROM app.questions WHERE id = $1',
+          'SELECT model FROM app.question_embeddings WHERE question_id = $1',
           [qid],
         )
       ).rows,
@@ -390,7 +397,7 @@ describe('without meaning (out of the free allowance, or offline)', () => {
       const q = must(res.json<{ question: { id: string } }>().question.id);
       expect(await embedMissing(off.t.database, embedder)).toBeGreaterThanOrEqual(1);
       const { rows } = await off.t.owner.query<{ has: boolean }>(
-        'SELECT embedding IS NOT NULL AS has FROM app.questions WHERE id = $1',
+        'SELECT EXISTS (SELECT 1 FROM app.question_embeddings WHERE question_id = $1) AS has',
         [q],
       );
       expect(rows).toEqual([{ has: true }]);

@@ -220,6 +220,19 @@ whenever a user-linked table is added.
 - **Known trade-off:** every new question updates one shared row (`app.search_corpus`), so question
   inserts briefly queue behind each other. Fine at today's rate; revisit if inserts ever contend.
 
+## Question vectors (ADR 0015 part 5)
+
+- `app.question_embeddings` has row-level security forced. A request may only add the vector of a
+  question its own asker just posted (policy `question_embeddings_own_new`); reading, changing and
+  removing vectors is the background job's alone (`app.is_system()`). Searching goes through the
+  owner-run `app.nearest_questions`, which leaves out hidden questions and other fields itself.
+  Tested: another person's question refused (42501); reads, updates and deletes as a person see and
+  touch nothing.
+- `app.store_question_embeddings` (the job's batch store) refuses any transaction that isn't the
+  job's (42501), and skips a question deleted meanwhile. Tested.
+- Vectors go with their question (`ON DELETE CASCADE`), so deleting an account deletes them. Tested.
+- Models and sizes never mix: a search compares only vectors of the model and size it was given.
+
 ## Known gaps
 
 - The daily limit of 3 questions per person is counted without a lock. One server routes one

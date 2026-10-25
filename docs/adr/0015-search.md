@@ -1,7 +1,7 @@
 # ADR 0015: Search, built in measured slices
 
 - **Status:** In progress. Part 1 (consent) accepted and built 2026-10-25. Part 2 (the engine)
-  built 2026-10-26. Later parts are recorded here as they land.
+  and part 5 (ANN) built 2026-10-26. Later parts are recorded here as they land.
 - **Owner decisions (2026-10-25):**
   1. **Both surfaces, one engine:** a Search screen and the Ask screen's "has this been asked?"
      check.
@@ -191,6 +191,74 @@ Verified for part 2: see the commit. Tests through the API and the database:
 - Wildcard escaping; the API role refused on the statistics; the kill switch; per-person and
   per-address limits; the exact keys returned.
 
+## Part 5: meaning at the model's own size, searched as measured (migration 0021, schema 36)
+
+Taken out of order: part 2's benchmark showed the meaning stage missing the latency target at
+100,000 questions.
+
+### What was measured
+
+All at 100,000 questions:
+
+- **Index fit.** Vectors were zero-padded to 768 numbers, though the own model makes 128. The index
+  was 195 MB against 128 MB of shared buffers, so searches read it from disk.
+- **The default `ef_search` (40)** returns at most 40 rows: recall@50 0.80 against an exact scan.
+- **Recall and speed by configuration** (`scripts/benchmark-ann.mjs`, querying with new text, as
+  searches do):
+
+  | Stored as | m | Index | Build | Recall@50, ef 200 / 400 | p50, ef 200 / 400 |
+  |---|---|---|---|---|---|
+  | 768 padded | 24 | 205 MB | 105 s | (ef 160: recall@10 0.96, 8.3 ms) | |
+  | 128 | 16 | 57 MB | 22 s | 0.87 / 0.95 | 1.7 / 3.2 ms |
+  | **128** | **24** | **68 MB** | 33 s | **0.93 / 0.98** | **2.4 / 4.6 ms** |
+
+  Padding zeros don't change cosine, so 128 and 768 find the same neighbours; 128 does it in a third
+  of the memory, up to four times faster.
+
+### Two more costs in the word stage, found while measuring this
+
+- **The hidden-question check ran on every candidate.** `app.is_question_hidden` costs about 60 µs a
+  call and can't be inlined (it has a `SET` clause). It took 15 of 17 ms. Both functions now score
+  first, then check only twice the rows asked for. Hidden questions are rare.
+- **A cached generic plan walked the primary key backwards.** After five calls on one connection,
+  PL/pgSQL switched `app.word_search` to a generic plan that can't see how rare the words are, and it
+  filtered all 100,000 questions (20 ms against 2.3 ms). Its main query is now planned on every call
+  (`RETURN QUERY EXECUTE`, values as parameters).
+  - Forcing custom plans for the whole function was tried and rejected: it also re-plans the hidden
+    check's queries on every call (16 ms).
+
+### Chosen
+
+- **`app.question_embeddings`**, keyed by question and model, at the model's own size. Several
+  models' vectors can coexist (embedding versioning).
+  - The background job fills in what the serving model lacks, 500 a minute, newest first, then
+    removes other models' vectors, 5,000 a minute.
+  - Batches go through `app.store_question_embeddings`, owner-run, because the API role has no
+    rights on the extensions schema.
+- **One HNSW index per size:** `halfvec(128)`, m 24, ef_construction 200, partial on size.
+  `app.nearest_questions` searches it with `ef_search` 400 and an iterative scan, so filtering by
+  model and field can't return fewer rows than asked for. Other sizes are compared exactly.
+- **Expand, then contract.** The old `questions.embedding` column stays for the previous release
+  during a deploy, but is no longer written or read; its 195 MB index is dropped. The column goes in a
+  later release.
+
+### Result
+
+`scripts/benchmark-search.mjs`; each ranking measured in its own pass:
+
+| | 10,000: p50 / p95 | 100,000: p50 / p95 |
+|---|---|---|
+| Meaning stage | 2.2 / 2.8 ms | **5.9 / 10.3 ms** (was 36 / 201; 389 / 1,140 grown incrementally) |
+| Word stage | 6.1 / 8.4 ms | **4.0 / 6.8 ms** |
+| **Whole search** | **9.7 / 12.3 ms** | **11.9 / 16.8 ms** (target p50 30, p95 100) |
+| Vectors + index | 3.4 + 6.8 MB | 34 + 68 MB (was 164 MB of table, 195 MB of index) |
+
+Quality is unchanged: words MRR 0.98 at 10k and 0.87 at 100k; meaning 0.67 and 0.16.
+
+- **Not measured:** Supabase's own hardware.
+- **Not seen in tests:** recall at `ef_search` 400 (a test pins the setting, and the benchmark
+  measures what it buys).
+
 ## Measured so far for later parts
 
 `node scripts/benchmark-ann.mjs` (pgvector HNSW exactly as built: halfvec(768), cosine, m 24,
@@ -217,9 +285,7 @@ What this shows:
    inserts checked in the database; deleted on revoke (trigger); export and deletion coverage. No
    numbers about other people (trust, reputation) reach the client: reasons are words.
 4. **The Search screen,** and the Ask check on the same engine.
-5. **ANN, next:** the meaning stage misses the latency target at 100,000 questions (above). Its query
-   plan, 128-dimension storage, measured `ef_search`, a filter-aware candidate count, and a rebuild
-   script for the owner connection.
+5. ~~ANN~~: built (above).
 6. **Learning:**
    - labels only from the searcher's own actions;
    - randomized top-5 swaps on a disclosed small share of consented sessions, so position bias can
