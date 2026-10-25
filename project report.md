@@ -245,3 +245,17 @@ Built and verified:
 - Bugs found by the tests and measurements, and fixed: context taken from the misspelled previous word ("cusotms dity" became "dirty"); a corrector with no "leave it" option changed correct rare words (1,854 changes for 1,538 typos); a 122 MB index (now 18 MB); lookups 5× slower from splitting letters (now faster than before); and my own change to the word-query builder that let repeats count against its 12-word limit.
 
 Measured (synthetic, Apple M2): a full run takes 1.6 s at 2,000 questions, 3.9 s at 10,000 and 7.5 s at 40,000, with 101–226 MB peak memory growth; correcting a word takes 0.07 ms at the median. On held-out test words it fixed 95% of typos at 10,000 and 40,000 questions, right in 90% and 95% of its changes; at 2,000 the gate refused (lower bound 79.4%). Not verified: real people's typos (the test typos are injected), and Render's memory under both training runs (its free memory isn't stated on its own pages).
+
+## Personal graph algorithms v2 (2026-10-25, Claude)
+
+Owner request: continue in dependency order with the personal knowledge graph and its algorithms, measured and tested. ADR 0012 has the design, evidence and gaps.
+
+What measurement found wrong in v1, and the fixes (all measured on planted-community graphs at the 1,000-node cap):
+- Label propagation put every node in one community once 40% of links crossed communities (NMI 0). Louvain, with each community split into its connected parts, keeps finding structure (NMI 0.93 / 0.82 / 0.70 / 0.47 at 10–40% mixing, against 0.86 / 0.59 / 0.39 / 0.02).
+- Hashed walk embeddings barely beat chance at predicting hidden links (AUC 0.53–0.65). NetMF, the exact matrix DeepWalk approximates, factorized with the text model's eigensolver: AUC 0.90 / 0.84 / 0.73 / 0.64.
+- The recommendation score added personalized PageRank (≈0.001 per node) to cosines (0–1), so PageRank barely counted; it found hidden neighbours less often than PageRank alone. v2 ranks by cosine to the PageRank-weighted embedding: 17% / 11% / 8% / 6% of hidden neighbours in the top 10, against 8% / 3% / 5% / 1%.
+- Stored confidence and freshness were ignored. Now weight × confidence, and observed edges halve every 90 days (a stated prior); entered edges don't fade.
+- Analysis ran on the request thread inside the database transaction. It now runs on one worker thread after the transaction, with a queue of 8 and a plain-words 503 beyond it.
+- PageRank rewritten on flat arrays: bit-identical results, 4–20× faster, so v2 is faster than v1 at every size (2.5 ms at 50 nodes, 13.5 ms at 300, 71–172 ms at 1,000).
+
+Verified: 21 rules broken on purpose, 18 caught (PageRank's dead-end mass, untested since v1, survived at first and now has an exact test); of the 3 survivors, 2 are equivalent rankings and 1 guards a Louvain failure no test graph triggers (its function is tested directly). Branch coverage 86.07% (bar 85.65%) after replacing dead `?? 0` fallbacks with the `valueAt` helper. Not verified: real personal graphs (none exist to measure), and above 50% mixing at this sparsity nothing recovers structure, v2 included. Projected signals still all carry weight 1 (a picked answer counts like a view); that needs outcome data.

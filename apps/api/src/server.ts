@@ -14,6 +14,7 @@ import { registerPointRoutes } from './routes/points.ts';
 import { registerGraphRoutes } from './routes/graph.ts';
 import { registerPushRoutes } from './routes/push.ts';
 import type { Embedder } from './embeddings.ts';
+import { createGraphAnalyzer, type GraphAnalyzer } from './graph-analyzer.ts';
 import type { Speller } from './ml/spelling.ts';
 import { registerQuestionRoutes } from './routes/questions.ts';
 import { registerConsentRoutes } from './routes/consent.ts';
@@ -68,6 +69,8 @@ export interface Deps {
   vapidPublicKey?: string | null;
   /** Embeddings for semantic search; absent: word matching only. */
   embedder?: Embedder | null;
+  /** Personal graph analysis off the main thread. Defaults to one worker owned (and closed) by this server. */
+  graphAnalyzer?: GraphAnalyzer;
   /** Spelling corrections for the precheck's word search; absent: words as typed only. */
   speller?: Pick<Speller, 'correctDraft'> | null;
   /** Global recommendation kill switch; per-user consent is enforced separately. */
@@ -272,7 +275,9 @@ export async function buildServer(deps: Deps) {
 
   registerProfileRoutes(app, { db, authAdmin: deps.authAdmin, clock, subjectKey: config.ipHashKey, log: app.log });
   registerConsentRoutes(app, { db });
-  registerPersonalGraphRoutes(app, { db });
+  const analyzer = deps.graphAnalyzer ?? createGraphAnalyzer();
+  if (!deps.graphAnalyzer) app.addHook('onClose', () => analyzer.close());
+  registerPersonalGraphRoutes(app, { db, analyzer, clock });
   registerRecommendationRoutes(app, { db, enabled: deps.recommendationsEnabled ?? (() => true) });
   const events = deps.events ?? createEvents();
   registerQuestionRoutes(app, { db, events, embedder: deps.embedder ?? null, speller: deps.speller ?? null });

@@ -89,7 +89,7 @@ platform. This is a new scope, not a claim that launch prep is complete.
 | Stage | Status |
 |---|---|
 | Purpose-specific consent catalog, private settings, append-only audit | ✅ Implemented in migrations 0003–0004 and `/me/consents` |
-| Personal graph layers, owner RLS, consent-gated nodes/edges, and evidence-linked event projection | 🟡 Typed consent categories, relationship writes, event projection, and owner-only PageRank/PPR/label propagation/walk embeddings/recommendations implemented with bounded graph input; broader collection and learned graph models remain |
+| Personal graph layers, owner RLS, consent-gated nodes/edges, and evidence-linked event projection | 🟡 Typed consent categories, relationship writes, event projection, and owner-only PageRank/PPR, Louvain communities, NetMF embeddings and recommendations (v2, ADR 0012, measured against v1 on planted graphs) on a worker thread, with confidence and age weighting; per-signal weights for projected events and real-graph evaluation remain |
 | Data controls and export | 🟡 Basic screen, individual/bulk graph deletion, and documented JSON export implemented; browser QA and export audit ongoing |
 | Automatic first-party event collection with retention cleanup | 🟡 Question interaction and consented search/view signals are captured; bounded async projection and aggregate queue-depth/lag warnings exist; provider alert routing and broader collectors remain |
 | Consent-aware personalization and explainability | 🟡 Limited: finite opt-in question discovery and source-specific reasons exist; offline ranking metrics added, but no trained model or production evaluation dataset |

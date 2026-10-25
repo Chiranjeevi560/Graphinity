@@ -1,6 +1,8 @@
 # ADR 0009: Consented personal graph analysis
 
-- **Status:** Accepted; implemented in `personal-graph-v1`
+- **Status:** Accepted; implemented in `personal-graph-v1`. Its community detection, embeddings,
+  recommendation score and edge weighting are superseded by ADR 0012 (`personal-graph-v2`), after
+  measurement found label propagation collapsing and the blended score mixing scales.
 - **Date:** 2026-10-22
 
 ## Problem
