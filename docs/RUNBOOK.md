@@ -251,6 +251,20 @@ A promoted version serves only while the owner turns `learned_routing` on (SQL e
 'learned_routing';`). Off again, the next routing run (within a minute) uses Ψ for everyone.
 Benchmark: `node --expose-gc scripts/benchmark-routing.mjs`.
 
+Routing exploration (ADR 0014) acts only with a routing model serving and the owner's
+`routing_exploration` switch on. The daily `routing monitor` log line gives the serving model's
+calibration (z), how many last places exploration decided and explored, and the SNIPS estimate of
+never exploring against what was got. A `routing model retired` warning means automatic demotion
+took the model out (routing is back on Ψ). Decisions in the SQL editor:
+
+```sql
+SELECT explore_reason, count(*), avg(propensity) AS mean_propensity, avg(predicted) AS mean_predicted
+FROM app.route_factors WHERE explore_reason IS NOT NULL AND recorded_at > now() - interval '7 days'
+GROUP BY explore_reason;
+```
+
+Benchmark: `node scripts/benchmark-exploration.mjs 12` (the policy comparison).
+
 Personal graph analysis (ADR 0012) logs `graph analysis` with its time in ms and how many are
 waiting, and `graph analysis busy` when it refuses with 503. Sustained `busy` means the one worker
 can't keep up: look at the times first. To compare the algorithms with v1 on planted graphs:

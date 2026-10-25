@@ -178,3 +178,43 @@ export function decideRouting(
     difference,
   };
 }
+
+// Calibration: does the model's predicted chance of helping match what happened?
+// Used by the daily monitor to retire a serving model, and by the promotion
+// gate, so a model that would be retired can't be promoted (ADR 0014).
+export const MIN_CALIBRATION_ROUTES = 200;
+const Z_99 = 2.576;
+const SHORTFALL = 0.8;
+
+export interface Calibration {
+  routes: number;
+  expected: number;
+  observed: number;
+  z: number | null;
+  demote: boolean;
+  reason: string;
+}
+
+export function calibrationVerdict(rows: ReadonlyArray<{ predicted: number; helped: boolean }>): Calibration {
+  const expected = rows.reduce((s, r) => s + r.predicted, 0);
+  const variance = rows.reduce((s, r) => s + r.predicted * (1 - r.predicted), 0);
+  const observed = rows.filter(r => r.helped).length;
+  const base = { routes: rows.length, expected, observed };
+  if (rows.length < MIN_CALIBRATION_ROUTES)
+    return {
+      ...base,
+      z: null,
+      demote: false,
+      reason: `${String(rows.length)} settled routes; ${String(MIN_CALIBRATION_ROUTES)} needed to judge`,
+    };
+  const z = variance > 0 ? (observed - expected) / Math.sqrt(variance) : 0;
+  const demote = z < -Z_99 && observed < SHORTFALL * expected;
+  return {
+    ...base,
+    z,
+    demote,
+    reason: demote
+      ? `helpful answers ${String(observed)} against ${expected.toFixed(1)} predicted (z ${z.toFixed(2)}): retired, routing uses Ψ`
+      : `helpful answers ${String(observed)} against ${expected.toFixed(1)} predicted (z ${z.toFixed(2)}): keeps serving`,
+  };
+}

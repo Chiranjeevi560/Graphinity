@@ -245,6 +245,12 @@ It takes effect within a minute.
 
 **To switch it off** (any time, nothing is lost): the same line with `enabled = false`.
 
+**Exploration (also yours to decide, also off):** once a routing model is kept, Graphinity can use
+the last place of each wave to try someone it is unsure about, but only when there's a real chance
+they're better, never at more than half a place's value, and no one more than 3 times a week (ADR
+0014). Switch on with the same line as above but `WHERE name = 'routing_exploration'`. Off again,
+the last place goes back to a newcomer within a minute.
+
 ## Part I: Update the live database
 
 Changes to the database are numbered files (`db/migrations`), applied by one command that keeps a

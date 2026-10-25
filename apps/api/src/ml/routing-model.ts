@@ -19,7 +19,7 @@
 //     help" means "nobody looked".
 import { createHash } from 'node:crypto';
 import { valueAt } from './linalg.ts';
-import { fitLogistic, logLoss, predict, type LogisticModel } from './logistic.ts';
+import { fitLogistic, logLoss, posteriorCovariance, predict, type LogisticModel } from './logistic.ts';
 import { FACTOR_ORDER, FACTORS_VERSION } from '../routing-score.ts';
 
 export const ROUTING_ALGORITHM = 'two-stage-bayesian-logistic';
@@ -40,10 +40,22 @@ export interface RoutingExample {
   helped: boolean;
   /** The asker picked an answer or marked one helpful on this question. */
   judged: boolean;
+  /** Who was asked: only to estimate how much people differ beyond their factors (never stored in the model). */
+  profileId?: string;
 }
 
 export interface Stage {
   weights: number[];
+  /**
+   * Laplace posterior covariance of the weights (d×d, row-major, d = weights.length):
+   * how sure the fit is. Zero rows and columns for weights held at 0.
+   */
+  covariance: number[];
+  /**
+   * τ: how much people differ on the logit scale beyond what their factors say,
+   * estimated from the data (0 when they don't measurably differ).
+   */
+  personSd: number;
   lambda: number;
   converged: boolean;
 }
@@ -71,6 +83,22 @@ function row(model: Pick<RoutingModel, 'mean' | 'sd'>, factors: readonly number[
   });
   out.push(wave === 2 ? 1 : 0, wave === 3 ? 1 : 0);
   return out;
+}
+
+/** A candidate's model inputs as served (standardized factors, wave terms 0). */
+export const routingRow = (model: Pick<RoutingModel, 'mean' | 'sd'>, factors: readonly number[]): number[] =>
+  row(model, factors, 1);
+
+/** P(helps) at a given wave, wave terms included: what to check a route's outcome against. */
+export function scoreRoutingAt(model: RoutingModel, factors: readonly number[], wave: number): number {
+  const x = row(model, factors, wave);
+  return predict(model.availability, x) * predict(model.quality, x);
+}
+
+/** P(answers) and P(helps | answers) separately, at a wave. */
+export function stagesAt(model: RoutingModel, factors: readonly number[], wave: number): { a: number; q: number } {
+  const x = row(model, factors, wave);
+  return { a: predict(model.availability, x), q: predict(model.quality, x) };
 }
 
 /** P(helps), as served: wave terms left out. */
@@ -149,9 +177,11 @@ function chooseLambda(
   rows: ReadonlyArray<{ x: number[]; y: number; fold: number }>,
   nonNegative: readonly number[],
   fixedZero: readonly number[],
+  lambdas: readonly number[],
 ): number {
+  if (lambdas.length === 1) return lambdas[0] ?? 1;
   let best: { lambda: number; loss: number } | null = null;
-  for (const lambda of LAMBDAS) {
+  for (const lambda of lambdas) {
     const p: number[] = [];
     const y: number[] = [];
     for (let f = 0; f < FOLDS; f++) {
@@ -177,7 +207,10 @@ function chooseLambda(
 }
 
 /** Trains both stages on exploit routes. Deterministic for the same examples. */
-export function trainRoutingModel(examples: readonly RoutingExample[]): RoutingModel {
+export function trainRoutingModel(
+  examples: readonly RoutingExample[],
+  options: { lambdas?: readonly number[] } = {},
+): RoutingModel {
   const n = examples.length;
   const mean = FACTOR_ORDER.map((_, k) => examples.reduce((s, e) => s + valueAt(e.factors, k), 0) / Math.max(1, n));
   const sd = FACTOR_ORDER.map((_, k) =>
@@ -197,15 +230,36 @@ export function trainRoutingModel(examples: readonly RoutingExample[]): RoutingM
       }
       return { x: row(base, e.factors, e.wave), y: label(e) ? 1 : 0, fold };
     });
-    const lambda = chooseLambda(rows, nonNegative, constantIdx);
-    const fit = fitConstrained(
-      rows.map(r => r.x),
-      rows.map(r => r.y),
-      lambda,
-      nonNegative,
-      constantIdx,
+    const lambda = chooseLambda(rows, nonNegative, constantIdx, options.lambdas ?? LAMBDAS);
+    const xs = rows.map(r => r.x);
+    const ys = rows.map(r => r.y);
+    const fit = fitConstrained(xs, ys, lambda, nonNegative, constantIdx);
+    // Uncertainty over the weights actually fitted: held-at-0 ones are certain by construction.
+    const d = fit.weights.length;
+    const freeCols = Array.from({ length: d - 1 }, (_, k) => k).filter(
+      k => !constantIdx.includes(k) && !(nonNegative.includes(k) && valueAt(fit.weights, k + 1) === 0),
     );
-    return { weights: fit.weights, lambda, converged: fit.converged };
+    const sub = posteriorCovariance(
+      xs.map(r => freeCols.map(k => valueAt(r, k))),
+      { weights: [valueAt(fit.weights, 0), ...freeCols.map(k => valueAt(fit.weights, k + 1))], lambda },
+    );
+    const covariance = new Array<number>(d * d).fill(0);
+    const at = [0, ...freeCols.map(k => k + 1)];
+    at.forEach((r, i) => {
+      at.forEach((c, j) => (covariance[r * d + c] = valueAt(sub, i * at.length + j)));
+    });
+    const predictions = xs.map(x => predict(fit, x));
+    return {
+      weights: fit.weights,
+      covariance,
+      personSd: estimatePersonSd(
+        subset.map(e => e.profileId),
+        predictions,
+        ys,
+      ),
+      lambda,
+      converged: fit.converged,
+    };
   };
   return {
     v: 1,
@@ -220,6 +274,48 @@ export function trainRoutingModel(examples: readonly RoutingExample[]): RoutingM
       e => e.helped,
     ),
   };
+}
+
+/**
+ * τ by approximate marginal likelihood: a person's total residual r = Σ(y − p)
+ * over their routes, with information I = Σ p(1 − p), is roughly
+ * N(0, I + I²τ²) if their own effect is N(0, τ²) on the logit scale
+ * (a first-order expansion around the fitted model). Maximized over τ by
+ * golden-section search on [0, 3]; 0 when fewer than 30 people have routes.
+ */
+export function estimatePersonSd(
+  people: ReadonlyArray<string | undefined>,
+  predictions: readonly number[],
+  labels: readonly number[],
+): number {
+  const sums = new Map<string, { r: number; info: number }>();
+  people.forEach((id, i) => {
+    if (id === undefined) return;
+    const p = valueAt(predictions, i);
+    const s = sums.get(id) ?? { r: 0, info: 0 };
+    s.r += valueAt(labels, i) - p;
+    s.info += p * (1 - p);
+    sums.set(id, s);
+  });
+  const usable = [...sums.values()].filter(s => s.info > 1e-9);
+  if (usable.length < 30) return 0;
+  const logLikelihood = (tau: number) =>
+    usable.reduce((acc, { r, info }) => {
+      const v = info + info * info * tau * tau;
+      return acc - 0.5 * (Math.log(v) + (r * r) / v);
+    }, 0);
+  let lo = 0;
+  let hi = 3;
+  const phi = (Math.sqrt(5) - 1) / 2;
+  for (let i = 0; i < 60; i++) {
+    const a = hi - phi * (hi - lo);
+    const b = lo + phi * (hi - lo);
+    if (logLikelihood(a) < logLikelihood(b)) lo = a;
+    else hi = b;
+  }
+  const tau = (lo + hi) / 2;
+  // The boundary wins when people don't differ beyond their factors.
+  return logLikelihood(0) >= logLikelihood(tau) ? 0 : tau;
 }
 
 export function serializeRoutingModel(model: RoutingModel): Buffer {
@@ -242,7 +338,13 @@ export function deserializeRoutingModel(buffer: Buffer): RoutingModel {
     !finite(m.availability.weights) ||
     !finite(m.quality.weights) ||
     m.availability.weights.length !== width ||
-    m.quality.weights.length !== width
+    m.quality.weights.length !== width ||
+    !finite(m.availability.covariance) ||
+    !finite(m.quality.covariance) ||
+    m.availability.covariance.length !== width * width ||
+    m.quality.covariance.length !== width * width ||
+    !(m.availability.personSd >= 0) ||
+    !(m.quality.personSd >= 0)
   )
     throw new Error('not a Graphinity routing model for these factors');
   return { ...m, v: 1 };

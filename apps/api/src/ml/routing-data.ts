@@ -14,7 +14,8 @@
 // factor version is read, so changed definitions never mix. Under the cap the
 // newest routes are kept.
 import { createHash } from 'node:crypto';
-import type { Database } from '../db.ts';
+import type { Database, Queryable } from '../db.ts';
+import type { PastRoute } from './routing-bandit.ts';
 import { FACTORS_VERSION } from '../routing-score.ts';
 import type { GateExample } from './routing-gate.ts';
 
@@ -86,6 +87,8 @@ export async function loadRoutingExamples(
     examples: rows.map(r => ({
       questionId: r.question_id,
       askerId: r.asker_id,
+      // Only to estimate how much people differ beyond their factors; no per-person value is learned.
+      profileId: r.profile_id,
       wave: r.wave,
       factors: r.factors,
       responded: r.responded,
@@ -113,4 +116,54 @@ export async function purgeOldRouteFactors(db: Pick<Database, 'asSystem'>): Prom
         ])
       ).rowCount ?? 0,
   );
+}
+
+/**
+ * Each person's own settled routes (every route of theirs is evidence about
+ * them, exploration ones included), labelled exactly as training labels them:
+ * what exploration's person posterior learns from (ADR 0014). Bounded by the
+ * 180-day life of factors and 3 routes a day: at most about 540 a person.
+ */
+export async function loadHistories(q: Queryable, profileIds: readonly string[]): Promise<Map<string, PastRoute[]>> {
+  if (!profileIds.length) return new Map();
+  const rows = (
+    await q.query<{
+      profile_id: string;
+      factors: number[];
+      wave: number;
+      responded: boolean;
+      helped: boolean;
+      judged: boolean;
+    }>(
+      `SELECT f.profile_id::text AS profile_id, f.factors, f.wave,
+              ans.id IS NOT NULL AS responded,
+              coalesce(ans.id IS NOT NULL AND (
+                EXISTS (SELECT 1 FROM app.selections s WHERE s.answer_id = ans.id AND s.selected_at <= horizon.at)
+                OR EXISTS (SELECT 1 FROM app.helpful_marks h WHERE h.answer_id = ans.id AND h.marked_at <= horizon.at)),
+                false) AS helped,
+              (EXISTS (SELECT 1 FROM app.selections s WHERE s.question_id = qu.id AND s.selected_at <= horizon.at)
+               OR EXISTS (SELECT 1 FROM app.helpful_marks h JOIN app.answers a2 ON a2.id = h.answer_id
+                          WHERE a2.question_id = qu.id AND h.marked_at <= horizon.at)) AS judged
+       FROM app.route_factors f
+       JOIN app.routes r ON r.question_id = f.question_id AND r.profile_id = f.profile_id
+       JOIN app.questions qu ON qu.id = f.question_id
+       CROSS JOIN LATERAL (SELECT qu.created_at + make_interval(days => $2) AS at) horizon
+       LEFT JOIN LATERAL (
+         SELECT a.id FROM app.answers a
+         WHERE a.question_id = f.question_id AND a.answerer_id = f.profile_id
+           AND a.created_at <= r.routed_at + interval '7 days' AND NOT app.is_answer_hidden(a.id)
+         ORDER BY a.created_at LIMIT 1
+       ) ans ON true
+       WHERE f.profile_id = ANY($1::uuid[]) AND f.factors_version = $3 AND horizon.at < now()
+         AND NOT app.is_question_hidden(qu.id)`,
+      [profileIds, LABEL_HORIZON_DAYS, FACTORS_VERSION],
+    )
+  ).rows;
+  const out = new Map<string, PastRoute[]>();
+  for (const r of rows) {
+    const list = out.get(r.profile_id) ?? [];
+    list.push({ factors: r.factors, wave: r.wave, responded: r.responded, helped: r.helped, judged: r.judged });
+    out.set(r.profile_id, list);
+  }
+  return out;
 }

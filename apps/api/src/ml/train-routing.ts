@@ -3,6 +3,7 @@
 // judge the candidate against Ψ (and the serving model) on the held-out
 // questions asked since the last rejection. Runs unchanged on the worker.
 import {
+  calibrationVerdict,
   decideRouting,
   isRoutingHeldOut,
   psiScore,
@@ -15,6 +16,7 @@ import {
   deserializeRoutingModel,
   ROUTING_ALGORITHM,
   scoreRouting,
+  scoreRoutingAt,
   serializeRoutingModel,
   trainRoutingModel,
   type RoutingModel,
@@ -52,13 +54,22 @@ export function trainRoutingAndEvaluate(input: RoutingInput): RoutingResult {
   const trainMs = Math.round(performance.now() - started);
   const judged = strata(heldOut, input.since);
   const serving = input.serving ? deserializeRoutingModel(Buffer.from(input.serving.artifact)) : null;
-  const decision = decideRouting(
+  const ranked = decideRouting(
     judged,
     stratumAucs(judged, f => scoreRouting(model, f)),
     stratumAucs(judged, psiScore),
     serving ? stratumAucs(judged, f => scoreRouting(serving, f)) : null,
     model,
   );
+  // The same check the daily monitor retires a serving model by, on held-out judged routes at
+  // their real waves: a model that would be retired mustn't be promoted.
+  const calibration = calibrationVerdict(
+    heldOut.filter(e => e.judged).map(e => ({ predicted: scoreRoutingAt(model, e.factors, e.wave), helped: e.helped })),
+  );
+  const decision =
+    ranked.promote && calibration.demote
+      ? { ...ranked, promote: false, reason: `ranks well but is miscalibrated: ${calibration.reason}` }
+      : ranked;
   return {
     decision,
     params: {

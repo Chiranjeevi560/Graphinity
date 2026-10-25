@@ -278,3 +278,26 @@ Measured (simulation, Apple M2):
 - 48,465 routes train in 9.5 s (49.5 MB) on the worker thread; scoring takes 0.5 µs per candidate.
 
 Not verified: real outcomes (the live database has no routes yet; the gate will refuse until they exist). Off-policy limits are stated, and a small random place per wave with recorded probabilities is offered as a separate change. Before merging: `npm run db:migrate:remote` (migrations 0015 and 0016), then merge.
+
+## Routing exploration (2026-10-25, Claude)
+
+Owner request: a production-grade exploration and exploitation framework for routing, chosen by measurement, exploring only when uncertainty justifies it, with logging, regret measurement, promotion and demotion, fairness, abuse resistance and rollback. ADR 0014 has the design and evidence.
+
+Built and verified:
+- **Posterior:** the routing model's Laplace approximation (weight covariance) plus a person effect per stage. The person effect is a Laplace update from each person's own settled record (residual and information), with τ estimated by approximate marginal likelihood. Cold start and new-expert discovery come from it, not from a reserved place.
+- **Gated Thompson sampling** for each wave's last place. The winner of a posterior draw takes the place only if it has at least a 25% posterior chance of beating exploitation's choice, at least half its expected value, and fewer than 3 exploration routes that week (also a database trigger, under a per-person lock against concurrent runs, migration 0018). Otherwise exploitation's choice takes it.
+- **Logging:** every decided place records its reason, the chance it was better, the model's prediction at the route's real wave, and its propensity (a 128-draw estimate; the full place distribution sums to 1, tested). Decisions are deterministic per question, wave and model version.
+- **Monitoring:** automatic demotion by calibration (z < −2.58 and observed under 80% of predicted), with the same check in the promotion gate and a retirement moving the judging window, so a demoted model can't return the next night. A daily report gives a SNIPS estimate of never exploring.
+- **Switch:** exploration is off until the owner turns on `routing_exploration`; it needs a promoted model; off, the spec's newcomer place returns within a minute.
+- **Review:** a fresh-eyes review found 2 blockers (calibration comparing later waves with wave-1 predictions; a demotion undone the next night) and should-fixes. The fixes: a real posterior mean from each person's record, information from settled routes, the cap race, a refusal falling back instead of failing the wave, a retired model cleared from memory, and a 12-seed benchmark with tuned rivals and a competing-answers world. The rest is stated in the ADR.
+
+Measured (simulation, 12 seeds, ± standard error, regret against an oracle, difference from never exploring):
+- **Today's newcomer place:** +90 ± 10 (independent answers) and +9.9 ± 1.3 (competing), the costliest in both.
+- **Gated Thompson:** −8.5 ± 6.9 and +2.4 ± 1.9.
+- **Best GLM-UCB:** −13.9 ± 7.5 and +1.0 ± 2.5, which can't be told apart from gated Thompson.
+- **Why gated Thompson:** its randomness is what makes the logged propensities, and so later unbiased evaluation, possible; UCB is deterministic. Where answers compete, no exploration paid for itself within 30 days; the gated cost is about 0.27 points of "someone helped" per question.
+- **Speed:** 3.7–4.9 ms per decision, in the background routing job.
+
+Tests: 578 API tests, branch coverage 86.23% (bar 85.65%). 18 rules broken on purpose, all caught; three survived first (the safety gate, routing reading each candidate's record, and the cap's lock, whose race test couldn't see the race) and their tests were sharpened.
+
+Not verified: real people (no live routes yet). The application-level fallback after a database cap refusal happens only in a race and isn't exercised end to end (the lock itself is tested with two concurrent transactions). Exploration isn't shown to the routed person. Before merging: run `npm run db:migrate:remote` (0015–0018), then merge.

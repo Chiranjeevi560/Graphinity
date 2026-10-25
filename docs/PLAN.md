@@ -58,7 +58,7 @@ Render or Supabase.** Limits checked on the services' own pages on 2026-10-17 ar
 - **Routing**: staged waves of 5, 5 and 5 at 0, 20 and 60 minutes, ranked by expertise,
   responsiveness and country, with a daily notification budget per person and reserved slots
   for newcomers. Each decision's factors are recorded, and a learned model of who helps (ADR 0013)
-  may rank the main places once it beats Ψ on held-out questions and the owner switches it on.
+  may rank the main places once it beats Ψ on held-out questions and the owner switches it on. With exploration on (ADR 0014), the last place goes by gated Thompson sampling instead of to a newcomer, and a model that stops matching what happens is retired automatically.
 - **Points**: an append-only ledger. Reversals are new rows, never edits.
 
 ## Build order
