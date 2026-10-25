@@ -237,6 +237,11 @@ Logs show `model training` with the model, status and scores (numbers only). To 
 machine: `node scripts/benchmark-text-embedding.mjs 10000 50000` and
 `node scripts/benchmark-spelling.mjs 2000 10000 40000`.
 
+Personal graph analysis (ADR 0012) logs `graph analysis` with its time in ms and how many are
+waiting, and `graph analysis busy` when it refuses with 503. Sustained `busy` means the one worker
+can't keep up: look at the times first. To compare the algorithms with v1 on planted graphs:
+`node --expose-gc scripts/benchmark-graph-algorithms.mjs`.
+
 ## Deploy
 
 Order matters: **database, then server, then website.** A website that needs a new API must not

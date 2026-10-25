@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { personalGraphQueueStatus, projectPersonalGraphSignals } from '../src/personal-data.ts';
+import { GraphBusyError } from '../src/graph-analyzer.ts';
 import { startApp, type TestApp } from './helpers/app.ts';
 
 let h: TestApp;
@@ -203,7 +204,7 @@ describe('personal knowledge graph', () => {
         nodes: Array<{ id: string; pageRank: number; personalizedRank: number; community: string }>;
       };
     }>().insights;
-    expect(insights.algorithmVersion).toBe('personal-graph-v1');
+    expect(insights.algorithmVersion).toBe('personal-graph-v2');
     expect(insights.nodes.some(node => node.id === seed || node.id === foreign)).toBe(false);
     expect(insights.nodes.find(node => node.id === neighbor)?.personalizedRank).toBeGreaterThan(
       insights.nodes.find(node => node.id === disconnected)?.personalizedRank ?? 0,
@@ -213,6 +214,111 @@ describe('personal knowledge graph', () => {
       choices: [{ category: 'learning_expertise', enabled: false }],
     });
     expect((await h.call('POST', '/me/graph/insights', owner.token, { seedNodeIds: [seed] })).statusCode).toBe(404);
+  });
+
+  it('weighs edges by confidence, and fades observed behaviour with age but not what was entered', async () => {
+    const owner = await createPerson('graph.weights');
+    await h.call('PUT', '/me/consents', owner.token, {
+      choices: [{ category: 'learning_expertise', enabled: true }],
+    });
+    const node = async (label: string) =>
+      (
+        await h.call('POST', '/me/graph/nodes', owner.token, {
+          category: 'learning_expertise',
+          entityType: 'topic',
+          label,
+        })
+      ).json<{ node: { id: string } }>().node.id;
+    const [seed = '', sure = '', unsure = '', fresh = '', stale = '', entered = ''] = await Promise.all(
+      ['seed', 'sure', 'unsure', 'fresh', 'stale', 'entered'].map(node),
+    );
+    const edge = (target: string, confidence: number) =>
+      h.call('POST', '/me/graph/edges', owner.token, {
+        category: 'learning_expertise',
+        sourceNode: seed,
+        targetNode: target,
+        relation: 'related_topic',
+        weight: 1,
+        confidence,
+      });
+    expect((await edge(sure, 1)).statusCode).toBe(201);
+    expect((await edge(unsure, 0.1)).statusCode).toBe(201);
+    expect((await edge(entered, 1)).statusCode).toBe(201);
+    // Observed edges carry the signal they came from; a year-old one should count for little.
+    for (const [target, age] of [
+      [fresh, '0 days'],
+      [stale, '365 days'],
+    ] as const) {
+      const signal = (
+        await h.t.owner.query<{ id: string }>(
+          `INSERT INTO app.personal_signal_events (user_id, consent_category, signal_type, source, occurred_at, expires_at)
+           VALUES ($1, 'learning_expertise', 'question_viewed', 'user_action', now() - $2::interval, now() + interval '1 day')
+           RETURNING id::text`,
+          [owner.id, age],
+        )
+      ).rows[0]?.id;
+      await h.t.owner.query(
+        `INSERT INTO app.personal_graph_edges
+           (user_id, consent_category, source_node, target_node, relation, freshness, evidence_signal_id)
+         VALUES ($1, 'learning_expertise', $2, $3, 'question_viewed', $4::timestamptz - $5::interval, $6)`,
+        [owner.id, seed, target, '2026-10-22T10:00:00Z', age, signal],
+      );
+    }
+    await h.t.owner.query(
+      `UPDATE app.personal_graph_edges SET freshness = '2025-10-22T10:00:00Z' WHERE target_node = $1`,
+      [entered],
+    );
+    const result = await h.call('POST', '/me/graph/insights', owner.token, { seedNodeIds: [seed] });
+    expect(result.statusCode).toBe(200);
+    const rank = new Map(
+      result
+        .json<{ insights: { nodes: Array<{ id: string; personalizedRank: number }> } }>()
+        .insights.nodes.map(n => [n.id, n.personalizedRank]),
+    );
+    expect(rank.get(sure)).toBeGreaterThan(5 * (rank.get(unsure) ?? 1));
+    expect(rank.get(fresh)).toBeGreaterThan(5 * (rank.get(stale) ?? 1));
+    expect(rank.get(entered)).toBeCloseTo(rank.get(sure) ?? 0, 9);
+  });
+
+  it('says plainly when analysis is busy', async () => {
+    const busy = await startApp(() => Date.parse('2026-10-22T10:00:00Z'), {
+      graphAnalyzer: {
+        analyze: () => Promise.reject(new GraphBusyError('full')),
+        depth: () => 9,
+        close: () => Promise.resolve(),
+      },
+    });
+    try {
+      const person = await busy.person();
+      expect(
+        (
+          await busy.call('POST', '/me/profile', person.token, {
+            handle: 'graph.busy',
+            country: 'IN',
+            fields: ['imports-customs'],
+            adult: true,
+          })
+        ).statusCode,
+      ).toBe(201);
+      await busy.call('PUT', '/me/consents', person.token, {
+        choices: [{ category: 'learning_expertise', enabled: true }],
+      });
+      const seed = (
+        await busy.call('POST', '/me/graph/nodes', person.token, {
+          category: 'learning_expertise',
+          entityType: 'topic',
+          label: 'customs',
+        })
+      ).json<{ node: { id: string } }>().node.id;
+      const res = await busy.call('POST', '/me/graph/insights', person.token, { seedNodeIds: [seed] });
+      expect(res.statusCode).toBe(503);
+      expect(res.json()).toEqual({
+        error: 'graph_busy',
+        message: 'Graph analysis is busy right now. Try again in a few seconds.',
+      });
+    } finally {
+      await busy.close();
+    }
   });
 
   it('requires consent to add first-party graph data and lets the owner inspect and delete it', async () => {

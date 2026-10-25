@@ -367,8 +367,12 @@ it with the account.
 - `POST /me/graph/insights` accepts `{ seedNodeIds: [uuid, ...], limit? }`. It analyzes only the
   caller's nodes and edges whose purpose remains active. It returns algorithm version, iteration
   counts, per-node PageRank, personalized PageRank, deterministic communities, and recommendation
-  scores. Seeds are distinct and limited to 10; graph analysis is capped at 1,000 nodes, 5,000 edges,
-  and 100 returned results. Results are computed on demand and are not persisted as user features.
+  scores (`personal-graph-v2`, ADR 0012: Louvain communities, NetMF embeddings, edges weighted by
+  confidence and, for edges observed from your activity, halved every 90 days). Seeds are distinct
+  and limited to 10; graph analysis is capped at 1,000 nodes, 5,000 edges, and 100 returned
+  results. Results are computed on demand and are not persisted as user features. Analyses run one
+  at a time off the request thread; when too many are waiting it returns 503 `graph_busy` ("Graph
+  analysis is busy right now. Try again in a few seconds.").
 - `DELETE /me/graph/nodes/:id` removes only the caller's node; linked edges cascade. Owners can
   inspect and remove stored information after revoking its optional consent.
 - `GET /me/data-export` returns a JSON export of the caller's profile, their questions and answers,

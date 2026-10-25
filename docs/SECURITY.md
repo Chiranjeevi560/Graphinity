@@ -140,6 +140,14 @@ whenever a user-linked table is added.
   query through the same letters-and-digits filter as typed ones, so they can't change the query's
   meaning. The serving speller loads with the same SHA-256 check.
 
+## Personal graph analysis (ADR 0012)
+
+- Analysis runs on one worker thread per server, after the database transaction ends, so a
+  maximal graph (~70–175 ms of CPU) can't hold up other requests or a pooled connection. At most 8
+  analyses wait; beyond that the route refuses with 503, which bounds the CPU any group of callers
+  can queue. Input is the caller's own consented graph only, loaded under RLS as before.
+- Logs carry only the analysis time and the queue depth.
+
 ## Known gaps
 
 - The daily limit of 3 questions per person is counted without a lock. One server routes one

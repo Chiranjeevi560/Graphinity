@@ -186,3 +186,7 @@ The learning platform's first subsystem is in: model registry, `model_training` 
 ## Spelling correction (2026-10-25, Claude)
 
 Spelling correction learned from Graphinity's own posts is in, on the same branch, registry, consent and daily job as the text model: SymSpell candidates, optimal string alignment over graphemes, a noisy channel with a tuned "leave it as written" score, and a Wilson-bound precision gate on held-out posts. The precheck uses corrections only as extra search words. See ADR 0011 and the matching section in `project report.md`.
+
+## Personal graph algorithms v2 (2026-10-25, Claude)
+
+`personal-graph-v2`: Louvain communities, NetMF node embeddings, a fixed recommendation score, confidence and age weighting of edges, a 10× faster PageRank, and analysis on a worker thread. Each choice is measured against v1 on planted-community graphs; see ADR 0012 and `project report.md`.

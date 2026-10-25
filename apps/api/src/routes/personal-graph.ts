@@ -1,10 +1,14 @@
 import type { FastifyInstance } from 'fastify';
 import type { Database } from '../db.ts';
-import { analyzePersonalGraph } from '../personal-graph-algorithms.ts';
+import { GraphBusyError, type GraphAnalyzer } from '../graph-analyzer.ts';
+import { effectiveWeight } from '../personal-graph-algorithms.ts';
 import { fail, signedIn } from './common.ts';
 
 export interface PersonalGraphDeps {
   db: Database;
+  /** Runs analyses off the main thread (graph-analyzer.ts). */
+  analyzer: GraphAnalyzer;
+  clock: { now(): number };
 }
 
 const entityTypes = [
@@ -152,8 +156,16 @@ export function registerPersonalGraphRoutes(app: FastifyInstance, deps: Personal
           [user.id],
         );
         if (nodes.rows.length > 1000) return { error: 'too_large' as const };
-        const edges = await q.query<{ sourceNode: string; targetNode: string; weight: number }>(
-          `SELECT e.source_node AS "sourceNode", e.target_node AS "targetNode", e.weight
+        const edges = await q.query<{
+          sourceNode: string;
+          targetNode: string;
+          weight: number;
+          confidence: number;
+          freshness: Date;
+          observed: boolean;
+        }>(
+          `SELECT e.source_node AS "sourceNode", e.target_node AS "targetNode", e.weight, e.confidence,
+                  e.freshness, e.evidence_signal_id IS NOT NULL AS observed
            FROM app.personal_graph_edges e
            WHERE e.user_id = $1 AND (
              EXISTS (SELECT 1 FROM app.consent_categories c WHERE c.name = e.consent_category AND c.required_for_service)
@@ -167,9 +179,7 @@ export function registerPersonalGraphRoutes(app: FastifyInstance, deps: Personal
         if (body.seedNodeIds.some(id => !nodes.rows.some(node => node.id === id))) {
           return { error: 'seed_unavailable' as const };
         }
-        return {
-          insights: analyzePersonalGraph(nodes.rows, edges.rows, body.seedNodeIds, body.limit ?? 20),
-        };
+        return { nodes: nodes.rows, edges: edges.rows };
       });
       if ('error' in result) {
         if (result.error === 'too_large') {
@@ -187,7 +197,30 @@ export function registerPersonalGraphRoutes(app: FastifyInstance, deps: Personal
           'One or more selected items are not available in your active graph.',
         );
       }
-      return result;
+      // Analysed after the transaction, so no database connection waits on the computation.
+      const now = new Date(deps.clock.now());
+      const started = performance.now();
+      try {
+        const insights = await deps.analyzer.analyze({
+          nodes: result.nodes,
+          edges: result.edges.map(e => ({
+            sourceNode: e.sourceNode,
+            targetNode: e.targetNode,
+            weight: effectiveWeight(e, now),
+          })),
+          seedNodeIds: body.seedNodeIds,
+          limit: body.limit ?? 20,
+        });
+        // Numbers only: how long it took (queue wait included) and what is still waiting.
+        req.log.info({ ms: Math.round(performance.now() - started), waiting: deps.analyzer.depth() }, 'graph analysis');
+        return { insights };
+      } catch (err) {
+        if (err instanceof GraphBusyError) {
+          req.log.warn({ waiting: deps.analyzer.depth() }, 'graph analysis busy');
+          return fail(reply, 503, 'graph_busy', 'Graph analysis is busy right now. Try again in a few seconds.');
+        }
+        throw err;
+      }
     },
   );
 

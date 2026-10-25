@@ -12,7 +12,7 @@ describe('personal graph algorithms', () => {
   it('computes deterministic global rank, personalized rank, communities, and graph recommendations', () => {
     const result = analyzePersonalGraph(nodes, edges, ['a']);
     const byId = new Map(result.nodes.map(node => [node.id, node]));
-    expect(result.algorithmVersion).toBe('personal-graph-v1');
+    expect(result.algorithmVersion).toBe('personal-graph-v2');
     expect([...result.nodes].every(node => node.pageRank >= 0 && node.personalizedRank >= 0)).toBe(true);
     expect(byId.get('b')?.personalizedRank).toBeGreaterThan(byId.get('d')?.personalizedRank ?? 0);
     expect(byId.get('b')?.community).toBe(byId.get('c')?.community);

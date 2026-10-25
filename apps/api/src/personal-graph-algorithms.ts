@@ -1,3 +1,21 @@
+// Analysis of one person's own graph (ADR 0009, revised by ADR 0012). Pure and
+// bounded: the route loads only the caller's consented nodes and edges, and a
+// worker thread runs this (graph-analyzer.ts), so a large graph never holds up
+// other requests.
+//
+// v2, each part chosen by measurement against v1 on planted-structure graphs
+// (scripts/benchmark-graph-algorithms.mjs):
+//   - Communities: Louvain (graph-communities.ts), not label propagation,
+//     which merged every node into one community once 40% of edges crossed.
+//   - Embeddings: NetMF (graph-embedding.ts), not hashed walk counts: hidden
+//     links found with AUC 0.83 against 0.57 at 30% crossing edges.
+//   - Recommendations: cosine to the personalized-PageRank-weighted
+//     embedding. v1 added 0.7 × PPR (values summing to 1, so ~0.001 each) to
+//     0.3 × cosine, which mixed scales and ranked hidden links worse than PPR alone.
+import { louvain } from './graph-communities.ts';
+import { cosineOf, NETMF_DIMENSIONS, netmfEmbedding } from './graph-embedding.ts';
+import { valueAt } from './ml/linalg.ts';
+
 export interface PersonalGraphNode {
   id: string;
   entityType: string;
@@ -19,7 +37,7 @@ export interface GraphInsight {
 }
 
 export interface PersonalGraphInsights {
-  algorithmVersion: 'personal-graph-v1';
+  algorithmVersion: 'personal-graph-v2';
   iterations: { pageRank: number; personalizedPageRank: number; communities: number };
   nodes: GraphInsight[];
 }
@@ -30,16 +48,30 @@ const RANK_DAMPING = 0.85;
 const RESTART_PROBABILITY = 0.15;
 const RANK_EPSILON = 1e-10;
 const MAX_RANK_ITERATIONS = 100;
-const MAX_COMMUNITY_ITERATIONS = 20;
-const EMBEDDING_DIMENSIONS = 16;
-const WALK_COUNT = 4;
-const WALK_LENGTH = 8;
-const CONTEXT_WINDOW = 2;
+/** NetMF's eigensolver passes: 2 matched 6 on held-out links (AUC 0.829 vs 0.832) in 40% less time. */
+const EMBEDDING_POWER_ITERATIONS = 2;
+/**
+ * Observed behaviour (edges projected from your own activity) fades by half
+ * every 90 days; what you entered yourself doesn't fade. The signals behind
+ * observed edges expire at 365 days, when an edge has 6% of its weight left,
+ * so expiry is a small step, not a cliff. A prior, not fitted: there is no
+ * data yet to fit it to.
+ */
+export const OBSERVED_HALF_LIFE_DAYS = 90;
 
-type Neighbor = { id: string; weight: number };
+export type Neighbor = { id: string; weight: number };
 type RankResult = { scores: Map<string, number>; iterations: number };
-type CommunityResult = { labels: Map<string, string>; iterations: number };
-type EmbeddingMap = Map<string, number[]>;
+
+/** An edge's weight in analysis: as stored, times its confidence, faded with age if it was observed. */
+export function effectiveWeight(
+  edge: { weight: number; confidence: number; freshness: Date; observed: boolean },
+  now: Date,
+): number {
+  const base = edge.weight * edge.confidence;
+  if (!edge.observed) return base;
+  const days = Math.max(0, (now.getTime() - edge.freshness.getTime()) / 86_400_000);
+  return base * 2 ** (-days / OBSERVED_HALF_LIFE_DAYS);
+}
 
 function assertGraphSize(nodes: readonly PersonalGraphNode[], edges: readonly PersonalGraphEdge[]) {
   if (nodes.length > MAX_NODES || edges.length > MAX_EDGES) {
@@ -59,7 +91,7 @@ function makeDirectedAdjacency(nodes: readonly PersonalGraphNode[], edges: reado
   return adjacency;
 }
 
-function makeUndirectedAdjacency(nodes: readonly PersonalGraphNode[], edges: readonly PersonalGraphEdge[]) {
+export function makeUndirectedAdjacency(nodes: readonly PersonalGraphNode[], edges: readonly PersonalGraphEdge[]) {
   const ids = new Set(nodes.map(node => node.id));
   const combined = new Map<string, Map<string, number>>(nodes.map(node => [node.id, new Map()]));
   for (const edge of edges) {
@@ -80,128 +112,63 @@ function makeUndirectedAdjacency(nodes: readonly PersonalGraphNode[], edges: rea
   );
 }
 
-function rankGraph(
+/**
+ * Weighted PageRank with teleport distribution `teleport`, continuing with
+ * probability `continuationProbability`; dangling mass follows the teleport.
+ * Flat arrays with each node's out-weight computed once: the same arithmetic
+ * as v1's Map version, about 10× faster (it was most of an analysis's time).
+ */
+export function rankGraph(
   ids: readonly string[],
   adjacency: Map<string, Neighbor[]>,
   teleport: Map<string, number>,
   continuationProbability: number,
 ): RankResult {
-  if (!ids.length) return { scores: new Map(), iterations: 0 };
-  let scores = new Map(ids.map(id => [id, teleport.get(id) ?? 0]));
+  const n = ids.length;
+  if (!n) return { scores: new Map(), iterations: 0 };
+  const index = new Map(ids.map((id, i) => [id, i]));
+  const start = new Int32Array(n + 1);
+  const targets: number[] = [];
+  const shares: number[] = [];
+  ids.forEach((id, i) => {
+    const neighbors = (adjacency.get(id) ?? []).filter(nb => index.has(nb.id));
+    const total = neighbors.reduce((sum, nb) => sum + nb.weight, 0);
+    if (total > 0)
+      for (const nb of neighbors) {
+        targets.push(index.get(nb.id) ?? 0);
+        shares.push(nb.weight / total);
+      }
+    start[i + 1] = targets.length;
+  });
+  const jump = Float64Array.from(ids, id => teleport.get(id) ?? 0);
+  let scores = Float64Array.from(jump);
+  let next = new Float64Array(n);
+  const c = continuationProbability;
+  let iterations = MAX_RANK_ITERATIONS;
   for (let iteration = 1; iteration <= MAX_RANK_ITERATIONS; iteration += 1) {
-    const next = new Map(ids.map(id => [id, (1 - continuationProbability) * (teleport.get(id) ?? 0)]));
+    for (let i = 0; i < n; i++) next[i] = (1 - c) * valueAt(jump, i);
     let dangling = 0;
-    for (const id of ids) {
-      const neighbors = adjacency.get(id) ?? [];
-      const totalWeight = neighbors.reduce((sum, neighbor) => sum + neighbor.weight, 0);
-      const score = scores.get(id) ?? 0;
-      if (totalWeight === 0) {
-        dangling += score;
-      } else {
-        for (const neighbor of neighbors) {
-          next.set(
-            neighbor.id,
-            (next.get(neighbor.id) ?? 0) + continuationProbability * score * (neighbor.weight / totalWeight),
-          );
+    for (let i = 0; i < n; i++) {
+      const from = valueAt(start, i);
+      const to = valueAt(start, i + 1);
+      const score = valueAt(scores, i);
+      if (from === to) dangling += score;
+      else
+        for (let e = from; e < to; e++) {
+          const t = valueAt(targets, e);
+          next[t] = valueAt(next, t) + c * score * valueAt(shares, e);
         }
-      }
     }
-    if (dangling > 0) {
-      for (const id of ids) {
-        next.set(id, (next.get(id) ?? 0) + continuationProbability * dangling * (teleport.get(id) ?? 0));
-      }
-    }
+    if (dangling > 0) for (let i = 0; i < n; i++) next[i] = valueAt(next, i) + c * dangling * valueAt(jump, i);
     let difference = 0;
-    for (const id of ids) difference += Math.abs((next.get(id) ?? 0) - (scores.get(id) ?? 0));
-    scores = next;
-    if (difference <= RANK_EPSILON) return { scores, iterations: iteration };
-  }
-  return { scores, iterations: MAX_RANK_ITERATIONS };
-}
-
-function detectCommunities(nodes: readonly PersonalGraphNode[], adjacency: Map<string, Neighbor[]>): CommunityResult {
-  const ids = nodes.map(node => node.id).sort((a, b) => a.localeCompare(b));
-  const labels = new Map(ids.map(id => [id, id]));
-  for (let iteration = 1; iteration <= MAX_COMMUNITY_ITERATIONS; iteration += 1) {
-    let changed = false;
-    for (const id of ids) {
-      const totals = new Map<string, number>();
-      for (const neighbor of adjacency.get(id) ?? []) {
-        const label = labels.get(neighbor.id);
-        if (label) totals.set(label, (totals.get(label) ?? 0) + neighbor.weight);
-      }
-      if (!totals.size) continue;
-      const label = [...totals].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0];
-      if (label && label !== labels.get(id)) {
-        labels.set(id, label);
-        changed = true;
-      }
-    }
-    if (!changed) return { labels, iterations: iteration };
-  }
-  return { labels, iterations: MAX_COMMUNITY_ITERATIONS };
-}
-
-function hashString(value: string): number {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
-function random01(seed: number): number {
-  let value = seed | 0;
-  value ^= value << 13;
-  value ^= value >>> 17;
-  value ^= value << 5;
-  return (value >>> 0) / 0x1_0000_0000;
-}
-
-function graphEmbeddings(nodes: readonly PersonalGraphNode[], adjacency: Map<string, Neighbor[]>): EmbeddingMap {
-  const vectors = new Map(nodes.map(node => [node.id, new Array<number>(EMBEDDING_DIMENSIONS).fill(0)]));
-  for (const node of nodes) {
-    const startSeed = hashString(node.id);
-    for (let walk = 0; walk < WALK_COUNT; walk += 1) {
-      const path = [node.id];
-      let current = node.id;
-      for (let step = 0; step < WALK_LENGTH; step += 1) {
-        const neighbors = adjacency.get(current) ?? [];
-        const total = neighbors.reduce((sum, neighbor) => sum + neighbor.weight, 0);
-        if (!total) break;
-        const needle = random01(startSeed ^ Math.imul(walk + 1, 0x9e3779b1) ^ Math.imul(step + 1, 0x85ebca6b)) * total;
-        let cumulative = 0;
-        const picked = neighbors.find(neighbor => {
-          cumulative += neighbor.weight;
-          return cumulative > needle;
-        });
-        current = picked?.id ?? neighbors.at(-1)?.id ?? current;
-        path.push(current);
-      }
-      for (let index = 0; index < path.length; index += 1) {
-        const vector = vectors.get(path[index] ?? '');
-        if (!vector) continue;
-        for (let distance = 1; distance <= CONTEXT_WINDOW; distance += 1) {
-          const context = path[index + distance];
-          if (!context) continue;
-          const hash = hashString(context);
-          const dimension = hash % EMBEDDING_DIMENSIONS;
-          const sign = (hash & 0x80000000) === 0 ? 1 : -1;
-          vector[dimension] = (vector[dimension] ?? 0) + sign / distance;
-        }
-      }
+    for (let i = 0; i < n; i++) difference += Math.abs(valueAt(next, i) - valueAt(scores, i));
+    [scores, next] = [next, scores];
+    if (difference <= RANK_EPSILON) {
+      iterations = iteration;
+      break;
     }
   }
-  for (const vector of vectors.values()) {
-    const norm = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
-    if (norm > 0) for (let i = 0; i < vector.length; i += 1) vector[i] = (vector[i] ?? 0) / norm;
-  }
-  return vectors;
-}
-
-function cosine(a: readonly number[], b: readonly number[]): number {
-  return a.reduce((sum, value, index) => sum + value * (b[index] ?? 0), 0);
+  return { scores: new Map(ids.map((id, i) => [id, valueAt(scores, i)])), iterations };
 }
 
 /** Bounded, deterministic algorithms over the caller's already consent-filtered graph. */
@@ -225,42 +192,52 @@ export function analyzePersonalGraph(
   const personalization = new Map(seedNodeIds.map(id => [id, 1 / seedNodeIds.length]));
   const pageRank = rankGraph(ids, directed, uniform, RANK_DAMPING);
   const ppr = rankGraph(ids, directed, personalization, 1 - RESTART_PROBABILITY);
-  const communities = detectCommunities(nodes, undirected);
-  const embeddings = graphEmbeddings(nodes, undirected);
-  const personalizedEmbedding = new Array<number>(EMBEDDING_DIMENSIONS).fill(0);
-  for (const [id, weight] of ppr.scores) {
-    const vector = embeddings.get(id);
-    if (!vector) continue;
-    for (let i = 0; i < vector.length; i += 1)
-      personalizedEmbedding[i] = (personalizedEmbedding[i] ?? 0) + weight * (vector[i] ?? 0);
-  }
-  const norm = Math.sqrt(personalizedEmbedding.reduce((sum, value) => sum + value * value, 0));
-  if (norm > 0) {
-    for (let i = 0; i < personalizedEmbedding.length; i += 1)
-      personalizedEmbedding[i] = (personalizedEmbedding[i] ?? 0) / norm;
-  }
+  // Numbered undirected graph for Louvain and NetMF: row i is ids[i].
+  const index = new Map(ids.map((id, i) => [id, i]));
+  const numbered = ids.map(id =>
+    (undirected.get(id) ?? []).map(n => [index.get(n.id) ?? 0, n.weight] as [number, number]),
+  );
+  const communities = louvain(numbered);
+  // A community is named by its lowest node id: communities are numbered from their lowest node.
+  const firstOf = new Map<number, string>();
+  communities.community.forEach((c, i) => {
+    if (!firstOf.has(c)) firstOf.set(c, ids[i] ?? '');
+  });
+  const embeddings = netmfEmbedding(numbered, { powerIterations: EMBEDDING_POWER_ITERATIONS });
+  // The personalized embedding: every node's vector weighted by its PPR score, then unit length.
+  const personalizedEmbedding = new Float64Array(NETMF_DIMENSIONS);
+  embeddings.forEach((vector, i) => {
+    const weight = ppr.scores.get(ids[i] ?? '') ?? 0;
+    vector.forEach((x, c) => (personalizedEmbedding[c] = valueAt(personalizedEmbedding, c) + weight * x));
+  });
+  const norm = Math.hypot(...personalizedEmbedding);
+  if (norm > 0) personalizedEmbedding.forEach((x, c) => (personalizedEmbedding[c] = x / norm));
   const seeds = new Set(seedNodeIds);
   const scored = nodes
     .filter(node => !seeds.has(node.id))
     .map(node => {
       const personalizedRank = ppr.scores.get(node.id) ?? 0;
-      const vector = embeddings.get(node.id) ?? [];
-      const similarity = Math.max(0, cosine(personalizedEmbedding, vector));
+      const at = index.get(node.id) ?? 0;
       return {
         id: node.id,
         pageRank: pageRank.scores.get(node.id) ?? 0,
         personalizedRank,
-        community: communities.labels.get(node.id) ?? node.id,
-        recommendationScore: personalizedRank * 0.7 + similarity * 0.3,
+        community: firstOf.get(communities.community[at] ?? -1) ?? node.id,
+        recommendationScore: Math.max(0, cosineOf(personalizedEmbedding, embeddings[at] ?? [])),
       };
     })
-    .sort((a, b) => b.recommendationScore - a.recommendationScore || a.id.localeCompare(b.id));
+    .sort(
+      (a, b) =>
+        b.recommendationScore - a.recommendationScore ||
+        b.personalizedRank - a.personalizedRank ||
+        a.id.localeCompare(b.id),
+    );
   return {
-    algorithmVersion: 'personal-graph-v1',
+    algorithmVersion: 'personal-graph-v2',
     iterations: {
       pageRank: pageRank.iterations,
       personalizedPageRank: ppr.iterations,
-      communities: communities.iterations,
+      communities: communities.levels,
     },
     nodes: scored.slice(0, limit),
   };
