@@ -84,9 +84,9 @@ describe('the embeddings switch, off', () => {
     expect(asked.statusCode).toBe(201);
     const id = asked.json<{ question: { id: string } }>().question.id;
     // Stored without a meaning: nothing was sent to the embedder.
-    expect((await h.t.owner.query('SELECT embedding FROM app.questions WHERE id = $1', [id])).rows).toEqual([
-      { embedding: null },
-    ]);
+    expect((await h.t.owner.query('SELECT 1 FROM app.question_embeddings WHERE question_id = $1', [id])).rows).toEqual(
+      [],
+    );
     const res = await h.call('POST', '/questions/precheck', undefined, { title });
     expect(res.statusCode).toBe(200);
     const body = res.json<{ verdict: string; questions: Array<{ id: string; similarity: number | null }> }>();

@@ -327,3 +327,9 @@ Built and verified:
 - **Tests:** 22 new API and database tests. 18 rules broken on purpose, all caught; one first survived (a single word commoner than the candidate budget) and got its test.
 
 Found, not yet fixed: at 100k questions the meaning stage (unchanged, already used by the Ask check) takes 389 ms p50 and 1,140 ms p95 and finds the right question in its top 10 only 30% of the time, so the whole search misses the 100 ms target there. It is next (ADR 0015 part 5).
+
+## Search, part 5: ANN (2026-10-26, Claude)
+
+- Meaning moved to `app.question_embeddings` at the model's own size (128 numbers, not 768 padded), one HNSW index per size (m 24), searched with `ef_search` 400 and an iterative scan. Chosen by measurement at 100,000 questions: recall@50 0.98 at 4.6 ms p50; the index is 68 MB instead of 195 MB.
+- Two more costs found and removed from both search functions: the hidden-question check ran on every candidate (15 of 17 ms; now checked on the top results only), and a cached generic plan walked every question (20 ms; the main query is now planned per call).
+- Whole search at 100,000 questions: 11.9 ms p50, 16.8 ms p95 (target 30 / 100), from 48 / 210. 10 new tests; 19 rules broken on purpose, all caught (two first survived and got tests).

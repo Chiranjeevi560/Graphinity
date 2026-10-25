@@ -405,7 +405,8 @@ describe('the score learns from what people did', () => {
   };
   async function meaning(questionId: string, v: number[]) {
     await h.t.owner.query(
-      "UPDATE app.questions SET embedding = $2::extensions.halfvec(768), embedding_model = 'test' WHERE id = $1",
+      `INSERT INTO app.question_embeddings (question_id, model, embedding) VALUES ($1, 'test', $2::extensions.halfvec)
+       ON CONFLICT (question_id, model) DO UPDATE SET embedding = excluded.embedding`,
       [questionId, vectorLiteral(v)],
     );
   }

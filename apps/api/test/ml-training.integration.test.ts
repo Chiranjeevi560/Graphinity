@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadCorpus } from '../src/ml/corpus.ts';
 import { ownEmbedderFromArtifact } from '../src/ml/own-embedder.ts';
 import { loadServing } from '../src/ml/registry.ts';
-import { serializeModel, trainTextEmbedding } from '../src/ml/text-embedding.ts';
+import { deserializeModel, serializeModel, trainTextEmbedding } from '../src/ml/text-embedding.ts';
 import type { TrainingResult, WorkerInput } from '../src/ml/train-embedding.ts';
 import { deserializeSpelling, serializeSpelling, speller, trainSpelling } from '../src/ml/spelling.ts';
 import type { SpellingResult } from '../src/ml/train-spelling.ts';
@@ -121,7 +121,9 @@ describe('the training job and the registry', () => {
     expect(serving?.version).toBe(1);
     const embedder = ownEmbedderFromArtifact(serving?.artifact ?? Buffer.alloc(0), 1);
     expect(embedder.model).toBe('graphinity:ppmi-svd-sif:v1');
-    expect((await embedder.embed(['customs duty']))[0]).toHaveLength(768);
+    // Served at the model's own size, unpadded (migration 0021).
+    expect(embedder.dims).toBe(deserializeModel(serving?.artifact ?? Buffer.alloc(0)).dims);
+    expect((await embedder.embed(['customs duty']))[0]).toHaveLength(embedder.dims);
 
     // The same data again: no run at all.
     expect(
