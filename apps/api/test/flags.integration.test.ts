@@ -1,6 +1,6 @@
 // Feature flags against a real database: the owner flips them, the API only reads.
 import { beforeAll, describe, expect, it } from 'vitest';
-import { createFlags, switchedEmbedder } from '../src/flags.ts';
+import { createFlags, FLAG_DEFAULTS, switchedEmbedder } from '../src/flags.ts';
 import { localEmbedder } from '../src/embeddings.ts';
 import { startApp, type TestApp } from './helpers/app.ts';
 import { createTestDatabase, type TestDatabase } from './helpers/database.ts';
@@ -12,14 +12,20 @@ beforeAll(async () => {
 });
 
 describe('feature flags', () => {
-  it('start with the switches the code knows, all on', async () => {
-    const { rows } = await t.api.query('SELECT name, enabled FROM app.feature_flags ORDER BY name');
+  it('start with the switches the code knows, each as the code assumes before its first read', async () => {
+    const { rows } = await t.api.query<{ name: string; enabled: boolean }>(
+      'SELECT name, enabled FROM app.feature_flags ORDER BY name',
+    );
     expect(rows).toEqual([
       { name: 'embeddings', enabled: true },
+      // Off until the owner chooses: who gets notified is their decision (ADR 0013).
+      { name: 'learned_routing', enabled: false },
       { name: 'model_training', enabled: true },
       { name: 'push', enabled: true },
       { name: 'recommendations', enabled: true },
     ]);
+    // The database and the code's fallbacks agree, so a failed first read changes nothing.
+    expect(Object.fromEntries(rows.map(r => [r.name, r.enabled]))).toEqual({ ...FLAG_DEFAULTS });
   });
 
   it('can be read by the API but never changed by it', async () => {

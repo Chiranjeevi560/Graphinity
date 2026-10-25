@@ -55,6 +55,25 @@ export interface Candidate {
 
 export type Factors = Record<keyof typeof ALPHA, number>;
 
+/**
+ * The order factors are stored in (app.route_factors, migration 0016), and
+ * its version. Changing what any factor means requires a new version, so a
+ * model never learns from rows whose numbers meant something else.
+ */
+export const FACTOR_ORDER = Object.keys(ALPHA) as Array<keyof typeof ALPHA>;
+export const FACTORS_VERSION = 1;
+
+/** The stored vector: every factor, with diversity as it was applied when the person was chosen. */
+export function factorVector(c: Candidate, diversity: number): number[] {
+  const f = { ...factors(c), diversity: clamp(diversity) };
+  return FACTOR_ORDER.map(k => clamp(f[k]));
+}
+
+/** Ψ's weighted sum over a stored vector (no newcomer bonus, no load): the baseline a learned model must beat. */
+export function psiOfVector(vector: readonly number[]): number {
+  return FACTOR_ORDER.reduce((s, k, i) => s + ALPHA[k] * (vector[i] ?? 0), 0);
+}
+
 export function factors(c: Candidate): Factors {
   const sigmoid = (x: number) => 1 / (1 + Math.exp(-x));
   const timeTerm = c.medianReplySeconds === null ? 0.5 : Math.exp(-c.medianReplySeconds / REPLY_SCALE_SECONDS);
@@ -193,13 +212,19 @@ export function affinityToSelected(
   }, 0);
 }
 
-/** Greedy marginal selection with a field-local pairwise affinity penalty. */
+/**
+ * Greedy marginal selection with a field-local pairwise affinity penalty.
+ * By default Ψ's own: score + α₉ · (1 − max affinity) · Γ_load. A learned
+ * ranker passes `scoreWith` to re-score each option with its diversity
+ * factor set to 1 − max affinity, on its own scale.
+ */
 export function greedyDiverse<T extends DiverseOption>(
   options: readonly T[],
   count: number,
   affinities: ReadonlyMap<string, number>,
   alreadySelected: readonly string[] = [],
   dailyLimit = 3,
+  scoreWith?: (option: T, maxAffinity: number) => number,
 ): T[] {
   const selectedIds = [...alreadySelected];
   const remaining = new Map(options.map(option => [option.id, option]));
@@ -209,8 +234,9 @@ export function greedyDiverse<T extends DiverseOption>(
     let bestScore = Number.NEGATIVE_INFINITY;
     for (const option of remaining.values()) {
       const maxAffinity = affinityToSelected(option.id, selectedIds, affinities);
-      const score =
-        option.score + ALPHA.diversity * (1 - maxAffinity) * loadDampener(option.candidate.usedToday, dailyLimit);
+      const score = scoreWith
+        ? scoreWith(option, maxAffinity)
+        : option.score + ALPHA.diversity * (1 - maxAffinity) * loadDampener(option.candidate.usedToday, dailyLimit);
       if (score > bestScore || (score === bestScore && best && option.id < best.id)) {
         best = option;
         bestScore = score;

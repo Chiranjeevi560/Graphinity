@@ -5,13 +5,19 @@
 // is recorded with its scores and why, so every run is accountable.
 import { Worker } from 'node:worker_threads';
 import type { Database } from '../db.ts';
-import { loadCorpus, type Corpus } from './corpus.ts';
+import { loadCorpus } from './corpus.ts';
 import { latestFingerprint, loadServing, recordPromoted, recordRejected, type ModelRecord } from './registry.ts';
 import { ALGORITHM, type TrainingResult, type WorkerInput } from './train-embedding.ts';
 import { SPELLING_ALGORITHM, type SpellingInput, type SpellingResult } from './train-spelling.ts';
+import { loadRoutingExamples } from './routing-data.ts';
+import { lastRejectedAt } from './registry.ts';
+import { ROUTING_ALGORITHM, type RoutingInput, type RoutingResult } from './train-routing.ts';
 
 export const TEXT_EMBEDDING = 'text-embedding';
 export const SPELLING = 'spelling';
+export const ROUTING = 'routing';
+/** Settled exploit routes needed before a routing run is attempted. */
+export const MIN_ROUTES = 200;
 
 /**
  * Below this many documents a run isn't attempted: with one in five
@@ -26,7 +32,10 @@ export type TrainingOutcome<R = TrainingResult> =
   | { status: 'rejected'; version: number; reason: string; result: R }
   | { status: 'promoted'; version: number; reason: string; result: R };
 
-export type WorkerJob = { job: 'text-embedding'; input: WorkerInput } | { job: 'spelling'; input: SpellingInput };
+export type WorkerJob =
+  | { job: 'text-embedding'; input: WorkerInput }
+  | { job: 'spelling'; input: SpellingInput }
+  | { job: 'routing'; input: RoutingInput };
 
 /** Runs a job on a worker thread; the main thread stays free for requests. */
 function onWorker<R>(job: WorkerJob): Promise<R> {
@@ -45,6 +54,7 @@ function onWorker<R>(job: WorkerJob): Promise<R> {
 
 export const runOnWorker = (input: WorkerInput) => onWorker<TrainingResult>({ job: 'text-embedding', input });
 export const runSpellingOnWorker = (input: SpellingInput) => onWorker<SpellingResult>({ job: 'spelling', input });
+export const runRoutingOnWorker = (input: RoutingInput) => onWorker<RoutingResult>({ job: 'routing', input });
 
 interface Gated {
   decision: { promote: boolean; reason: string };
@@ -52,30 +62,33 @@ interface Gated {
 }
 
 /** What every job shares: the two reasons to skip, the run, and its record. */
-async function trainJob<R extends Gated>(
+async function trainJob<D extends { size: number; fingerprint: string }, R extends Gated>(
   db: Pick<Database, 'asSystem'>,
   name: string,
-  minDocuments: number,
-  train: (corpus: Corpus, serving: { version: number; artifact: Uint8Array } | null) => Promise<R>,
+  minimum: { count: number; unit: string },
+  load: () => Promise<D>,
+  train: (data: D, serving: { version: number; artifact: Uint8Array } | null) => Promise<R>,
   describe: (result: R) => Omit<ModelRecord, 'name' | 'reason' | 'dataset'> & { dataset: Record<string, unknown> },
 ): Promise<TrainingOutcome<R>> {
-  const corpus = await loadCorpus(db);
-  const documents = corpus.questions.length + corpus.answers.length;
-  if (documents < minDocuments)
-    return { status: 'skipped', reason: `${String(documents)} consented documents; ${String(minDocuments)} needed` };
-  if ((await latestFingerprint(db, name)) === corpus.fingerprint)
+  const data = await load();
+  if (data.size < minimum.count)
+    return {
+      status: 'skipped',
+      reason: `${String(data.size)} ${minimum.unit}; ${String(minimum.count)} needed`,
+    };
+  if ((await latestFingerprint(db, name)) === data.fingerprint)
     return { status: 'skipped', reason: 'nothing new since the last run' };
 
   const serving = await loadServing(db, name);
   const result = await train(
-    corpus,
+    data,
     serving ? { version: serving.version, artifact: new Uint8Array(serving.artifact) } : null,
   );
   const described = describe(result);
   const record = {
     ...described,
     name,
-    dataset: { ...described.dataset, fingerprint: corpus.fingerprint },
+    dataset: { ...described.dataset, fingerprint: data.fingerprint },
     reason: result.decision.reason,
   };
   if (result.decision.promote && result.artifact) {
@@ -86,6 +99,12 @@ async function trainJob<R extends Gated>(
   return { status: 'rejected', version, reason: result.decision.reason, result };
 }
 
+/** Consented posts, sized as documents. */
+const corpusOf = (db: Pick<Database, 'asSystem'>) => async () => {
+  const corpus = await loadCorpus(db);
+  return { ...corpus, size: corpus.questions.length + corpus.answers.length };
+};
+
 export function trainTextEmbeddingJob(
   db: Pick<Database, 'asSystem'>,
   options: { run?: (input: WorkerInput) => Promise<TrainingResult>; minDocuments?: number } = {},
@@ -93,7 +112,8 @@ export function trainTextEmbeddingJob(
   return trainJob(
     db,
     TEXT_EMBEDDING,
-    options.minDocuments ?? MIN_DOCUMENTS,
+    { count: options.minDocuments ?? MIN_DOCUMENTS, unit: 'consented documents' },
+    corpusOf(db),
     (corpus, serving) =>
       (options.run ?? runOnWorker)({ questions: corpus.questions, answers: corpus.answers, serving }),
     result => ({
@@ -113,7 +133,8 @@ export function trainSpellingJob(
   return trainJob(
     db,
     SPELLING,
-    options.minDocuments ?? MIN_DOCUMENTS,
+    { count: options.minDocuments ?? MIN_DOCUMENTS, unit: 'consented documents' },
+    corpusOf(db),
     (corpus, serving) =>
       (options.run ?? runSpellingOnWorker)({ questions: corpus.questions, answers: corpus.answers, serving }),
     result => ({
@@ -121,6 +142,40 @@ export function trainSpellingJob(
       params: { ...result.params },
       dataset: result.dataset,
       metrics: { ...result.metrics },
+      baseline: result.baseline,
+    }),
+  );
+}
+
+/**
+ * Learned routing (ADR 0013): from settled routes, not posts, so it isn't
+ * gated by the model_training consent (that covers learning from what people
+ * wrote). The model is a few dozen numbers about factors, nothing about any person.
+ */
+export function trainRoutingJob(
+  db: Pick<Database, 'asSystem'>,
+  options: { run?: (input: RoutingInput) => Promise<RoutingResult>; minRoutes?: number } = {},
+): Promise<TrainingOutcome<RoutingResult>> {
+  return trainJob(
+    db,
+    ROUTING,
+    { count: options.minRoutes ?? MIN_ROUTES, unit: 'settled routes' },
+    async () => {
+      const loaded = await loadRoutingExamples(db);
+      return { ...loaded, size: loaded.examples.length };
+    },
+    async (data, serving) =>
+      (options.run ?? runRoutingOnWorker)({
+        examples: data.examples,
+        modelRanked: data.modelRanked,
+        serving,
+        since: await lastRejectedAt(db, ROUTING),
+      }),
+    result => ({
+      algorithm: ROUTING_ALGORITHM,
+      params: { ...result.params },
+      dataset: result.dataset,
+      metrics: { ...result.metrics, difference: result.decision.difference },
       baseline: result.baseline,
     }),
   );

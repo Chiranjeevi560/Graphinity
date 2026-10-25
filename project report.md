@@ -259,3 +259,22 @@ What measurement found wrong in v1, and the fixes (all measured on planted-commu
 - PageRank rewritten on flat arrays: bit-identical results, 4–20× faster, so v2 is faster than v1 at every size (2.5 ms at 50 nodes, 13.5 ms at 300, 71–172 ms at 1,000).
 
 Verified: 21 rules broken on purpose, 18 caught (PageRank's dead-end mass, untested since v1, survived at first and now has an exact test); of the 3 survivors, 2 are equivalent rankings and 1 guards a Louvain failure no test graph triggers (its function is tested directly). Branch coverage 86.07% (bar 85.65%) after replacing dead `?? 0` fallbacks with the `valueAt` helper. Not verified: real personal graphs (none exist to measure), and above 50% mixing at this sparsity nothing recovers structure, v2 included. Projected signals still all carry weight 1 (a picked answer counts like a view); that needs outcome data.
+
+## Learned routing (2026-10-25, Claude)
+
+Owner request: replace heuristic routing with learning (Bayesian confidence, expertise weighting, freshness, availability prediction, reputation), with a fresh-eyes review before it stands. ADR 0013 has the design, evidence and gaps.
+
+Built and verified:
+- Every routing decision now records the nine factors it saw (`app.route_factors`, migration 0016, schema 31). The table is system-only, kept 180 days, and checked by the database: range, length, NaN, the model version against the registry and against the route's own record, and the newcomer place always on Ψ. Before this, only three factors were kept, so nothing could be learned without leaking outcomes.
+- A two-stage Bayesian logistic model (P(answers) × P(helps | answers)) is fitted exactly by Newton's method with step-halving. Wave is a training-only term. Trust, reputation, proximity and country can't get negative weights, enforced by an active set that also releases weights, so it ends at the true optimum. Prior strength comes from question-grouped cross-validation.
+- The gate compares against Ψ recomputed from the same factors, per question and wave. Each asker counts once, 30 askers with accounts at least 14 days old are needed, a 99% asker-resampled interval must lie above 0 with a gain of at least 0.02, trust must take 5 or more values, and a candidate must not be worse than the serving model. After a measured rejection, only newer questions are judged.
+- Serving happens only with a promoted model **and** the owner's `learned_routing` switch (off by default). It re-ranks the whole eligible pool for exploit places, re-scores diversity through the model, and keeps the load dampener. The newcomer place stays Ψ.
+- Reviews: the design review found 4 blockers (unfair baseline, rings steering labels and gate, trust learning zero early, factors readable by the routed person). The code review found 2 (the judging window locking the gate shut after any rejection, which a test reproduced first; the cap keeping the oldest routes). It also found labels that could change after settling, hidden answers counted, a constrained fit that could stop short, and trust "varying" from one pick. All were fixed with tests.
+- Tests: 33 rules broken on purpose, 31 caught; the 2 survivors are second locks (database row security; a guard inside `candidates()`).
+
+Measured (simulation, Apple M2):
+- Where Ψ under-weighs availability, the learned model ranks helpful people with about +0.2 AUC and is promoted at 1,000 questions every time.
+- Where outcomes come from Ψ, it was refused in all 30 benchmark runs, but over 100 runs the 99% gate still promoted 2. The bootstrap undercovers at about 50 askers. Those models were about as good as Ψ, and the owner's switch is the last control.
+- 48,465 routes train in 9.5 s (49.5 MB) on the worker thread; scoring takes 0.5 µs per candidate.
+
+Not verified: real outcomes (the live database has no routes yet; the gate will refuse until they exist). Off-policy limits are stated, and a small random place per wave with recorded probabilities is offered as a separate change. Before merging: `npm run db:migrate:remote` (migrations 0015 and 0016), then merge.

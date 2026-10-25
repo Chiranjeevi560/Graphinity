@@ -190,3 +190,7 @@ Spelling correction learned from Graphinity's own posts is in, on the same branc
 ## Personal graph algorithms v2 (2026-10-25, Claude)
 
 `personal-graph-v2`: Louvain communities, NetMF node embeddings, a fixed recommendation score, confidence and age weighting of edges, a 10× faster PageRank, and analysis on a worker thread. Each choice is measured against v1 on planted-community graphs; see ADR 0012 and `project report.md`.
+
+## Learned routing (2026-10-25, Claude)
+
+Routing decisions now record their factors (`app.route_factors`, system-only, 180 days). A two-stage Bayesian logistic model learns from settled outcomes, behind a gate that must beat Ψ (asker-weighted, 99% interval, gain at least 0.02, trust varied) and the owner's `learned_routing` switch. There were two adversarial reviews (design and code). See ADR 0013 and `project report.md`.

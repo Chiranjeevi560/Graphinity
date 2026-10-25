@@ -17,6 +17,8 @@ export const FLAG_DEFAULTS = {
   recommendations: true,
   /** Daily training of Graphinity's own models (ADR 0010). */
   model_training: true,
+  /** Rank exploit places with a promoted learned routing model (ADR 0013); the owner turns it on. */
+  learned_routing: false,
 } as const;
 
 export type FlagName = keyof typeof FLAG_DEFAULTS;
