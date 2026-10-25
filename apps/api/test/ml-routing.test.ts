@@ -71,6 +71,17 @@ describe('learning from outcomes', () => {
     }
   });
 
+  it('refuses a model that ranks well but whose predictions don’t match what happened', { timeout: 60_000 }, () => {
+    // Held-out outcomes thinned: still ranked the same way, but helping far less than predicted.
+    let n = 0;
+    const examples = simulateRouting({ questions: 1000, world: 'availability', seed: 1 }).map(e =>
+      isRoutingHeldOut(e.questionId) && e.helped && n++ % 3 !== 0 ? { ...e, helped: false } : e,
+    );
+    const result = trainRoutingAndEvaluate({ examples, serving: null, since: null });
+    expect(result.decision.promote).toBe(false);
+    expect(result.decision.reason).toMatch(/miscalibrated/);
+  });
+
   it('must also beat the model already serving', { timeout: 60_000 }, () => {
     const examples = simulateRouting({ questions: 1000, world: 'availability', seed: 2 });
     const first = trainRoutingAndEvaluate({ examples, serving: null, since: null });

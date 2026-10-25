@@ -124,6 +124,52 @@ export function fitLogistic(
   return { weights: [...w], lambda, iterations, converged };
 }
 
+/**
+ * The Laplace approximation's posterior covariance at a fitted model:
+ * the inverse of the log-posterior's negated Hessian, Σ = (Xᵀ W X + λ I')⁻¹
+ * (I' leaves the intercept unpenalized; it gets a sliver of curvature so Σ
+ * exists without data). d×d row-major, d = features + 1. This is what lets
+ * routing say how sure it is about a prediction (ADR 0014).
+ */
+export function posteriorCovariance(
+  x: ReadonlyArray<ArrayLike<number>>,
+  model: Pick<LogisticModel, 'weights' | 'lambda'>,
+): Float64Array {
+  const d = model.weights.length;
+  const h = new Float64Array(d * d);
+  for (let k = 1; k < d; k++) h[k * d + k] = model.lambda;
+  h[0] = 1e-6;
+  for (const row of x) {
+    const p = predict(model, row);
+    const s = p * (1 - p);
+    for (let a = 0; a < d; a++) {
+      const xa = a === 0 ? 1 : valueAt(row, a - 1);
+      for (let b = 0; b <= a; b++) h[a * d + b] = valueAt(h, a * d + b) + s * xa * (b === 0 ? 1 : valueAt(row, b - 1));
+    }
+  }
+  for (let a = 0; a < d; a++) for (let b = a + 1; b < d; b++) h[a * d + b] = valueAt(h, b * d + a);
+  const inverse = new Float64Array(d * d);
+  for (let c = 0; c < d; c++) {
+    const e = new Float64Array(d);
+    e[c] = 1;
+    const col = solve(h, e, d);
+    for (let r = 0; r < d; r++) inverse[r * d + c] = valueAt(col, r);
+  }
+  return inverse;
+}
+
+/** Lower-triangular L with L·Lᵀ = A (A symmetric positive definite), for sampling from N(μ, A). */
+export function cholesky(a: ArrayLike<number>, d: number): Float64Array {
+  const l = new Float64Array(d * d);
+  for (let i = 0; i < d; i++)
+    for (let j = 0; j <= i; j++) {
+      let s = valueAt(a, i * d + j);
+      for (let k = 0; k < j; k++) s -= valueAt(l, i * d + k) * valueAt(l, j * d + k);
+      l[i * d + j] = i === j ? Math.sqrt(Math.max(s, 1e-12)) : s / valueAt(l, j * d + j);
+    }
+  return l;
+}
+
 /** The log-posterior being maximized: log-likelihood − λ/2 · Σ_{k≥1} wₖ². */
 function objective(x: ReadonlyArray<ArrayLike<number>>, y: ArrayLike<number>, w: Float64Array, lambda: number): number {
   let s = 0;

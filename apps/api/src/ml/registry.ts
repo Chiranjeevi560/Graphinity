@@ -72,13 +72,29 @@ export async function lastRejectedAt(db: Pick<Database, 'asSystem'>, name: strin
   return db.asSystem(async q => {
     // Only a rejection that measured a difference counts: one refused before measuring
     // (too few askers, say) judged no questions, so it must not narrow the next window.
+    // A retirement counts too (automatic demotion, or the owner's own), from when it happened:
+    // the next candidate is judged only on questions asked after it, so the same model can't
+    // simply return.
     const { rows } = await q.query<{ at: number | null }>(
-      `SELECT (extract(epoch FROM max(created_at)) * 1000)::float8 AS at FROM app.ml_models
-       WHERE name = $1 AND status = 'rejected' AND jsonb_typeof(metrics -> 'difference') = 'object'`,
+      `SELECT (extract(epoch FROM max(CASE WHEN status = 'retired' THEN retired_at ELSE created_at END)) * 1000)::float8 AS at
+       FROM app.ml_models
+       WHERE name = $1 AND (
+         (status = 'rejected' AND jsonb_typeof(metrics -> 'difference') = 'object')
+         OR status = 'retired')`,
       [name],
     );
     return rows[0]?.at ?? null;
   });
+}
+
+/** Takes a serving version out of service (automatic demotion), recording why. Inside the caller's transaction. */
+export async function retireServing(q: Queryable, name: string, version: number, reason: string): Promise<void> {
+  await lockFor(q, name);
+  await q.query(
+    `UPDATE app.ml_models SET status = 'retired', retired_at = now(), reason = left($3, 500)
+     WHERE name = $1 AND version = $2 AND status = 'production'`,
+    [name, version, reason],
+  );
 }
 
 /** Records a version that didn't pass its gate. Its weights aren't kept: they'd never serve. */

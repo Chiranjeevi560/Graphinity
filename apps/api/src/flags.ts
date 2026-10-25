@@ -19,6 +19,8 @@ export const FLAG_DEFAULTS = {
   model_training: true,
   /** Rank exploit places with a promoted learned routing model (ADR 0013); the owner turns it on. */
   learned_routing: false,
+  /** Uncertainty-aware exploration for each wave's last place (ADR 0014); the owner turns it on. */
+  routing_exploration: false,
 } as const;
 
 export type FlagName = keyof typeof FLAG_DEFAULTS;

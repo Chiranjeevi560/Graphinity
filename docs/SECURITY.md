@@ -169,6 +169,21 @@ whenever a user-linked table is added.
   constants and weights, with no per-person parameter. Weights trained partly on a since-deleted
   account remain until the next retrain.
 
+## Routing exploration (ADR 0014)
+
+- Exploration decisions (reason, propensity, the model's prediction) are stored in the same
+  system-only `app.route_factors`, kept 180 days. Logs carry counts and rates only.
+- No one is explored more than 3 times in 7 days. The routing job checks this, and a database
+  trigger enforces it under a per-person advisory lock, so two servers at once can't both
+  explore the same person. A refusal makes that place exploitation's choice.
+- A farm of N fresh accounts can draw at most 3N exploration routes a week, each costing at most
+  half a place's expected value (the safety gate). The spec's newcomer place it replaces had no
+  cap at all.
+- Automatic demotion retires a serving routing model whose helpful answers fall clearly short of
+  its predictions (99%, and below 80%), and the promotion gate applies the same check, so a
+  retired model can't return the next night. Exploration is off until the owner turns on
+  `routing_exploration`.
+
 ## Known gaps
 
 - The daily limit of 3 questions per person is counted without a lock. One server routes one

@@ -23,6 +23,7 @@ describe('feature flags', () => {
       { name: 'model_training', enabled: true },
       { name: 'push', enabled: true },
       { name: 'recommendations', enabled: true },
+      { name: 'routing_exploration', enabled: false },
     ]);
     // The database and the code's fallbacks agree, so a failed first read changes nothing.
     expect(Object.fromEntries(rows.map(r => [r.name, r.enabled]))).toEqual({ ...FLAG_DEFAULTS });

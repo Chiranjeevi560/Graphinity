@@ -22,6 +22,16 @@ import {
   psi,
   type Candidate,
 } from './routing-score.ts';
+import {
+  decideLastPlace,
+  NO_HISTORY,
+  personHistory,
+  seedFor,
+  type ExploreCandidate,
+  type ExploreDecision,
+} from './ml/routing-bandit.ts';
+import { loadHistories } from './ml/routing-data.ts';
+import { scoreRoutingAt, type RoutingModel } from './ml/routing-model.ts';
 
 /**
  * A promoted learned model (ADR 0013), when the owner has switched it on:
@@ -31,6 +41,19 @@ import {
 export interface Ranker {
   version: number;
   score(factors: readonly number[]): number;
+  /** Its prediction for a route at a given wave (wave terms included): what calibration checks. */
+  predicted(factors: readonly number[], wave: number): number;
+}
+
+/**
+ * Exploration (ADR 0014), when the owner has switched it on and a routing
+ * model serves: the last place of each wave goes to whoever the
+ * uncertainty-aware procedure picks (routing-bandit.ts), instead of the
+ * newcomer place.
+ */
+export interface Explorer {
+  version: number;
+  model: RoutingModel;
 }
 
 /** Minutes after asking. */
@@ -268,6 +291,66 @@ async function candidates(
 }
 
 /**
+ * The last place under exploration: exploitation's own choice for it, then
+ * the uncertainty-aware decision between that person and everyone else
+ * still eligible (newcomers included). Null when there's no one left.
+ */
+async function explorePlace(
+  q: Queryable,
+  questionId: string,
+  wave: number,
+  explorer: Explorer,
+  picked: readonly RankedCandidate[],
+  pool: readonly RankedCandidate[],
+  affinities: ReadonlyMap<string, number>,
+  learnedScore: ((person: RankedCandidate, maxAffinity: number) => number) | undefined,
+): Promise<{ person: RankedCandidate; decision: ExploreDecision; greedy: RankedCandidate } | null> {
+  const selected = picked.map(p => p.id);
+  const remaining = pool.filter(p => !selected.includes(p.id) && p.candidate.usedToday < DAILY_LIMIT);
+  const greedy = greedyDiverse(
+    remaining.filter(p => !p.explore),
+    1,
+    affinities,
+    selected,
+    DAILY_LIMIT,
+    learnedScore,
+  )[0];
+  if (!greedy) return null;
+  const others = remaining.filter(p => p.id !== greedy.id);
+  const explored = new Map(
+    (
+      await q.query<{ profile_id: string; n: number }>(
+        `SELECT profile_id::text AS profile_id, count(*)::int AS n FROM app.route_factors
+         WHERE profile_id = ANY($1::uuid[]) AND explore_reason = 'explored' AND recorded_at > now() - interval '7 days'
+         GROUP BY profile_id`,
+        [remaining.map(p => p.id)],
+      )
+    ).rows.map(r => [r.profile_id, r.n]),
+  );
+  const histories = await loadHistories(
+    q,
+    remaining.map(p => p.id),
+  );
+  const asCandidate = (p: RankedCandidate): ExploreCandidate => {
+    const past = histories.get(p.id);
+    return {
+      id: p.id,
+      factors: factorVector(p.candidate, 1 - affinityToSelected(p.id, selected, affinities)),
+      history: past ? personHistory(explorer.model, past) : NO_HISTORY,
+      exploredThisWeek: explored.get(p.id) ?? 0,
+    };
+  };
+  const decision = decideLastPlace(
+    explorer.model,
+    asCandidate(greedy),
+    others.map(asCandidate),
+    seedFor(questionId, wave, explorer.version),
+  );
+  const person = remaining.find(p => p.id === decision.id) ?? greedy;
+  return { person, decision, greedy };
+}
+
+/**
  * Routes one wave of a question. Returns the people actually asked (the
  * daily budget may skip some). One place in five goes to a newcomer, the
  * spec's "4 exploit + 1 explore".
@@ -278,6 +361,7 @@ export async function routeWave(
   wave: number,
   size: number,
   ranker: Ranker | null = null,
+  explorer: Explorer | null = null,
 ): Promise<string[]> {
   const exploreCount = Math.ceil(size * NEWCOMER_SHARE);
   const newcomers = await candidates(q, questionId, Math.max(1, exploreCount) * 5, true, null);
@@ -297,7 +381,9 @@ export async function routeWave(
       ).rows
     : [];
   const affinities = new Map(affinityRows.map(edge => [`${edge.user_low}:${edge.user_high}`, edge.weight]));
-  const explorePicks = greedyDiverse(newcomers, exploreCount, affinities, [], DAILY_LIMIT);
+  // With exploration, newcomers have no reserved place: they compete for the last place on how
+  // much there is to learn about them, like anyone else.
+  const explorePicks = explorer ? [] : greedyDiverse(newcomers, exploreCount, affinities, [], DAILY_LIMIT);
   const selectedIds = explorePicks.map(person => person.id);
   const exploitPool = rest.filter(person => !selectedIds.includes(person.id));
   const learnedScore = (person: RankedCandidate, maxAffinity: number) =>
@@ -307,22 +393,31 @@ export async function routeWave(
       : 0;
   const exploitPicks = greedyDiverse(
     exploitPool,
-    size - selectedIds.length,
+    size - (explorer ? exploreCount : selectedIds.length),
     affinities,
     selectedIds,
     DAILY_LIMIT,
     ranker ? learnedScore : undefined,
   );
-  const chosen = [...explorePicks, ...exploitPicks];
-  let selectedBefore: string[] = [];
-  const people = chosen.map(person => {
-    const diversity = 1 - affinityToSelected(person.id, selectedBefore, affinities);
+  const decided = explorer
+    ? await explorePlace(
+        q,
+        questionId,
+        wave,
+        explorer,
+        exploitPicks,
+        pool,
+        affinities,
+        ranker ? learnedScore : undefined,
+      )
+    : null;
+  const chosen = [...explorePicks, ...exploitPicks, ...(decided ? [decided.person] : [])];
+  /** What gets stored for one person, given who was chosen before them and how their place was decided. */
+  const rowFor = (person: RankedCandidate, before: readonly string[], decision: ExploreDecision | null) => {
+    const diversity = 1 - affinityToSelected(person.id, before, affinities);
     const dampener = loadDampener(person.candidate.usedToday, DAILY_LIMIT);
     const learnedBy = person.explore ? null : ranker;
-    const rankingScore = learnedBy
-      ? learnedScore(person, 1 - diversity)
-      : person.score + ALPHA.diversity * diversity * dampener;
-    selectedBefore = [...selectedBefore, person.id];
+    const factors = factorVector(person.candidate, diversity);
     return {
       id: person.id,
       sameCountry: person.sameCountry,
@@ -330,17 +425,46 @@ export async function routeWave(
       trustPct: person.trustPct,
       answeredPct: person.answeredPct,
       newcomer: person.newcomer,
-      rankingScore,
+      rankingScore: decision
+        ? decision.mean
+        : learnedBy
+          ? learnedScore(person, 1 - diversity)
+          : person.score + ALPHA.diversity * diversity * dampener,
       expertiseWeight: person.candidate.expertiseWeight,
       circadianFit: person.candidate.circadianFit,
       diversityFit: diversity,
-      factors: factorVector(person.candidate, diversity),
-      explore: person.explore,
-      modelVersion: learnedBy ? learnedBy.version : null,
+      factors,
+      explore: decision ? false : person.explore,
+      modelVersion: decision && explorer ? explorer.version : learnedBy ? learnedBy.version : null,
+      // The model's own prediction at this route's wave (no person effect): what calibration checks.
+      predicted:
+        decision && explorer
+          ? scoreRoutingAt(explorer.model, factors, wave)
+          : learnedBy
+            ? learnedBy.predicted(factors, wave)
+            : null,
+      decision,
     };
+  };
+  let selectedBefore: string[] = [];
+  const people = chosen.map(person => {
+    // This person's place was decided by exploration (and how), or null.
+    const decision = decided && decided.person.id === person.id ? decided.decision : null;
+    const row = rowFor(person, selectedBefore, decision);
+    selectedBefore = [...selectedBefore, person.id];
+    return row;
   });
+  // If the database refuses an exploration (its weekly cap, raced by another server), the place
+  // goes to exploitation's choice instead, as if exploration had decided against it.
+  const fallback = decided?.decision.explored
+    ? rowFor(
+        decided.greedy,
+        exploitPicks.map(p => p.id),
+        null,
+      )
+    : null;
   const asked: string[] = [];
-  for (const p of people) {
+  const insert = async (p: (typeof people)[number]) => {
     const res = await q.query(
       `INSERT INTO app.routes (question_id, profile_id, wave, same_country, field_points, trust_pct, answered_pct, newcomer,
                                ranking_score, expertise_weight, circadian_fit, diversity_fit, ranking_version)
@@ -364,14 +488,49 @@ export async function routeWave(
     if (res.rowCount) {
       // What this decision saw, for learning from its outcome (system-only; migration 0016).
       await q.query(
-        `INSERT INTO app.route_factors (question_id, profile_id, factors_version, factors, explore, wave, model_version)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [questionId, p.id, FACTORS_VERSION, p.factors, p.explore, wave, p.modelVersion],
+        `INSERT INTO app.route_factors (question_id, profile_id, factors_version, factors, explore, wave, model_version,
+                                        predicted, explore_reason, propensity, probability_better)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        [
+          questionId,
+          p.id,
+          FACTORS_VERSION,
+          p.factors,
+          p.explore,
+          wave,
+          p.modelVersion,
+          p.predicted,
+          p.decision?.reason ?? null,
+          p.decision?.propensity ?? null,
+          p.decision?.probabilityBetter ?? null,
+        ],
       );
       asked.push(p.id);
     }
+  };
+  for (const p of people) {
+    if (!p.decision?.explored) {
+      await insert(p);
+      continue;
+    }
+    await q.query('SAVEPOINT exploration');
+    try {
+      await insert(p);
+      await q.query('RELEASE SAVEPOINT exploration');
+    } catch (err) {
+      if (pgCode(err) !== '23514' || !fallback) throw err;
+      await q.query('ROLLBACK TO SAVEPOINT exploration');
+      await insert(fallback);
+    }
   }
   return asked;
+}
+
+/** A Postgres error's SQLSTATE, if it is one. */
+function pgCode(err: unknown): string | undefined {
+  return typeof err === 'object' && err !== null && 'code' in err && typeof err.code === 'string'
+    ? err.code
+    : undefined;
 }
 
 /**
@@ -386,8 +545,11 @@ export async function routeDueQuestions(
   log?: { warn(obj: object, msg: string): void },
   /** The learned ranker to use now, or null for Ψ (asked once per run, so a switch flip applies at the next run). */
   ranker: () => Ranker | null = () => null,
+  /** Exploration for the last place, or null for the newcomer place (asked once per run, like the ranker). */
+  explorer: () => Explorer | null = () => null,
 ): Promise<Array<{ questionId: string; askerId: string; asked: string[] }>> {
   const current = ranker();
+  const exploring = explorer();
   const due = await db.asSystem(async q => {
     const { rows } = await q.query<{
       id: string;
@@ -424,7 +586,7 @@ export async function routeDueQuestions(
       routed.push({
         questionId: w.questionId,
         askerId: w.askerId,
-        asked: await db.asSystem(q => routeWave(q, w.questionId, w.wave, w.size, current)),
+        asked: await db.asSystem(q => routeWave(q, w.questionId, w.wave, w.size, current, exploring)),
       });
     } catch (err) {
       log?.warn({ kind: errorKind(err) }, 'routing a question failed');

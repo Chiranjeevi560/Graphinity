@@ -194,3 +194,7 @@ Spelling correction learned from Graphinity's own posts is in, on the same branc
 ## Learned routing (2026-10-25, Claude)
 
 Routing decisions now record their factors (`app.route_factors`, system-only, 180 days). A two-stage Bayesian logistic model learns from settled outcomes, behind a gate that must beat Ψ (asker-weighted, 99% interval, gain at least 0.02, trust varied) and the owner's `learned_routing` switch. There were two adversarial reviews (design and code). See ADR 0013 and `project report.md`.
+
+## Routing exploration (2026-10-25, Claude)
+
+Gated Thompson sampling for each wave's last place, from the routing model's Laplace posterior plus per-person effects updated from each person's record. It records reasons and propensities, has a weekly exploration cap (also in the database, locked), and automatic demotion by calibration in the monitor and the promotion gate. The `routing_exploration` switch is off by default. Chosen over ε-greedy, GLM-UCB, ungated Thompson and the spec's newcomer place in a 12-seed online simulation. See ADR 0014 and `project report.md`.

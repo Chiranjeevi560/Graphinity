@@ -20,11 +20,12 @@ import {
   trainTextEmbeddingJob,
 } from './ml/training.ts';
 import { purgeOldRouteFactors } from './ml/routing-data.ts';
-import { deserializeRoutingModel, scoreRouting, type RoutingModel } from './ml/routing-model.ts';
+import { monitorRouting } from './ml/routing-monitor.ts';
+import { deserializeRoutingModel, scoreRouting, scoreRoutingAt, type RoutingModel } from './ml/routing-model.ts';
 import { personalGraphQueueStatus, projectPersonalGraphSignals, purgeExpiredPersonalSignals } from './personal-data.ts';
 import { expireNetworkMarks } from './networks.ts';
 import { createLimiter, createPushSender } from './push-sender.ts';
-import { announceRouting, routeDueQuestions, type Ranker } from './routing.ts';
+import { announceRouting, routeDueQuestions, type Explorer, type Ranker } from './routing.ts';
 import { systemClock } from './rate-limit.ts';
 import { buildServer } from './server.ts';
 
@@ -99,10 +100,18 @@ try {
 } catch (err) {
   console.warn(`serving routing model not loaded (${errorKind(err)}); Ψ ranks everyone until it is`);
 }
+const explorer = (): Explorer | null => {
+  const serving = routingModel;
+  return serving && flags.enabled('routing_exploration') ? { version: serving.version, model: serving.model } : null;
+};
 const ranker = (): Ranker | null => {
   const serving = routingModel;
   if (!serving || !flags.enabled('learned_routing')) return null;
-  return { version: serving.version, score: factors => scoreRouting(serving.model, factors) };
+  return {
+    version: serving.version,
+    score: factors => scoreRouting(serving.model, factors),
+    predicted: (factors, wave) => scoreRoutingAt(serving.model, factors, wave),
+  };
 };
 
 const authAdmin = createSupabaseAdmin({ supabaseUrl: config.supabaseUrl, secretKey: config.supabaseSecretKey });
@@ -240,7 +249,7 @@ if (config.vapid) {
 // minute for the next waves. One run at a time; asks during a run are
 // picked up by one more run straight after it.
 const runRouting = serial(() =>
-  routeDueQuestions(db, app.log, ranker)
+  routeDueQuestions(db, app.log, ranker, explorer)
     .then(results => {
       announceRouting(events, results);
       const people = results.reduce((n, r) => n + r.asked.length, 0);
@@ -340,6 +349,34 @@ const runTraining = serial(async () => {
     );
   } catch (err) {
     app.log.warn({ kind: errorKind(err), model: ROUTING }, 'model training failed');
+  }
+  // The serving routing model, checked against what happened (ADR 0014): retired if it falls
+  // short, and exploration's numbers. Logs carry counts and rates only.
+  try {
+    const watch = await monitorRouting(db);
+    if (watch.calibration?.demote) {
+      // Out of service now, even if reloading fails: a retired model must never keep ranking.
+      routingModel = null;
+      await loadRoutingModel();
+      app.log.warn({ model: ROUTING, version: watch.version, z: watch.calibration.z }, 'routing model retired');
+    }
+    app.log.info(
+      {
+        model: ROUTING,
+        version: watch.version,
+        calibrationRoutes: watch.calibration?.routes ?? 0,
+        z: watch.calibration?.z ?? null,
+        decided: watch.exploration.decided,
+        explored: watch.exploration.explored,
+        exploredHelped: watch.exploration.exploredHelped,
+        keptHelped: watch.exploration.keptHelped,
+        neverExploreValue: watch.exploration.neverExploreValue,
+        actualValue: watch.exploration.actualValue,
+      },
+      'routing monitor',
+    );
+  } catch (err) {
+    app.log.warn({ kind: errorKind(err), model: ROUTING }, 'routing monitor failed');
   }
 });
 const firstTraining = setTimeout(runTraining, 10 * 60_000);

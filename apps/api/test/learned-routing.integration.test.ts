@@ -358,7 +358,7 @@ describe('serving a learned model', () => {
       ),
     );
     // A ranker that prefers whoever Ψ likes least: the order must follow it, not Ψ.
-    const ranker: Ranker = { version, score: f => 1 - psiOfVector(f) };
+    const ranker: Ranker = { version, score: f => 1 - psiOfVector(f), predicted: f => 1 - psiOfVector(f) };
     const qPsi = await ask(asker.token, field, 'IN');
     const byPsi = await h.t.database.asSystem(tx => routeWave(tx, qPsi, 1, 3));
     await h.t.owner.query('DELETE FROM app.routes WHERE question_id = $1', [qPsi]);
@@ -410,6 +410,8 @@ describe('serving a learned model', () => {
       Buffer.from('{}'),
     );
     const q = await ask(asker.token, field);
-    expect(await h.t.database.asSystem(tx => routeWave(tx, q, 1, 1, { version, score: () => 0.5 }))).toEqual([free.id]);
+    expect(
+      await h.t.database.asSystem(tx => routeWave(tx, q, 1, 1, { version, score: () => 0.5, predicted: () => 0.5 })),
+    ).toEqual([free.id]);
   });
 });
