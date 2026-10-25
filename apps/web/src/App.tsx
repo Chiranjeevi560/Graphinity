@@ -17,6 +17,7 @@ const PrivacySettings = lazy(() => import('./routes/PrivacySettings.tsx'));
 const PublicProfile = lazy(() => import('./routes/PublicProfile.tsx'));
 const Ask = lazy(() => import('./routes/Ask.tsx'));
 const Question = lazy(() => import('./routes/Question.tsx'));
+const Search = lazy(() => import('./routes/Search.tsx'));
 const ReviewPage = lazy(() => import('./routes/Review.tsx'));
 const Privacy = lazy(() => import('./routes/Privacy.tsx'));
 const Terms = lazy(() => import('./routes/Terms.tsx'));
@@ -53,6 +54,8 @@ function route(path: string, state: SessionState): ReactNode {
   const questionMatch = /^\/q\/([1-9][0-9]{0,15})(?:\/[^/]*)?$/.exec(path);
   if (questionMatch?.[1]) return <Question id={questionMatch[1]} />;
   if (Design && path === '/design') return <Design />;
+  // Searching is open to everyone; what is searched never goes in the address.
+  if (path === '/search') return <Search />;
 
   // Everything below depends on who is signed in.
   if (state.status === 'loading') return null;

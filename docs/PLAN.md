@@ -52,7 +52,7 @@ Render or Supabase.** Limits checked on the services' own pages on 2026-10-17 ar
   every token itself; all data goes through the server.
 - **Keep-awake**: a Cloudflare Worker cron hits `/health` every 10 minutes. `/health` touches the
   database, so neither the server sleeps nor the database pauses.
-- **Matching**: one search engine (ADR 0015) for the Ask check and the Search endpoint: BM25 by
+- **Matching**: one search engine (ADR 0015) for the Ask check and the Search screen: BM25 by
   words in Postgres (whole stemmed words; only the word being typed matches as a beginning),
   Graphinity's own embedding by meaning, fused by reciprocal rank. Typos are handled by Graphinity's
   own spelling model (ADR 0011) rather than trigrams.

@@ -7,6 +7,7 @@ import { Standing, useStanding } from '../components/Standing.tsx';
 import { turnPushOff } from '../lib/push.ts';
 import { ApiError } from '../lib/api.ts';
 import { drafts } from '../lib/drafts.ts';
+import { forgetSearch } from '../lib/search.ts';
 import { navigate } from '../lib/router.ts';
 import { api, auth, type Profile } from '../session.tsx';
 
@@ -25,6 +26,7 @@ export default function Me({ profile }: { profile: Profile }) {
       await api('/me', { method: 'DELETE', signedIn: true, body: { confirm: true } });
       auth.clear();
       drafts.clear();
+      forgetSearch();
       navigate('/goodbye', { replace: true });
     } catch (err) {
       setDeleteError(err instanceof ApiError ? err.message : 'Something went wrong. Try again in a minute.');
@@ -85,6 +87,7 @@ export default function Me({ profile }: { profile: Profile }) {
               .then(() => auth.signOut())
               .then(() => {
                 drafts.clear();
+                forgetSearch();
                 navigate('/', { replace: true });
               });
           }}

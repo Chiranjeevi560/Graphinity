@@ -15,6 +15,7 @@ export interface Found {
   id: string;
   title: string;
   field: string;
+  fieldName: string;
   answerCount: number;
   lastAnsweredAt: Date | null;
   /** Cosine similarity by meaning; null when this one wasn't found by meaning. */
@@ -169,16 +170,17 @@ export function createSearchEngine({
                 id: string;
                 title: string;
                 field: string;
+                field_name: string;
                 answer_count: number;
                 last_answered_at: Date | null;
                 every_word: boolean;
               }>(
-                `SELECT q.id::text AS id, q.title, q.field,
+                `SELECT q.id::text AS id, q.title, q.field, f.name AS field_name,
                         (SELECT count(*) FROM app.answers a WHERE a.question_id = q.id)::int AS answer_count,
                         (SELECT max(a.created_at) FROM app.answers a WHERE a.question_id = q.id) AS last_answered_at,
                         coalesce(q.search @@ to_tsquery('english', $2::text), false)
                           OR coalesce(q.search @@ to_tsquery('english', $3::text), false) AS every_word
-                 FROM app.questions q WHERE q.id = ANY($1::bigint[])`,
+                 FROM app.questions q JOIN app.fields f ON f.slug = q.field WHERE q.id = ANY($1::bigint[])`,
                 [ids, every, everyCorrected],
               )
             ).rows
@@ -197,6 +199,7 @@ export function createSearchEngine({
               id,
               title: d.title,
               field: d.field,
+              fieldName: d.field_name,
               answerCount: d.answer_count,
               lastAnsweredAt: d.last_answered_at,
               similarity: m?.similarity ?? null,

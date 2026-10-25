@@ -127,7 +127,7 @@ export function registerSearchRoutes(
       const results = shown.map(({ f, reasons }) => ({
         id: f.id,
         title: f.title,
-        field: f.field,
+        field: { slug: f.field, name: f.fieldName },
         answerCount: f.answerCount,
         lastAnsweredAt: f.lastAnsweredAt?.toISOString() ?? null,
         reasons,

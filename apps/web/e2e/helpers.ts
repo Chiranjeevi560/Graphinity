@@ -293,6 +293,18 @@ export async function asOwner(sql: string, values: unknown[]) {
   }
 }
 
+/** Reads from the local database as its owner, to check what the app stored. */
+export async function readAsOwner<T>(sql: string, values: unknown[]): Promise<T[]> {
+  const pg = (await import('pg')).default;
+  const client = new pg.Client({ connectionString: e2eUrl() });
+  await client.connect();
+  try {
+    return (await client.query(sql, values)).rows as T[];
+  } finally {
+    await client.end();
+  }
+}
+
 export const TEST_PERSON_A = '11111111-1111-4111-8111-111111111111';
 
 /** Test person A is reused across runs: an established member, past the new-account limits. */

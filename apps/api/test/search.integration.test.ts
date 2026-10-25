@@ -66,7 +66,7 @@ async function ask(title: string, field = 'imports-customs', app: TestApp = h) {
 interface Result {
   id: string;
   title: string;
-  field: string;
+  field: { slug: string; name: string };
   answerCount: number;
   lastAnsweredAt: string | null;
   reasons: string[];
@@ -96,7 +96,7 @@ describe('search', () => {
     expect((await search('customs duty watch')).results[0]).toMatchObject({
       id: duty,
       reasons: ['every_word', 'meaning'],
-      field: 'imports-customs',
+      field: { slug: 'imports-customs' },
       answerCount: 0,
       lastAnsweredAt: null,
     });

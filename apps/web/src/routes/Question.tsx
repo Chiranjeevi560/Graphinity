@@ -26,6 +26,7 @@ import { RoutingGraph } from '../components/RoutingGraph.tsx';
 import { SquircleLayers } from '../components/Squircle.tsx';
 import { routingLine } from '../lib/graph-words.ts';
 import { takeJustAsked } from '../lib/just-asked.ts';
+import { finishReading, readingVisible } from '../lib/search.ts';
 import { Link } from '../lib/router.ts';
 import { api, useSession } from '../session.tsx';
 import { site } from '../site-settings.ts';
@@ -110,6 +111,25 @@ export default function Question({ id }: { id: string }) {
   useEffect(() => {
     if (page) present(page);
   }, [page]);
+
+  // Opened from a recorded search: how long it is read, while in view, is sent on leaving.
+  useEffect(() => {
+    const send = (path: string, body: { dwellMs?: number }, keepalive: boolean) =>
+      api(path, { method: 'PUT', signedIn: true, body, keepalive });
+    const visibility = () => {
+      readingVisible(document.visibilityState === 'visible');
+    };
+    const leave = () => {
+      finishReading(send, id);
+    };
+    document.addEventListener('visibilitychange', visibility);
+    window.addEventListener('pagehide', leave);
+    return () => {
+      document.removeEventListener('visibilitychange', visibility);
+      window.removeEventListener('pagehide', leave);
+      leave();
+    };
+  }, [id]);
 
   async function reload() {
     setPage(await api<Page>(`/questions/${id}`, { signedIn: 'if-possible' }));

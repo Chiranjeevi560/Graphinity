@@ -33,6 +33,17 @@ test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
   await expect(page.getByRole('heading', { name: 'Terms', level: 1 })).toBeVisible();
   await audit(page, 'terms');
 
+  // Searching is open to everyone; what is searched never reaches the address.
+  await page.goto('/search');
+  await expect(page.getByRole('heading', { name: 'Search', level: 1 })).toBeVisible();
+  await audit(page, 'search');
+  await page.getByRole('searchbox', { name: 'Search questions' }).fill('customs duty');
+  await page.getByRole('searchbox', { name: 'Search questions' }).press('Enter');
+  await expect(page.getByRole('status').filter({ hasText: /question|Nothing matches/ })).toBeVisible();
+  await audit(page, 'search (searched)');
+  expect(page.url()).not.toContain('customs');
+  await expect(page).toHaveTitle('Search – Graphinity');
+
   await page.goto('/this/does/not/exist');
   // As for every screen: on the page before auditing, or axe can catch its fade before it starts.
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();

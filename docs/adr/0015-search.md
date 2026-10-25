@@ -1,7 +1,7 @@
 # ADR 0015: Search, built in measured slices
 
 - **Status:** In progress. Part 1 (consent) accepted and built 2026-10-25. Part 2 (the engine)
-  part 5 (ANN) and part 3 (search logs) built 2026-10-26. Later parts are recorded here as they land.
+  part 5 (ANN), part 3 (search logs) and part 4 (the Search screen) built 2026-10-26. Later parts are recorded here as they land.
 - **Owner decisions (2026-10-25):**
   1. **Both surfaces, one engine:** a Search screen and the Ask screen's "has this been asked?"
      check.
@@ -222,6 +222,39 @@ The 6 survivors of 23 rules broken on purpose are layers that another layer also
 - the API's own checks over the database's;
 - the own-rows check, which the invoker-run consent check already implies.
 
+## Part 4: the Search screen
+
+- **Entry:** a search field on the home page, for everyone; `/search` for the screen. The query is
+  handed over in memory and sent in the request body, so it never appears in an address, a history
+  entry or a link (checked end to end for every address visited).
+- **When a search runs:** on submit, not on every keystroke.
+  - Each search costs an embedding and three queries against a per-person allowance.
+  - Half-typed words are noise in what learning reads.
+  - The Ask screen keeps its as-you-type check, which is a different job.
+- **The results** use the question rows' own shape, with reasons in words ("Has all your words ·
+  Similar in meaning"), the spelling model's extra words ("Also searched for “customs”"), and "Matched
+  by words only right now" while no meaning model serves.
+  - With no match, it says so and offers to ask.
+  - Too many searches, or search paused, get the server's own words.
+- **Back returns to the same results:** they're kept in memory for this tab, and forgotten on sign-out
+  and account deletion so the next person on the device doesn't see them.
+- **Reading time** is recorded only for a search the person allowed recording for:
+  - an open on the click, and the time read sent once when the question is left (another screen,
+    another tab, or closing it, sent with `keepalive`);
+  - only time while the page is visible counts, capped at an hour;
+  - telemetry never shows an error.
+- **Checked in a real browser:** 320, 375, 430 and desktop, light and dark; no sideways scroll; every
+  target 44 px or more.
+  - One flaw found and fixed: the global focus ring's page-colour band painted a dark bar across the
+    field's icon. It is removed for fields, which show focus with their own ring.
+- **Tests:**
+  - 6 unit tests;
+  - an end-to-end test in Chromium and WebKit: allow, search from home, open, read, Back, the
+    reading recorded, sign out, nothing remembered;
+  - the screen in the accessibility audit.
+  - 7 rules broken on purpose, all caught. Two first survived for test reasons: an assertion that
+    expected "some" words, and a sign-out helper that reloaded the page, which forgets anyway.
+
 ## Part 5: meaning at the model's own size, searched as measured (migration 0021, schema 36)
 
 Taken out of order: part 2's benchmark showed the meaning stage missing the latency target at
@@ -313,7 +346,7 @@ What this shows:
 
 2. ~~The engine~~: built (above). Synonyms come with learning (part 6).
 3. ~~Search logs~~: built (above).
-4. **The Search screen,** and the Ask check on the same engine.
+4. ~~The Search screen~~: built (above).
 5. ~~ANN~~: built (above).
 6. **Learning:**
    - labels only from the searcher's own actions;
