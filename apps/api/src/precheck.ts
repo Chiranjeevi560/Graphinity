@@ -3,10 +3,18 @@
 // by words (full text), so exact codes like "BOE-II" and synonyms like
 // "duty" and "import tax" are both found. Pure: the SQL feeds it.
 
-/** Spec §12.1: RRF with k = 60, meaning weighted 0.65 and words 0.35. */
+/**
+ * RRF with k = 60 (spec §12.1), each ranking weighted equally. The spec's
+ * 0.65 for meaning and 0.35 for words ranked worse on Graphinity's benchmark
+ * (ADR 0015 part 2: MRR 0.85 against 0.89 for equal weights, the paired 99%
+ * interval excluding zero), and which ranking deserves more depends on the
+ * data: on the benchmark before BM25, meaning alone beat any fusion; after,
+ * words did. Equal weights (Cormack et al. 2009) until weights are learned
+ * from real searches (part 6).
+ */
 export const RRF_K = 60;
-export const W_MEANING = 0.65;
-export const W_WORDS = 0.35;
+export const W_MEANING = 0.5;
+export const W_WORDS = 0.5;
 /** Spec §11.1: at or above this, it is the same question. */
 export const DUPLICATE_AT = 0.88;
 /** Spec §11.1: at or above this, it is related enough to show. */

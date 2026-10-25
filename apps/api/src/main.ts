@@ -127,6 +127,7 @@ const app = await buildServer({
   embedder,
   speller: spelling.speller,
   recommendationsEnabled: () => flags.enabled('recommendations'),
+  searchEnabled: () => flags.enabled('search'),
 });
 logger.current = app.log;
 

@@ -132,24 +132,48 @@ unanswered pages go to search engines). Cached for an hour.
 ### `POST /questions/precheck`
 
 `{ title, details?, field? }` → `{ verdict, questions: [{ id, title, answerCount, similarity }] }`, used
-while someone writes a question (docs/SPEC.md §11.1, §12.1). Questions are ranked by meaning
-(embeddings, cosine) and by words (full text), fused by Reciprocal Rank Fusion (k 60, weights 0.65 and
-0.35), within `field` when given. `verdict`: `duplicate` when one is at least 0.88 similar in meaning
-and has an answer from the last 180 days; `related` from 0.72, or when a question holds every word typed
-(the last may be half-typed: exact codes and names mean little to the model), or on any word match when
+while someone writes a question (docs/SPEC.md §11.1, §12.1). Same engine as `POST /search` (ADR 0015):
+questions are ranked by meaning (Graphinity's own embedding, cosine) and by words (BM25, migration
+0020), fused by Reciprocal Rank Fusion (k 60, the two weighted equally), within `field` when given.
+Words match whole and stemmed ("imports" finds "importing"); only the last word, which may still be
+half-typed, also matches the words it could become. `verdict`: `duplicate` when one is at least 0.88
+similar in meaning and has an answer from the last 180 days; `related` from 0.72, or when a question
+holds every word typed (exact codes and names mean little to the model), or on any word match when
 meaning is unavailable; `clear` otherwise, with no questions. Up to 5 are returned: a recent duplicate
 first, then those holding every word, then the rest in fused order. `similarity` is `null` for a match
 by words alone.
 Titles under 10 characters aren't searched. Hidden questions never appear. Once Graphinity's own
 spelling model serves (ADR 0011), typos widen the word search: "cusotms" also looks for "customs",
 except in the last word while it may still be half-typed, and a question holding every corrected
-word counts as holding every word typed. Corrections are not returned; the text is never changed. Meaning comes from
-Graphinity's own model (ADR 0010), computed on Graphinity's server; nothing is sent to an outside AI.
-Until a model has been promoted (or with the `embeddings` switch off) it answers by words only, and
-never says `duplicate`. Authentication is optional. Meaning is computed for every request, signed in
-or not, on Graphinity's own server (ADR 0015, migration 0019); it no longer depends on
-`ai_personalization`. A signed-in query is saved only with separate `search_history` consent, at most once per exact
-query and field every five minutes, and expires within 365 days. No query is sent to a commercial partner.
+word counts as holding every word typed. Corrections are not returned here; the text is never changed.
+Meaning is computed on Graphinity's server for every request, signed in or not (migration 0019);
+nothing is sent to an outside AI. Until a model has been promoted (or with the `embeddings` switch off)
+it answers by words only, and never says `duplicate`. Authentication is optional. A signed-in query is
+saved only with separate `search_history` consent, at most once per exact query and field every five
+minutes, and expires within 365 days. No query is sent to a commercial partner. The response's
+`Server-Timing` header gives each stage's milliseconds (`embed`, `words`, `meaning`, `fetch`).
+
+### `POST /search`
+
+`{ query, field? }` → `{ results: [{ id, title, field, answerCount, lastAnsweredAt, reasons }],
+corrections: [{ from, to }], meaning }`, for the Search screen (ADR 0015 part 2). POST, so a search
+never appears in a URL, a browser history or a proxy log. Same engine as the precheck, every word
+matched whole. Up to 20 results, best first. `reasons` says why each is there, in words the screen can
+say: `every_word` (it holds every word searched, as typed or as corrected), `some_words`, `meaning`
+(close in meaning, at least 0.72). A question found by meaning alone and less close than that is left
+out. `corrections` lists the words the spelling model also searched for; the query itself is never
+changed. `meaning` is `false` when matching by meaning was unavailable. Nothing about other people is
+returned: no authors, trust, reputation or scores. Hidden questions never appear.
+
+- `query`: 2 to 200 characters once cleaned. Shorter answers `{ results: [], corrections: [], meaning:
+  false }`; longer, or with control characters, is 400 `invalid_query` with `reason` (`too_long`,
+  `invalid_characters`). Unknown properties and wrong types are 400.
+- Authentication is optional. Each signed-in person, and each visitor address, has its own allowance
+  (a burst of 30, then one every 2 seconds) on top of the server-wide limits; past it, 429
+  `rate_limited` with `retry-after`.
+- With the `search` switch off: 503 `search_off`.
+- A signed-in search is saved to the person's own `search_history` only with that consent, as above.
+- `Server-Timing` as for the precheck.
 
 ### `GET /questions/:id`
 

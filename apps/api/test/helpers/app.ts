@@ -20,6 +20,8 @@ export async function startApp(
     embedder?: Embedder;
     speller?: Pick<Speller, 'correctDraft'>;
     recommendationsEnabled?: () => boolean;
+    searchEnabled?: () => boolean;
+    limits?: Partial<typeof defaultLimits>;
     graphAnalyzer?: GraphAnalyzer;
   } = {},
 ) {
@@ -46,11 +48,14 @@ export async function startApp(
     speller: opts.speller ?? null,
     ...(opts.graphAnalyzer ? { graphAnalyzer: opts.graphAnalyzer } : {}),
     ...(opts.recommendationsEnabled ? { recommendationsEnabled: opts.recommendationsEnabled } : {}),
+    ...(opts.searchEnabled ? { searchEnabled: opts.searchEnabled } : {}),
     // Generous limits: these tests are about behaviour, not rate limiting.
     limits: {
       ...defaultLimits,
       visitor: { capacity: 10_000, refillPerSecond: 1000, maxKeys: 10 },
       userWrites: { capacity: 1000, refillPerSecond: 100, maxKeys: 100 },
+      search: { capacity: 10_000, refillPerSecond: 1000, maxKeys: 100 },
+      ...opts.limits,
     },
     logStream: { write: () => {} },
   });

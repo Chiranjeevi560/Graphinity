@@ -17,6 +17,8 @@ import type { Embedder } from './embeddings.ts';
 import { createGraphAnalyzer, type GraphAnalyzer } from './graph-analyzer.ts';
 import type { Speller } from './ml/spelling.ts';
 import { registerQuestionRoutes } from './routes/questions.ts';
+import { registerSearchRoutes } from './routes/search.ts';
+import { createSearchEngine } from './search/engine.ts';
 import { registerConsentRoutes } from './routes/consent.ts';
 import { registerPersonalGraphRoutes } from './routes/personal-graph.ts';
 import { registerRecommendationRoutes } from './routes/recommendations.ts';
@@ -44,6 +46,8 @@ export interface Limits {
   anonymousBodyBytes: number;
   /** Changes one signed-in person can make (profile edits, later posts). */
   userWrites: BucketOptions;
+  /** Searches per signed-in person, or per visitor address (POST /search). */
+  search: BucketOptions;
 }
 
 export const defaultLimits: Limits = {
@@ -54,6 +58,10 @@ export const defaultLimits: Limits = {
   visitor: { capacity: 300, refillPerSecond: 10, maxKeys: 50_000 },
   anonymousBodyBytes: 4 * 1024,
   userWrites: { capacity: 20, refillPerSecond: 1 / 30, maxKeys: 50_000 },
+  // A burst of 30, then one every two seconds: well beyond anyone reading the
+  // results, well short of scraping. Generous per address for the same
+  // carrier reason as the visitor limit.
+  search: { capacity: 30, refillPerSecond: 0.5, maxKeys: 50_000 },
 };
 
 /** Everything the server needs from outside, so tests can swap any of it. */
@@ -75,6 +83,8 @@ export interface Deps {
   speller?: Pick<Speller, 'correctDraft'> | null;
   /** Global recommendation kill switch; per-user consent is enforced separately. */
   recommendationsEnabled?: () => boolean;
+  /** The search kill switch (POST /search). Defaults to on. */
+  searchEnabled?: () => boolean;
   limits?: Limits;
   /** Where logs go. Defaults to stdout. */
   logStream?: { write(line: string): void };
@@ -280,7 +290,16 @@ export async function buildServer(deps: Deps) {
   registerPersonalGraphRoutes(app, { db, analyzer, clock });
   registerRecommendationRoutes(app, { db, enabled: deps.recommendationsEnabled ?? (() => true) });
   const events = deps.events ?? createEvents();
-  registerQuestionRoutes(app, { db, events, embedder: deps.embedder ?? null, speller: deps.speller ?? null });
+  const engine = createSearchEngine({ db, embedder: deps.embedder ?? null, speller: deps.speller ?? null });
+  registerQuestionRoutes(app, { db, events, embedder: deps.embedder ?? null, engine });
+  registerSearchRoutes(app, {
+    db,
+    engine,
+    enabled: deps.searchEnabled ?? (() => true),
+    clock,
+    limit: limits.search,
+    keySecret: config.ipHashKey,
+  });
   registerLiveRoutes(app, { events, clock });
   registerModerationRoutes(app, { db });
   registerPushRoutes(app, { db, vapidPublicKey: deps.vapidPublicKey ?? null });

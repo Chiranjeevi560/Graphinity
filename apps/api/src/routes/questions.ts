@@ -4,14 +4,14 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Database } from '../db.ts';
 import type { Events } from '../events.ts';
-import { cleanBody, cleanLine, prefixQuery, textProblem, type TextProblem } from '../text.ts';
+import { cleanBody, cleanLine, textProblem, type TextProblem } from '../text.ts';
 import { fail, pgCode, pgConstraint, signedIn } from './common.ts';
 import { blockedMessage, isBlocked } from './moderation.ts';
 import { consensus, reportedAmount, type Amount, type Claim } from '../consensus.ts';
 import { vectorLiteral, type Embedder } from '../embeddings.ts';
-import { fuse, shortlist, verdict } from '../precheck.ts';
-import type { Speller } from '../ml/spelling.ts';
-import { tokenize } from '../ml/text-embedding.ts';
+import { shortlist, verdict } from '../precheck.ts';
+import { serverTiming, type SearchEngine } from '../search/engine.ts';
+import { recordOwnSearch } from '../search/history.ts';
 import { contactDetails, solicitationMessage } from '../solicitation.ts';
 import { answerRank, specificity, wilsonLowerBound } from '../reputation.ts';
 import { MAX_CHANGES, standing } from './points.ts';
@@ -116,12 +116,7 @@ const PRECHECK_POOL = 25;
 
 export function registerQuestionRoutes(
   app: FastifyInstance,
-  {
-    db,
-    events,
-    embedder,
-    speller,
-  }: { db: Database; events: Events; embedder: Embedder | null; speller: Pick<Speller, 'correctDraft'> | null },
+  { db, events, embedder, engine }: { db: Database; events: Events; embedder: Embedder | null; engine: SearchEngine },
 ) {
   /** An embedding, or null when there's no embedder or it failed: callers fall back to words. */
   async function embed(text: string): Promise<number[] | null> {
@@ -132,38 +127,6 @@ export function registerQuestionRoutes(
       // Out of the free allowance, offline, or a changed format: words still work.
       return null;
     }
-  }
-
-  async function consentEnabled(userId: string, category: string): Promise<boolean> {
-    return db.withUser(userId, async q => {
-      const { rows } = await q.query<{ enabled: boolean }>(
-        'SELECT enabled FROM app.user_consent_settings WHERE user_id = $1 AND category = $2',
-        [userId, category],
-      );
-      return rows[0]?.enabled ?? false;
-    });
-  }
-
-  async function saveSearchHistory(userId: string, query: string, field: string | null): Promise<void> {
-    await db.withUser(userId, async q => {
-      await q.query(
-        `INSERT INTO app.personal_signal_events
-           (user_id, consent_category, signal_type, value, source, expires_at)
-         SELECT $1, 'search_history', 'question_precheck', jsonb_build_object('query', $2::text, 'field', $3::text),
-                'user_action', clock_timestamp() + interval '365 days'
-         WHERE EXISTS (
-           SELECT 1 FROM app.user_consent_settings s
-           WHERE s.user_id = $1 AND s.category = 'search_history' AND s.enabled
-         ) AND NOT EXISTS (
-           SELECT 1 FROM app.personal_signal_events e
-           WHERE e.user_id = $1 AND e.consent_category = 'search_history'
-             AND e.signal_type = 'question_precheck'
-             AND e.value = jsonb_build_object('query', $2::text, 'field', $3::text)
-             AND e.occurred_at > clock_timestamp() - interval '5 minutes'
-         )`,
-        [userId, query, field],
-      );
-    });
   }
 
   // Newest first, a page at a time. `before` is the last id of the previous page.
@@ -237,93 +200,34 @@ export function registerQuestionRoutes(
         },
       },
     },
-    async req => {
+    async (req, reply) => {
       const body = req.body as { title: string; details?: string; field?: string };
       const title = cleanLine(body.title);
       // Too short to mean anything yet (counted as people count characters).
       if (textProblem(title, 10, Number.MAX_SAFE_INTEGER) === 'too_short') return { verdict: 'clear', questions: [] };
       const userId = req.user?.id;
       const field = body.field ?? null;
-      if (userId && (await consentEnabled(userId, 'search_history'))) await saveSearchHistory(userId, title, field);
+      if (userId) await recordOwnSearch(db, userId, 'question_precheck', title, field);
       // Meaning, on Graphinity's own server, for everyone (migration 0019).
-      const vector = await embed(questionText(title, cleanBody(body.details ?? '')));
-      // Graphinity's own spelling model (ADR 0011) widens the word search: "cusotms" also
-      // looks for "customs". What was typed is searched as typed too, and never changed.
-      const corrections = speller?.correctDraft(title) ?? [];
-      const words = prefixQuery(
-        title,
-        'any',
-        corrections.map(c => c.to),
-      );
-      const everyWord = prefixQuery(title, 'all');
-      const fixed = new Map(corrections.map(c => [c.from, c.to]));
-      const everyCorrectedWord = corrections.length
-        ? prefixQuery(
-            tokenize(title)
-              .map(w => fixed.get(w) ?? w)
-              .join(' '),
-            'all',
-          )
-        : null;
-      const found = await db.withUser(null, async q => {
-        const byMeaning =
-          vector && embedder
-            ? (
-                await q.query<{ id: string; similarity: number }>(
-                  'SELECT id::text AS id, similarity FROM app.nearest_questions($1, $2, $3, $4)',
-                  [vectorLiteral(vector), embedder.model, field, PRECHECK_POOL],
-                )
-              ).rows
-            : [];
-        const byWords = words
-          ? (
-              await q.query<{ id: string; every_word: boolean }>(
-                `SELECT q.id::text AS id,
-                q.search @@ to_tsquery('english', $3)
-                  OR coalesce(q.search @@ to_tsquery('english', $4::text), false) AS every_word
-         FROM app.questions q, to_tsquery('english', $1) query
-         WHERE q.search @@ query AND ($2::text IS NULL OR q.field = $2)
-         ORDER BY ts_rank_cd(q.search, query) DESC, q.id DESC LIMIT ${String(PRECHECK_POOL)}`,
-                [words, field, everyWord, everyCorrectedWord],
-              )
-            ).rows
-          : [];
-        const ids = fuse(
-          byMeaning.map(r => r.id),
-          byWords.map(r => r.id),
-        );
-        // Row-level security leaves out anything a visitor may not see.
-        const details = ids.length
-          ? (
-              await q.query<{ id: string; title: string; answer_count: number; last_answered_at: Date | null }>(
-                `SELECT q.id::text AS id, q.title,
-                (SELECT count(*) FROM app.answers a WHERE a.question_id = q.id)::int AS answer_count,
-                (SELECT max(a.created_at) FROM app.answers a WHERE a.question_id = q.id) AS last_answered_at
-         FROM app.questions q WHERE q.id = ANY($1::bigint[])`,
-                [ids],
-              )
-            ).rows
-          : [];
-        const similarity = new Map(byMeaning.map(r => [r.id, r.similarity]));
-        const allWords = new Set(byWords.filter(r => r.every_word).map(r => r.id));
-        const byId = new Map(details.map(d => [d.id, d]));
-        return ids.flatMap(id => {
-          const d = byId.get(id);
-          return d ? [{ ...d, similarity: similarity.get(id) ?? null, everyWord: allWords.has(id) }] : [];
-        });
+      const { found, meaningUsed, timings } = await engine.retrieve({
+        text: title,
+        meaningText: questionText(title, cleanBody(body.details ?? '')),
+        field,
+        pool: PRECHECK_POOL,
+        typing: true,
       });
+      reply.header('server-timing', serverTiming(timings));
       const now = new Date();
-      const candidates = found.map(f => ({ ...f, lastAnsweredAt: f.last_answered_at }));
-      const decision = verdict(candidates, now, vector !== null);
+      const decision = verdict(found, now, meaningUsed);
       return {
         verdict: decision,
         questions:
           decision === 'clear'
             ? []
-            : shortlist(candidates, now, SIMILAR_COUNT).map(f => ({
+            : shortlist(found, now, SIMILAR_COUNT).map(f => ({
                 id: f.id,
                 title: f.title,
-                answerCount: f.answer_count,
+                answerCount: f.answerCount,
                 similarity: f.similarity === null ? null : Math.round(f.similarity * 100) / 100,
               })),
       };

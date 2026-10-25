@@ -2,16 +2,19 @@ import { describe, expect, it } from 'vitest';
 import { DUPLICATE_AT, fuse, RELATED_AT, RRF_K, shortlist, verdict, W_MEANING, W_WORDS } from '../src/precheck.ts';
 
 describe('fusing meaning and words (spec §12.1)', () => {
-  it('scores each list by reciprocal rank, meaning weighted 0.65 and words 0.35', () => {
-    // "b" is second by meaning and first by words; "a" is first by meaning only.
-    const b = W_MEANING / (RRF_K + 2) + W_WORDS / (RRF_K + 1);
-    const a = W_MEANING / (RRF_K + 1);
-    expect(b).toBeGreaterThan(a);
-    expect(fuse(['a', 'b'], ['b'])).toEqual(['b', 'a']);
+  it('scores each list by reciprocal rank, the two weighted equally', () => {
+    expect(W_MEANING).toBe(0.5);
+    expect(W_WORDS).toBe(0.5);
+    // "2" is second by meaning and first by words; "1" is first by meaning only.
+    expect(W_MEANING / (RRF_K + 2) + W_WORDS / (RRF_K + 1)).toBeGreaterThan(W_MEANING / (RRF_K + 1));
+    expect(fuse(['1', '2'], ['2'])).toEqual(['2', '1']);
+    // Found by both, lower in each, beats found by one at the top.
+    expect(fuse(['1', '3'], ['2', '3'])[0]).toBe('3');
   });
 
-  it('keeps things found by only one of them', () => {
-    expect(fuse(['1'], ['2'])).toEqual(['1', '2']);
+  it('keeps things found by only one of them, the newer question first when tied', () => {
+    expect(fuse(['1'], ['2'])).toEqual(['2', '1']);
+    expect(fuse(['2'], ['1'])).toEqual(['2', '1']);
     expect(fuse([], ['5', '6'])).toEqual(['5', '6']);
     expect(fuse([], [])).toEqual([]);
   });
