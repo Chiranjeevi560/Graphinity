@@ -11,6 +11,8 @@ import { EmbeddingError } from './embeddings.ts';
 export const FLAG_DEFAULTS = {
   /** Search by meaning, with Graphinity's own model (ADR 0010). */
   embeddings: true,
+  /** The Search screen's endpoint (ADR 0015). Off: it refuses; the Ask screen's check still works. */
+  search: true,
   /** Notifications to people's devices. */
   push: true,
   /** Finite, consent-gated knowledge suggestions. */

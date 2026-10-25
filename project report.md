@@ -314,3 +314,16 @@ Built and verified:
 - **ANN measured before it's tuned:** pgvector's default `ef_search` 40 finds only 77% of the true nearest questions at 100k. 640 of the 768 stored dimensions are zeros, so storage is about 370 MB at 100k against a 500 MB free database. Both are fixed in the ANN part.
 
 Not done yet (the later parts in ADR 0015): the engine and `POST /search`, logs with delete-on-revoke, the Search screen, 128-dimension storage, learning, and load tests.
+
+## Search, part 2: the engine (2026-10-26, Claude)
+
+Built and verified:
+- **One engine** (`search/engine.ts`) for the Ask check and a new `POST /search`: meaning, words, fusion and a row-level-security fetch, each stage timed into `Server-Timing`. Search results give reasons in words (`every_word`, `some_words`, `meaning`) and nothing about other people.
+- **Word ranking replaced.** It matched every word as a beginning and ranked with `ts_rank_cd`, under row-level security that forced a scan of every question.
+  - **Before:** right question first 17% of the time at 10k questions, 2% at 100k; 919 ms p50 at 100k.
+  - **Now:** BM25F in `app.word_search` (migration 0020), with word counts kept exact by triggers and a recount function for restores: 98% and 87%, at 13 and 9.5 ms p50.
+- **Fusion weights** changed from the spec's 0.65 / 0.35 to equal (measured better at 10k, a tie at 100k), until learned from real searches.
+- **Its own limits:** a per-person and per-address search allowance, and a `search` kill switch.
+- **Tests:** 22 new API and database tests. 18 rules broken on purpose, all caught; one first survived (a single word commoner than the candidate budget) and got its test.
+
+Found, not yet fixed: at 100k questions the meaning stage (unchanged, already used by the Ask check) takes 389 ms p50 and 1,140 ms p95 and finds the right question in its top 10 only 30% of the time, so the whole search misses the 100 ms target there. It is next (ADR 0015 part 5).

@@ -143,19 +143,36 @@ picks a change up within 30 seconds and logs `feature flag changed`. Off is alwa
 
 | Flag | Off means |
 |---|---|
-| `embeddings` | No calls to Cloudflare Workers AI; duplicate and similar-question matching by words only |
+| `embeddings` | No meaning from Graphinity's own model; the Ask check and Search match by words only |
+| `search` | `POST /search` (the Search screen) refuses with `search_off`; the Ask check keeps working |
 | `push` | No notifications to devices; everything still shows on the site |
 | `model_training` | No daily training of Graphinity's own models (text and spelling); serving versions keep serving |
 
 ```sql
-UPDATE app.feature_flags SET enabled = false, note = 'Cloudflare errors, 2026-10-21', updated_at = now()
-WHERE name = 'embeddings';
+UPDATE app.feature_flags SET enabled = false, note = 'slow searches, 2026-10-26', updated_at = now()
+WHERE name = 'search';
 SELECT name, enabled, note, updated_at FROM app.feature_flags;
 ```
 
 The API can read the flags but never change them. If the database can't be reached, servers keep
 the last values they read. A new flag is a migration (see `0002_feature_flags.sql`) plus its name
 in `apps/api/src/flags.ts`.
+
+### Search word counts
+
+Ranking by words (BM25, migration 0020) needs to know in how many questions each word appears.
+Triggers keep `app.search_lexemes` and `app.search_corpus` exact on every insert, edit and delete. Anything
+that bypasses triggers (restoring a backup, a bulk load with `session_replication_role = replica`)
+leaves them wrong, and word search then ranks badly or finds nothing. Recount, in the SQL Editor:
+
+```sql
+SELECT app.rebuild_search_stats();
+```
+
+It takes a lock that briefly holds back new questions (about half a second per 100,000 questions)
+and is safe to run any time. Each response from `POST /search` and `POST /questions/precheck`
+carries a `Server-Timing` header (`embed`, `words`, `meaning`, `fetch`, in milliseconds), visible in
+the browser's network panel, to see which stage is slow.
 
 ## Consent and personal graph
 
@@ -177,9 +194,10 @@ node deletion, and account deletion cascades all consent and graph records.
 
 Personal signal events expire within 365 days. `interaction_history` captures typed question, answer,
 selection, helpful, and report actions without content text. Separate `search_history` stores opted-in
-search text, and `reading_history` stores opted-in question identifiers (not reading duration). AI
-embeddings and background backfill require `ai_personalization`; revoking it clears the account’s
-stored question vectors and removes them from semantic search. Revocation stops future capture; events
+search text (from the Ask check and the Search screen), and `reading_history` stores opted-in
+question identifiers (reading time only under `search_improvement`, ADR 0015). Question vectors are
+computed on Graphinity's own server for every question, from public text, as the word index is
+(migration 0019); they no longer depend on `ai_personalization`. Revocation stops future capture; events
 remain visible and removable by their owner. The API runs a narrow
 database-owned purge function
 on startup and hourly; it deletes only expired events and logs only the number removed. If the purge
