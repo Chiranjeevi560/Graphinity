@@ -194,6 +194,32 @@ whenever a user-linked table is added.
 - `ai_personalization` text no longer claims question text goes to Cloudflare; nothing goes to any
   outside AI.
 
+## Search (ADR 0015 part 2)
+
+- **Searches stay out of addresses and logs.** `POST /search` takes the query in the body; there is
+  no GET form (tested). Request logs carry the route pattern, status and time only; `Server-Timing`
+  carries stage durations only (tested by its exact shape).
+- **Nothing about other people.** Results carry a question's id, title, field, answer count, last
+  answer time and reasons as words; no author, trust, reputation or score (tested by the exact set of
+  keys; a mutation adding `similarity` fails it).
+- **Hidden questions stay hidden.** `app.word_search` and `app.nearest_questions` run as the schema
+  owner (row-level security would force a scan of every question) and leave hidden questions out
+  themselves; the details are then fetched as the reader under row-level security, which drops
+  anything they may not see, including a question hidden since. Tested through both.
+- **The word statistics can't be read or written by the API.** `app.search_lexemes` and
+  `app.search_corpus` have row-level security forced and no grants to `app_api`; only owner-run
+  triggers write them. Tested: every read and write as `app_api` is refused (42501).
+- **Pattern injection.** The word being typed reaches `LIKE` with `\`, `%` and `_` escaped; the rest
+  is passed as `to_tsvector` text, never assembled into a query string. Tested with `%` and `d_`.
+- **Cost of a search is bounded.** At most 1,000 candidates from rare words (2,000 when one common
+  word is all there is), at most 16 completions of the word being typed, at most 50 from meaning, 20
+  shown. Each person and visitor address has its own search allowance (30, then one per 2 s) besides
+  the server-wide limits, and the `search` switch turns the endpoint off.
+- **Known trade-off:** the statistics count words in hidden questions too, so a word used only in
+  hidden posts still shapes rarity slightly. It never makes a hidden question appear.
+- **Known trade-off:** every new question updates one shared row (`app.search_corpus`), so question
+  inserts briefly queue behind each other. Fine at today's rate; revisit if inserts ever contend.
+
 ## Known gaps
 
 - The daily limit of 3 questions per person is counted without a lock. One server routes one
