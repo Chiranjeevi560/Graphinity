@@ -338,3 +338,8 @@ Found, not yet fixed: at 100k questions the meaning stage (unchanged, already us
 
 - What learning a ranking needs: each search, the results shown with what the ranking knew, and what was opened and read. Recorded only for people with "improve search for everyone" on, from the Search screen only. The database enforces it with policies and a consent-row lock, deletes everything when it is turned off (even mid-write, both orders tested), sets dates and consent version itself, and keeps 365 days at most. Random search ids; in the export; gone with the account.
 - A fresh-eyes review found five issues (a race test that didn't race, a revoke a column change could slip past, writer-chosen dates, an off-and-on window, sequential ids); all fixed and tested. 13 tests; 23 rules broken on purpose; the 6 survivors are layers another layer also enforces.
+
+## Search, part 4: the Search screen (2026-10-26, Claude)
+
+- A search field on the home page and a Search screen: results with reasons in words, the spelling model's extra words, a plain empty state, Back to the same results. The query never reaches an address. Reading time is recorded only for searches the person allowed recording for, and only while the page is in view.
+- Checked at 320, 375, 430 and desktop in light and dark; a focus-ring flaw over the field's icon was found and fixed. 6 unit tests, an end-to-end test in both engines, the accessibility audit; 7 rules broken on purpose, all caught.

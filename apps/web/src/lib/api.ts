@@ -35,6 +35,8 @@ export interface RequestOptions {
    * one (an author sees their own hidden post), else read as a visitor.
    */
   signedIn?: boolean | 'if-possible';
+  /** Finish even if the page closes (a reading time sent as someone leaves). */
+  keepalive?: boolean;
 }
 
 export function createApi(deps: {
@@ -55,6 +57,7 @@ export function createApi(deps: {
       method: options.method ?? 'GET',
       headers,
       ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
+      ...(options.keepalive ? { keepalive: true } : {}),
     });
   }
 

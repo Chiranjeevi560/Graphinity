@@ -52,6 +52,12 @@
   /* Keep the field clear of the keyboard and the sticky bar when it scrolls into view. */
   scroll-margin: 6rem 0 40vh;
 }
+/* The box's squircle ring shows focus; the page-colour band of the global
+   double ring (base.css) belongs with the outline the field turns off, and
+   beside an icon it painted a dark bar across it. */
+.input:focus-visible {
+  box-shadow: none;
+}
 .input-prefix + .input {
   padding-left: 0.125rem;
 }

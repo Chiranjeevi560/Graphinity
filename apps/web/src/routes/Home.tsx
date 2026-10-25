@@ -4,7 +4,9 @@ import { LinkButton } from '../components/Button.tsx';
 import { GoogleButton } from '../components/GoogleButton.tsx';
 import { Inbox } from '../components/Inbox.tsx';
 import { LoadFailed } from '../components/Message.tsx';
-import { Link } from '../lib/router.ts';
+import { Link, navigate } from '../lib/router.ts';
+import { searchFor } from '../lib/search.ts';
+import { SearchField } from '../components/SearchField.tsx';
 import { QuestionList } from '../components/QuestionList.tsx';
 import { RecommendedQuestions } from '../components/RecommendedQuestions.tsx';
 import type { GraphData } from '../lib/graph-layout.ts';
@@ -61,6 +63,24 @@ function HomeGraph({ mine }: { mine: string[] | null }) {
   return <Graph data={data} you={you} caption={graphCaption(data)} />;
 }
 
+/** Search from the home page: the Search screen takes the query over and runs it. */
+function HomeSearch() {
+  const [query, setQuery] = useState('');
+  return (
+    <div className="home-search">
+      <SearchField
+        value={query}
+        onChange={setQuery}
+        onSubmit={text => {
+          if (!text) return;
+          searchFor(text);
+          navigate('/search');
+        }}
+      />
+    </div>
+  );
+}
+
 export default function Home() {
   const { state } = useSession();
   const mine = useMemo(() => (state.status === 'ready' ? state.profile.fields.map(f => f.slug) : null), [state]);
@@ -98,6 +118,7 @@ export default function Home() {
           <LoadFailed error={state.error} onRetry={retrySession} inline />
         </div>
       )}
+      <HomeSearch />
       {state.status === 'ready' && <Inbox />}
       {state.status === 'ready' && <RecommendedQuestions />}
       <section className="home-questions" aria-labelledby="recent-heading">

@@ -22,6 +22,7 @@ export function pageMeta(path: string): PageMeta {
   if (path.startsWith('/q/')) return { title: `Question – ${SITE}`, index: false };
   const titles: Record<string, string> = {
     '/ask': 'Ask a question',
+    '/search': 'Search',
     '/review': 'Review',
     '/welcome': 'Set up your profile',
     '/me': 'Your profile',

@@ -1,0 +1,41 @@
+/* Search (ADR 0015 part 4): loaded with the field, so only the pages that search carry it. */
+.home-search {
+  margin-top: var(--space-6);
+}
+.search-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.search-box .input {
+  padding-left: var(--space-2);
+}
+/* The field's own clear button stays; its cancel styling differs by browser, so only spacing is set. */
+.search-box .input::-webkit-search-decoration {
+  appearance: none;
+}
+.search-icon {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  margin-left: var(--space-3);
+  color: var(--label-secondary);
+}
+.search-results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.search-count {
+  margin: 0;
+  font-weight: inherit;
+}
+.search-reasons {
+  color: var(--label-secondary);
+}
+.search-empty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
