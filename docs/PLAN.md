@@ -57,7 +57,8 @@ Render or Supabase.** Limits checked on the services' own pages on 2026-10-17 ar
   in the `extensions` schema we couldn't verify; add it if matching misses misspelled questions.
 - **Routing**: staged waves of 5, 5 and 5 at 0, 20 and 60 minutes, ranked by expertise,
   responsiveness and country, with a daily notification budget per person and reserved slots
-  for newcomers.
+  for newcomers. Each decision's factors are recorded, and a learned model of who helps (ADR 0013)
+  may rank the main places once it beats Ψ on held-out questions and the owner switches it on.
 - **Points**: an append-only ledger. Reversals are new rows, never edits.
 
 ## Build order

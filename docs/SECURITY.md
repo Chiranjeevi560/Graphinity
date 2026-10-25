@@ -148,6 +148,27 @@ whenever a user-linked table is added.
   can queue. Input is the caller's own consented graph only, loaded under RLS as before.
 - Logs carry only the analysis time and the queue depth.
 
+## Learned routing (ADR 0013)
+
+- `app.route_factors` holds each routing decision's nine factors, including internal scores and
+  how similar the person is to others asked. Forced RLS admits system transactions only, so a
+  routed person can read their route but not these numbers. Rows go with the route (cascade on
+  account deletion) and after 180 days (hourly job).
+- The database refuses malformed factors: wrong length, outside [0, 1], NaN or gaps. It refuses a
+  model version not in the registry, a route whose `ranking_version` disagrees with the model
+  recorded, and a learned model on the newcomer place.
+- Abuse:
+  - Askers control the labels (picks, helpful marks), so the gate counts each asker once, requires
+    30 different askers with accounts 14 days old, and resamples askers.
+  - Trust, reputation, proximity and country weights can't go negative.
+  - A model can't be promoted until trust has taken 5 distinct values.
+  - Residual: about 30 aged accounts and one moderator pick satisfy those rules. The owner's
+    `learned_routing` switch (off by default) is the last control.
+- Training reads routing's own records (routes, answers, picks, helpful marks), not post text, so
+  it isn't gated by `model_training` consent. The artifact is about 930 bytes of standardization
+  constants and weights, with no per-person parameter. Weights trained partly on a since-deleted
+  account remain until the next retrain.
+
 ## Known gaps
 
 - The daily limit of 3 questions per person is counted without a lock. One server routes one

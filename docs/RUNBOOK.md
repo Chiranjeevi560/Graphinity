@@ -237,6 +237,20 @@ Logs show `model training` with the model, status and scores (numbers only). To 
 machine: `node scripts/benchmark-text-embedding.mjs 10000 50000` and
 `node scripts/benchmark-spelling.mjs 2000 10000 40000`.
 
+Learned routing (ADR 0013) trains in the same daily run, as `name = 'routing'`. Its reason says why
+a version was refused (too few askers, trust not varied yet, not better than Ψ by enough):
+
+```sql
+SELECT version, status, reason, metrics ->> 'candidateAuc' AS auc, metrics ->> 'psiAuc' AS psi_auc,
+       metrics ->> 'askers' AS askers, dataset ->> 'modelRankedRoutes' AS model_ranked, created_at
+FROM app.ml_models WHERE name = 'routing' ORDER BY version DESC;
+```
+
+A promoted version serves only while the owner turns `learned_routing` on (SQL editor:
+`UPDATE app.feature_flags SET enabled = true, note = 'why', updated_at = now() WHERE name =
+'learned_routing';`). Off again, the next routing run (within a minute) uses Ψ for everyone.
+Benchmark: `node --expose-gc scripts/benchmark-routing.mjs`.
+
 Personal graph analysis (ADR 0012) logs `graph analysis` with its time in ms and how many are
 waiting, and `graph analysis busy` when it refuses with 503. Sustained `busy` means the one worker
 can't keep up: look at the times first. To compare the algorithms with v1 on planted graphs:

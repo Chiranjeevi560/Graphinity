@@ -11,11 +11,20 @@ import { createFlags, switchedEmbedder } from './flags.ts';
 import { ownEmbedderFromArtifact, swappableEmbedder } from './ml/own-embedder.ts';
 import { loadServing } from './ml/registry.ts';
 import { deserializeSpelling, speller, swappableSpeller } from './ml/spelling.ts';
-import { SPELLING, TEXT_EMBEDDING, trainSpellingJob, trainTextEmbeddingJob } from './ml/training.ts';
+import {
+  ROUTING,
+  SPELLING,
+  TEXT_EMBEDDING,
+  trainRoutingJob,
+  trainSpellingJob,
+  trainTextEmbeddingJob,
+} from './ml/training.ts';
+import { purgeOldRouteFactors } from './ml/routing-data.ts';
+import { deserializeRoutingModel, scoreRouting, type RoutingModel } from './ml/routing-model.ts';
 import { personalGraphQueueStatus, projectPersonalGraphSignals, purgeExpiredPersonalSignals } from './personal-data.ts';
 import { expireNetworkMarks } from './networks.ts';
 import { createLimiter, createPushSender } from './push-sender.ts';
-import { announceRouting, routeDueQuestions } from './routing.ts';
+import { announceRouting, routeDueQuestions, type Ranker } from './routing.ts';
 import { systemClock } from './rate-limit.ts';
 import { buildServer } from './server.ts';
 
@@ -78,6 +87,24 @@ try {
   console.warn(`serving spelling model not loaded (${errorKind(err)}); words are searched as typed until it is`);
 }
 
+// Learned routing (ADR 0013): a promoted model ranks exploit places only
+// while the owner has `learned_routing` switched on; otherwise Ψ ranks all.
+let routingModel: { version: number; model: RoutingModel } | null = null;
+const loadRoutingModel = async () => {
+  const serving = await loadServing(db, ROUTING);
+  routingModel = serving ? { version: serving.version, model: deserializeRoutingModel(serving.artifact) } : null;
+};
+try {
+  await loadRoutingModel();
+} catch (err) {
+  console.warn(`serving routing model not loaded (${errorKind(err)}); Ψ ranks everyone until it is`);
+}
+const ranker = (): Ranker | null => {
+  const serving = routingModel;
+  if (!serving || !flags.enabled('learned_routing')) return null;
+  return { version: serving.version, score: factors => scoreRouting(serving.model, factors) };
+};
+
 const authAdmin = createSupabaseAdmin({ supabaseUrl: config.supabaseUrl, secretKey: config.supabaseSecretKey });
 const events = createEvents();
 const app = await buildServer({
@@ -125,6 +152,15 @@ const purgeSignals = () => {
     },
     (err: unknown) => {
       app.log.warn({ kind: errorKind(err) }, 'personal signal expiry failed');
+    },
+  );
+  // Routing factors are kept 180 days (migration 0016), then deleted.
+  purgeOldRouteFactors(db).then(
+    deleted => {
+      if (deleted) app.log.info({ deleted }, 'old routing factors removed');
+    },
+    (err: unknown) => {
+      app.log.warn({ kind: errorKind(err) }, 'routing factor expiry failed');
     },
   );
 };
@@ -204,7 +240,7 @@ if (config.vapid) {
 // minute for the next waves. One run at a time; asks during a run are
 // picked up by one more run straight after it.
 const runRouting = serial(() =>
-  routeDueQuestions(db, app.log)
+  routeDueQuestions(db, app.log, ranker)
     .then(results => {
       announceRouting(events, results);
       const people = results.reduce((n, r) => n + r.asked.length, 0);
@@ -284,6 +320,26 @@ const runTraining = serial(async () => {
     );
   } catch (err) {
     app.log.warn({ kind: errorKind(err), model: SPELLING }, 'model training failed');
+  }
+  try {
+    const outcome = await trainRoutingJob(db);
+    if (outcome.status === 'promoted') await loadRoutingModel();
+    app.log.info(
+      outcome.status === 'skipped'
+        ? { model: ROUTING, status: outcome.status }
+        : {
+            model: ROUTING,
+            status: outcome.status,
+            version: outcome.version,
+            auc: outcome.result.metrics.candidateAuc,
+            psiAuc: outcome.result.metrics.psiAuc,
+            askers: outcome.result.metrics.askers,
+            trainMs: outcome.result.metrics.trainMs,
+          },
+      'model training',
+    );
+  } catch (err) {
+    app.log.warn({ kind: errorKind(err), model: ROUTING }, 'model training failed');
   }
 });
 const firstTraining = setTimeout(runTraining, 10 * 60_000);

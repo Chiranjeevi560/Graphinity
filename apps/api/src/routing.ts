@@ -14,12 +14,24 @@ import {
   ALPHA,
   affinityToSelected,
   circadianFit as countryCircadianFit,
+  factorVector,
+  FACTORS_VERSION,
   greedyDiverse,
   loadDampener,
   pageRank,
   psi,
   type Candidate,
 } from './routing-score.ts';
+
+/**
+ * A promoted learned model (ADR 0013), when the owner has switched it on:
+ * the chance this person gives an answer that helps, from their factors.
+ * It ranks exploit places only; the newcomer place stays Ψ with its bonus.
+ */
+export interface Ranker {
+  version: number;
+  score(factors: readonly number[]): number;
+}
 
 /** Minutes after asking. */
 export const WAVES = [
@@ -90,6 +102,7 @@ async function candidates(
   questionId: string,
   limit: number,
   newcomersOnly: boolean,
+  ranker: Ranker | null,
 ): Promise<RankedCandidate[]> {
   if (limit <= 0) return [];
   await q.query(
@@ -227,11 +240,15 @@ async function candidates(
       circadianFit: countryCircadianFit(r.country_code, new Date(r.now_epoch)),
       maxAffinityWithSelected: 1,
     };
-    return {
-      row: r,
-      candidate,
-      score: psi(candidate, { routes: field.routes, dailyLimit: DAILY_LIMIT }, { explore: newcomersOnly }),
-    };
+    // The whole eligible pool is ranked here, by the learned model when one serves: it isn't
+    // limited to re-ordering Ψ's favourites. Diversity starts at 1 (no one chosen yet).
+    const score =
+      ranker && !newcomersOnly
+        ? r.used_today >= DAILY_LIMIT
+          ? 0
+          : ranker.score(factorVector(candidate, 1)) * loadDampener(r.used_today, DAILY_LIMIT)
+        : psi(candidate, { routes: field.routes, dailyLimit: DAILY_LIMIT }, { explore: newcomersOnly });
+    return { row: r, candidate, score };
   });
   // Best first; equal scores in a stable order, so the same facts give the same wave.
   scored.sort((a, b) => b.score - a.score || (a.row.id < b.row.id ? -1 : 1));
@@ -255,10 +272,16 @@ async function candidates(
  * daily budget may skip some). One place in five goes to a newcomer, the
  * spec's "4 exploit + 1 explore".
  */
-export async function routeWave(q: Queryable, questionId: string, wave: number, size: number): Promise<string[]> {
+export async function routeWave(
+  q: Queryable,
+  questionId: string,
+  wave: number,
+  size: number,
+  ranker: Ranker | null = null,
+): Promise<string[]> {
   const exploreCount = Math.ceil(size * NEWCOMER_SHARE);
-  const newcomers = await candidates(q, questionId, Math.max(1, exploreCount) * 5, true);
-  const rest = await candidates(q, questionId, size * 5, false);
+  const newcomers = await candidates(q, questionId, Math.max(1, exploreCount) * 5, true, null);
+  const rest = await candidates(q, questionId, size * 5, false, ranker);
   const pool = [...new Map([...newcomers, ...rest].map(person => [person.id, person])).values()];
   const ids = pool.map(person => person.id);
   const questionField = (
@@ -277,13 +300,28 @@ export async function routeWave(q: Queryable, questionId: string, wave: number, 
   const explorePicks = greedyDiverse(newcomers, exploreCount, affinities, [], DAILY_LIMIT);
   const selectedIds = explorePicks.map(person => person.id);
   const exploitPool = rest.filter(person => !selectedIds.includes(person.id));
-  const exploitPicks = greedyDiverse(exploitPool, size - selectedIds.length, affinities, selectedIds, DAILY_LIMIT);
+  const learnedScore = (person: RankedCandidate, maxAffinity: number) =>
+    ranker
+      ? ranker.score(factorVector(person.candidate, 1 - maxAffinity)) *
+        loadDampener(person.candidate.usedToday, DAILY_LIMIT)
+      : 0;
+  const exploitPicks = greedyDiverse(
+    exploitPool,
+    size - selectedIds.length,
+    affinities,
+    selectedIds,
+    DAILY_LIMIT,
+    ranker ? learnedScore : undefined,
+  );
   const chosen = [...explorePicks, ...exploitPicks];
   let selectedBefore: string[] = [];
   const people = chosen.map(person => {
     const diversity = 1 - affinityToSelected(person.id, selectedBefore, affinities);
     const dampener = loadDampener(person.candidate.usedToday, DAILY_LIMIT);
-    const rankingScore = person.score + ALPHA.diversity * diversity * dampener;
+    const learnedBy = person.explore ? null : ranker;
+    const rankingScore = learnedBy
+      ? learnedScore(person, 1 - diversity)
+      : person.score + ALPHA.diversity * diversity * dampener;
     selectedBefore = [...selectedBefore, person.id];
     return {
       id: person.id,
@@ -296,6 +334,9 @@ export async function routeWave(q: Queryable, questionId: string, wave: number, 
       expertiseWeight: person.candidate.expertiseWeight,
       circadianFit: person.candidate.circadianFit,
       diversityFit: diversity,
+      factors: factorVector(person.candidate, diversity),
+      explore: person.explore,
+      modelVersion: learnedBy ? learnedBy.version : null,
     };
   });
   const asked: string[] = [];
@@ -303,7 +344,7 @@ export async function routeWave(q: Queryable, questionId: string, wave: number, 
     const res = await q.query(
       `INSERT INTO app.routes (question_id, profile_id, wave, same_country, field_points, trust_pct, answered_pct, newcomer,
                                ranking_score, expertise_weight, circadian_fit, diversity_fit, ranking_version)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 1) ON CONFLICT DO NOTHING`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) ON CONFLICT DO NOTHING`,
       [
         questionId,
         p.id,
@@ -317,9 +358,18 @@ export async function routeWave(q: Queryable, questionId: string, wave: number, 
         p.expertiseWeight,
         p.circadianFit,
         p.diversityFit,
+        p.modelVersion === null ? 1 : 2,
       ],
     );
-    if (res.rowCount) asked.push(p.id);
+    if (res.rowCount) {
+      // What this decision saw, for learning from its outcome (system-only; migration 0016).
+      await q.query(
+        `INSERT INTO app.route_factors (question_id, profile_id, factors_version, factors, explore, wave, model_version)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [questionId, p.id, FACTORS_VERSION, p.factors, p.explore, wave, p.modelVersion],
+      );
+      asked.push(p.id);
+    }
   }
   return asked;
 }
@@ -334,7 +384,10 @@ export async function routeWave(q: Queryable, questionId: string, wave: number, 
 export async function routeDueQuestions(
   db: Database,
   log?: { warn(obj: object, msg: string): void },
+  /** The learned ranker to use now, or null for Ψ (asked once per run, so a switch flip applies at the next run). */
+  ranker: () => Ranker | null = () => null,
 ): Promise<Array<{ questionId: string; askerId: string; asked: string[] }>> {
+  const current = ranker();
   const due = await db.asSystem(async q => {
     const { rows } = await q.query<{
       id: string;
@@ -371,7 +424,7 @@ export async function routeDueQuestions(
       routed.push({
         questionId: w.questionId,
         askerId: w.askerId,
-        asked: await db.asSystem(q => routeWave(q, w.questionId, w.wave, w.size)),
+        asked: await db.asSystem(q => routeWave(q, w.questionId, w.wave, w.size, current)),
       });
     } catch (err) {
       log?.warn({ kind: errorKind(err) }, 'routing a question failed');

@@ -225,6 +225,26 @@ If Render's settings still have `CF_ACCOUNT_ID` or `CF_AI_TOKEN` from before, de
 (your service, **Environment**): nothing reads them any more. Then revoke that token in Cloudflare
 (**My Profile**, **API Tokens**).
 
+### Later: let Graphinity's own routing model choose who is asked (your decision)
+
+Graphinity learns, from what happened after people were asked, who tends to give the answer that
+helps (ADR 0013). A version is kept only if it beats the built-in ranking on questions it never saw.
+Even then it does nothing until you switch it on. Nothing to do until then.
+
+**To see whether a version has been kept:** Supabase, your project, **SQL Editor**, run:
+
+```sql
+SELECT version, status, reason, created_at FROM app.ml_models WHERE name = 'routing' ORDER BY version DESC;
+```
+
+A row with status `production` is a kept version; its `reason` says how much better it ranked.
+
+**To switch it on:** in the same editor, run
+`UPDATE app.feature_flags SET enabled = true, note = 'turned on by owner', updated_at = now() WHERE name = 'learned_routing';`.
+It takes effect within a minute.
+
+**To switch it off** (any time, nothing is lost): the same line with `enabled = false`.
+
 ## Part I: Update the live database
 
 Changes to the database are numbered files (`db/migrations`), applied by one command that keeps a

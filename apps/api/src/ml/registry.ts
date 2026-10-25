@@ -67,6 +67,20 @@ export async function latestFingerprint(db: Pick<Database, 'asSystem'>, name: st
   });
 }
 
+/** When this model's latest rejected version was recorded (ms), or null: later gates judge only newer data. */
+export async function lastRejectedAt(db: Pick<Database, 'asSystem'>, name: string): Promise<number | null> {
+  return db.asSystem(async q => {
+    // Only a rejection that measured a difference counts: one refused before measuring
+    // (too few askers, say) judged no questions, so it must not narrow the next window.
+    const { rows } = await q.query<{ at: number | null }>(
+      `SELECT (extract(epoch FROM max(created_at)) * 1000)::float8 AS at FROM app.ml_models
+       WHERE name = $1 AND status = 'rejected' AND jsonb_typeof(metrics -> 'difference') = 'object'`,
+      [name],
+    );
+    return rows[0]?.at ?? null;
+  });
+}
+
 /** Records a version that didn't pass its gate. Its weights aren't kept: they'd never serve. */
 export async function recordRejected(db: Pick<Database, 'asSystem'>, record: ModelRecord): Promise<number> {
   return db.asSystem(async q => {
