@@ -10,6 +10,7 @@ import { serializeModel, trainTextEmbedding } from '../src/ml/text-embedding.ts'
 import { monitorDrift, RETENTION_DAYS } from '../src/ml/drift-monitor.ts';
 import { gaussian, seededRandom } from '../src/ml/linalg.ts';
 import { FACTOR_ORDER } from '../src/routing-score.ts';
+import { FEATURE_NAMES, rankingFeatures } from '../src/search/features.ts';
 import { createTestDatabase, type TestDatabase } from './helpers/database.ts';
 import { must } from './helpers/must.ts';
 
@@ -216,13 +217,99 @@ describe('the text model', () => {
     expect(moved.features.find(f => f.feature === 'coverage')).toMatchObject({ drifted: true, n: 500 });
   });
 
-  it('refuses to read weights that fail their integrity check', async () => {
+  it('refuses to read weights that fail their integrity check, and still measures the other models', async () => {
     // The registry refuses to replace weights; damage is what this checks, so go around that rule.
     await t.owner.query("SET session_replication_role = 'replica'");
     await t.owner.query(
       "UPDATE app.ml_models SET artifact_sha256 = repeat('0', 64) WHERE name = 'text-embedding' AND version = 1",
     );
     await t.owner.query("SET session_replication_role = 'origin'");
-    await expect(monitorDrift(t.database)).rejects.toThrow(/integrity/);
+    const report = await monitorDrift(t.database);
+    expect(report.find(m => m.model === 'text-embedding')).toMatchObject({
+      skipped: 'failed',
+      errorKind: 'Error',
+      drifted: false,
+    });
+    // The other models are still measured.
+    expect(report.find(m => m.model === 'routing')?.skipped).not.toBe('failed');
+  });
+});
+
+describe('the search ranking', () => {
+  it('reads the features of non-interleaved searches from the last week, as served', async () => {
+    const asker = randomUUID();
+    await t.owner.query('BEGIN');
+    await t.owner.query(
+      "INSERT INTO app.profiles (id, handle, country, adult_confirmed_at) VALUES ($1, 'drift.searcher', 'IN', now())",
+      [asker],
+    );
+    await t.owner.query("INSERT INTO app.profile_fields (profile_id, field) VALUES ($1, 'imports-customs')", [asker]);
+    await t.owner.query('COMMIT');
+    const question = must(
+      (
+        await t.owner.query<{ id: string }>(
+          "INSERT INTO app.questions (asker_id, field, title) VALUES ($1, 'imports-customs', 'Customs duty on a drone at Goa?') RETURNING id::text",
+          [asker],
+        )
+      ).rows[0],
+    ).id;
+    // Trained on results found by words only, ranked high, never answered.
+    const trainedOn = Array.from({ length: 2000 }, (_, i) =>
+      rankingFeatures({
+        wordRank: 1 + (i % 10),
+        meaningRank: null,
+        similarity: null,
+        everyWord: i % 2 === 0,
+        answerCount: 0,
+        answerAgeDays: null,
+      }),
+    );
+    const artifact = Buffer.from('ranker');
+    await t.owner.query(
+      `INSERT INTO app.ml_models (name, version, algorithm, dataset, status, artifact, artifact_sha256, promoted_at)
+       VALUES ('search-ranker', 1, 'lambdamart-ips', $1, 'production', $2, $3, now())`,
+      [
+        JSON.stringify({ fingerprint: 's', profile: profilesOf(trainedOn, FEATURE_NAMES) }),
+        artifact,
+        createHash('sha256').update(artifact).digest('hex'),
+      ],
+    );
+    const searches = async (n: number, meaning: boolean, options: { experiment?: string; daysAgo?: number } = {}) => {
+      await t.owner.query("SET session_replication_role = 'replica'");
+      try {
+        for (let i = 0; i < n; i++) {
+          const id = must(
+            (
+              await t.owner.query<{ id: string }>(
+                `INSERT INTO app.searches (user_id, consent_version, query, ranker, experiment, created_at, expires_at)
+                 VALUES ($1, 1, 'customs duty', 'x', $2, now() - make_interval(days => $3),
+                         now() - make_interval(days => $3) + interval '365 days') RETURNING id::text`,
+                [asker, options.experiment ?? null, options.daysAgo ?? 1],
+              )
+            ).rows[0],
+          ).id;
+          await t.owner.query(
+            `INSERT INTO app.search_results (search_id, position, ranked_position, question_id, word_rank, meaning_rank, similarity, every_word, answer_count)
+             VALUES ($1, 1, 1, $2, $3, $4, $5, $6, 0)`,
+            [id, question, 1 + (i % 10), meaning ? 1 + (i % 5) : null, meaning ? 0.6 : null, i % 2 === 0],
+          );
+        }
+      } finally {
+        await t.owner.query("SET session_replication_role = 'origin'");
+      }
+    };
+    const ranker = async () => must((await monitorDrift(t.database)).find(m => m.model === 'search-ranker'));
+    await searches(300, false);
+    // Interleaved and older searches are left out, however different.
+    await searches(300, true, { experiment: 'a/b' });
+    await searches(300, true, { daysAgo: 9 });
+    const same = await ranker();
+    expect(same.drifted).toBe(false);
+    expect(same.features.every(f => f.n === 300)).toBe(true);
+    // Now meaning finds most results: the ranking sees inputs it never trained on.
+    await searches(300, true);
+    const moved = await ranker();
+    expect(moved.drifted).toBe(true);
+    expect(moved.features.filter(f => f.drifted).map(f => f.feature)).toContain('found_by_meaning');
   });
 });
