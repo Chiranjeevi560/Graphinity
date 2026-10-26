@@ -305,6 +305,16 @@ describe('what training reads', () => {
       },
     });
     expect(outcome).toMatchObject({ status: 'rejected', version: 1 });
+    // Each factor's profile in the training data is kept for drift monitoring (ADR 0018).
+    const profile = (
+      await h.t.owner.query<{ keys: string[]; n: number }>(
+        `SELECT array(SELECT jsonb_object_keys(dataset -> 'profile') ORDER BY 1) AS keys,
+                (dataset #>> '{profile,proximity,n}')::int AS n
+         FROM app.ml_models WHERE name = 'routing' AND version = 1`,
+      )
+    ).rows[0];
+    expect(profile?.keys).toEqual([...FACTOR_ORDER].sort());
+    expect(profile?.n).toBeGreaterThan(0);
     // A rejection that measured nothing (here: too few askers) must not move the judging window:
     // otherwise no later question could ever be both settled and newer, and the gate locks shut.
     const seen: Array<number | null> = [];

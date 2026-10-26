@@ -168,6 +168,21 @@ in `apps/api/src/flags.ts`.
 
 Each needs `npm run db:start`, creates its own scratch database and drops it.
 
+### Drift monitoring
+
+Daily, 30 minutes after start (logged as `drift monitor`, one line per model with its version, the
+features that drifted and the largest PSI). Drift starts training straight away; the usual gates
+still decide what serves (ADR 0018). The last measurements:
+
+```sql
+SELECT model, version, feature, round(psi::numeric, 3) AS psi, p, n, drifted, measured_at
+FROM app.ml_drift WHERE measured_at > now() - interval '2 days' ORDER BY model, feature;
+```
+
+A feature that keeps drifting while new versions keep failing their gate means the world changed in
+a way the model can't learn yet: read its versions' reasons in `app.ml_models`.
+`node scripts/benchmark-drift.mjs` re-measures the rule (no database).
+
 ### Collusion review
 
 Runs daily, 20 minutes after start (logged as `collusion review`, with `found` and `added` counts).

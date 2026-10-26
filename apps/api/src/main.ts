@@ -4,6 +4,7 @@ import { loadConfig, ConfigError } from './config.ts';
 import { createDatabase } from './db.ts';
 import { detectCollusion } from './collusion.ts';
 import { completePendingDeletions } from './deletions.ts';
+import { monitorDrift } from './ml/drift-monitor.ts';
 import { createEvents } from './events.ts';
 import { embedMissing } from './backfill.ts';
 import { chooseEmbedder } from './embeddings.ts';
@@ -473,6 +474,38 @@ trainingTimer.unref();
 app.addHook('onClose', (_instance, done) => {
   clearTimeout(firstTraining);
   clearInterval(trainingTimer);
+  done();
+});
+// Drift monitoring (ADR 0018), daily: how far each serving model's inputs
+// moved from its training data. Drift starts training at once rather than
+// at the next daily run; the gates still decide whether a new version serves.
+// Numbers about features only in logs.
+const runDriftMonitor = serial(async () => {
+  try {
+    const report = await monitorDrift(db);
+    for (const m of report)
+      app.log.info(
+        {
+          model: m.model,
+          version: m.version ?? null,
+          skipped: m.skipped ?? null,
+          drifted: m.features.filter(f => f.drifted).map(f => f.feature),
+          maxPsi: Math.max(0, ...m.features.map(f => f.psi)),
+        },
+        'drift monitor',
+      );
+    if (report.some(m => m.drifted)) runTraining();
+  } catch (err) {
+    app.log.warn({ kind: errorKind(err) }, 'drift monitor failed');
+  }
+});
+const firstDriftMonitor = setTimeout(runDriftMonitor, 30 * 60_000);
+firstDriftMonitor.unref();
+const driftMonitorTimer = setInterval(runDriftMonitor, 24 * 60 * 60_000);
+driftMonitorTimer.unref();
+app.addHook('onClose', (_instance, done) => {
+  clearTimeout(firstDriftMonitor);
+  clearInterval(driftMonitorTimer);
   done();
 });
 // Collusion review (ADR 0017), daily: groups giving each other points go to
