@@ -1,8 +1,8 @@
 # ADR 0022: The advertising platform, consent-gated and off by default
 
 - **Status:** Accepted 2026-10-26. Parts 1–5 built (privacy foundation, interest graph,
-  campaigns, serving and auction, click prediction); parts 6–9 follow in order, each in its own
-  change.
+  campaigns, serving and auction, click prediction) and part 6a (conversion measurement); 6b and
+  7–9 follow in order, each in its own change.
 - **Owner decision (2026-10-26):** engineer a complete Google/Meta-class advertising platform.
   Implement only what is legal with the consent each jurisdiction requires. Build everything that
   needs legal approval, partners or infrastructure, but keep it switched off.
@@ -35,7 +35,7 @@ unless a jurisdiction-specific consent and a lawyer's approval allow more.
 | 3 | **Campaigns** | Advertisers and their staff, campaigns with budgets in micro-units and frequency caps, plain-text ads reviewed by moderators outside the business, contextual and interest targeting | **Built** |
 | 4 | **Serving and auction** | Candidates by targeting from an in-memory index; generalized second-price auction on bid × predicted click rate with a reserve; pacing; frequency caps only for people tracked by their choice; clicks charged once, only when valid; ads asked for apart from knowledge results | **Built** |
 | 5 | **Click prediction** | FTRL-Proximal on hashed impression features, gated against what serves on the newest impressions, promoted through the registry | **Built** |
-| 6 | Measurement and attribution | Impressions, clicks, conversions under `ads_measurement`; last-click, linear, time-decay, position-based and data-driven (Shapley) attribution, benchmarked | Planned |
+| 6 | Measurement and attribution | **6a built:** click ids only under `ads_measurement`, API keys, conversions reported server to server and attributed to their click. 6b: multi-touch attribution models, benchmarked | **6a built** |
 | 7 | Audiences | Segments from interest rules, retargeting lists, lookalikes (nearest neighbours of a seed audience's interest vectors), every audience above a minimum size | Planned |
 | 8 | Reporting | Advertiser reports from aggregates only: suppressed small groups, differential-privacy noise, a privacy budget per advertiser | Planned |
 | 9 | Partner interfaces | OpenRTB 2.6 bid request/response adapters (DSPs, SSPs, exchanges), a partner tag (pixel) and SDK, a server-to-server conversion API; all behind their own switches | Planned |
@@ -241,6 +241,35 @@ Nothing about the person.
 - **The learning rate matters:** at 200,000 impressions, α 0.05 gave AUC 0.68 and α 0.2 gave 0.70.
   Hence α is chosen per run.
 - **Cost:** about 7 µs per training example.
+
+## Part 6a, as built (migration 0034)
+
+**Click ids:**
+
+- Issued only at click time, only when the clicker permits `ads_measurement` (and the switch is on).
+- Added to the destination as `gr_click`, the way search engines tag clicks.
+- The id says nothing about the person. Everyone else's clicks carry none, so they can never be
+  linked to a conversion.
+
+**API keys:**
+
+- A business's owner makes up to 10 working keys: `grk_` plus 32 random bytes.
+- Each is shown once and stored only as its SHA-256. A key that random has nothing to guess, so no
+  slow hash is needed.
+- A revoked key stays revoked.
+
+**Conversions:**
+
+- The advertiser's server sends `POST /ads/conversions` with its key, a click id, its own order id,
+  and an optional value and time.
+- `app.record_ad_conversion` counts it only when measurement is on, the key works, and the click is
+  on one of that business's own campaigns within 30 days.
+- The conversion must come after the click, allowing five minutes of clock difference either way.
+  Without that allowance, a sale reported in whole seconds the moment after its click looked earlier
+  than the click and was refused: a test found it.
+- It counts once per order id, and every refusal answers the same "not counted", so keys and click
+  ids can't be probed.
+- A business reads only its own conversions.
 
 ## Scale (100 million people)
 

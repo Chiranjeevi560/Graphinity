@@ -415,6 +415,16 @@ and the platform is on. `DELETE /me/ad-interests/:field` (counts as a write) rem
 - `POST /ads/click/:token` → `{ destination }`; counted once, charged only when valid; 404 `not_found`
   when unknown, older than an hour, or advertising is off. Both have their own rate limit (429).
 
+
+### Conversions (ADR 0022 part 6a)
+
+- `POST /ads/advertisers/:id/keys` (owner) → 201 `{ key: { value, prefix } }`, shown once; 400 `too_many_keys` (10),
+  403 `not_owner`. `DELETE /ads/advertisers/:id/keys/:prefix` revokes one for good.
+- A click by someone who allows measurement returns its destination with `gr_click=<id>` added.
+- `POST /ads/conversions` with `authorization: Bearer grk_…` and `{ clickId, externalId, valueMicros?, currency?, convertedAt? }`
+  → 201 `{ conversion: { counted: true } }`, or 200 with `duplicate: true` for an order id already reported;
+  401 `bad_key` for a malformed key; 404 `not_counted` for any other refusal, all alike.
+
 ### Advertising: advertisers, campaigns, ads, targeting (ADR 0022 part 3)
 
 Everything here answers 404 `ads_off` while the `ads` switch is off. Money is in micro-units of the

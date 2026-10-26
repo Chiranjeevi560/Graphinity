@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { recordAdInterest } from '../src/ads/interests.ts';
 import {
   choose as chooseFrom,
   indexCampaigns,
@@ -103,5 +104,14 @@ describe('choosing', () => {
     expect(choose([ignored, clicked], ctx({ placement: 'question' }), new Map(), noon).wins[0]?.campaignId).toBe(
       'clicked',
     );
+  });
+});
+
+describe('recording interests', () => {
+  it('never gets in the way: a failure is logged by kind and the page carries on', async () => {
+    const warnings: Array<{ obj: object; msg: string }> = [];
+    const failing = { withUser: () => Promise.reject(new TypeError('database down')) };
+    await recordAdInterest(failing, { warn: (obj, msg) => warnings.push({ obj, msg }) }, 'someone', 'travel', 1);
+    expect(warnings).toEqual([{ obj: { kind: 'TypeError' }, msg: 'ad interest not recorded' }]);
   });
 });
