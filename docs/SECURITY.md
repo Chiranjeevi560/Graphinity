@@ -350,6 +350,11 @@ whenever a user-linked table is added.
   holds every `app.ad_*` table to never referring to a person. Rotation replaces the identity row,
   so everything under the old `ad_id` is deleted by cascade (every ad table references it).
   Interest signals are recorded only for the signed-in person, as topics, never words.
+- Advertising campaigns (ADR 0022 part 3): a business's own members manage only their campaigns,
+  enforced by policies; ads go only to plain `https` addresses and serve only once approved; nobody
+  reviews their own business's ads, enforced by a trigger, with the review policy and a table
+  constraint each proven as separate layers. Known limit: a destination is checked for form, not
+  for what the site is; moderators review where it goes.
 - Alerts (ADR 0020) say what is wrong in plain words and name an objective or a job, never a
   person. The server's own jobs may now read who is blocked (to leave blocked moderators out); no
   request can. The service worker opens only `/q/<id>` and `/ops`, whatever a push says.

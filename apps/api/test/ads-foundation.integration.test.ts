@@ -195,11 +195,23 @@ describe('the separation of people from ad systems', () => {
        WHERE c.contype = 'f' AND c.confrelid = 'app.profiles'::regclass
          AND c.conrelid::regclass::text LIKE 'app.ad\\_%'`,
     );
-    // Advertiser accounts (people who run ads) arrive with campaigns and are listed here when they do.
-    expect(rows.map(r => r.table)).toEqual(['app.ad_identities']);
+    // Each one names staff, never a person ads are shown to: a business's own members, and the
+    // moderator who reviewed an ad. A new table here must be one of those, or it breaks the separation.
+    expect(rows.map(r => r.table).sort()).toEqual([
+      'app.ad_advertiser_members',
+      'app.ad_creatives',
+      'app.ad_identities',
+    ]);
+    const reviewer = await h.t.owner.query<{ column: string }>(
+      `SELECT a.attname AS column FROM pg_constraint c
+       JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
+       WHERE c.contype = 'f' AND c.conrelid = 'app.ad_creatives'::regclass AND c.confrelid = 'app.profiles'::regclass`,
+    );
+    expect(reviewer.rows.map(r => r.column)).toEqual(['reviewed_by']);
     const columns = await h.t.owner.query<{ table: string; column: string }>(
       `SELECT table_name AS table, column_name AS column FROM information_schema.columns
-       WHERE table_schema = 'app' AND table_name LIKE 'ad\\_%' AND table_name <> 'ad_identities'
+       WHERE table_schema = 'app' AND table_name LIKE 'ad\\_%'
+         AND table_name NOT IN ('ad_identities', 'ad_advertiser_members')
          AND column_name IN ('profile_id', 'user_id', 'asker_id', 'answerer_id', 'handle')`,
     );
     expect(columns.rows).toEqual([]);

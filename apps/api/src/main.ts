@@ -147,6 +147,7 @@ const events = createEvents();
 const metrics = createRecorder();
 const app = await buildServer({
   metrics,
+  adsEnabled: () => flags.enabled('ads'),
   config,
   db,
   clock: systemClock,
