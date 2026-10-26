@@ -368,6 +368,7 @@ moderators.
 - `POST /review/collusion` `{ id, decision: 'dismiss' | 'confirm' }` → `{ decision: { id, decision, awardsTakenBack } }`. Confirming takes back every award the members gave each other. 404 `not_found`, 409 `already_decided`, 403 `own_group` (the moderator is in it), 503 `busy` (points were moving for them; nothing changed, try again)
 - `POST /review/decision` `{ kind, id, decision: "keep" | "remove" }`
 - `POST /review/block` `{ handle, reason? }`, `DELETE /review/block` `{ handle }` (400 `invalid_reason` for a reason over 500 characters or with hidden characters)
+- `GET /ops/status` → `{ objectives: [{ name: 'availability' | 'latency', target, good, budgetRemaining, burn: { hour, day } }], alerts: [{ objective, severity: 'page' | 'ticket', long, short, burnLong, burnShort }], routes: [{ method, route, requests, errors, p50, p95, p99 }], jobs: [{ job, expectedSeconds, lastSuccessAt, lastFailureAt, lastErrorKind, runs, failures, healthy }] }` (ADR 0020). `good` is the 30-day share of good requests (null before any); routes are the 20 slowest by p95 over the last day, in ms; nothing about any person
 
 A blocked person can still read and delete their account, but can't ask, answer or report
 (403 `blocked`). `GET /me` also returns `moderator` and `blocked`.

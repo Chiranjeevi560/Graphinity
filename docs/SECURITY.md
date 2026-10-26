@@ -344,6 +344,11 @@ whenever a user-linked table is added.
 - Membership in a collusion group is not in a person's data export, like block reasons: telling a
   ring it is under review would tell it to change. It is deleted with the account.
 - Awards whose question was deleted can't be named by a guarded take-back row, so they stay.
+- Operations data (ADR 0020) holds route patterns, counts, times and job names, never a URL,
+  address or person. Moderators can read it: it shows how busy each route is, which is acceptable
+  for the people who already see every report. Only the server writes it, and the database refuses
+  deleting minutes younger than 48 hours or hours younger than 35 days, so a compromised API role
+  can't quietly erase an outage from the record (it could still stop writing).
 - The API role could hold the advisory-lock keys to stall picks for a question or pair (denial of
   service by our own server role, accepted).
 - Re-picking an answer whose award the cap stopped, after the 30-day window, is a new award (still
