@@ -13,7 +13,10 @@
 // Ads never pass through knowledge ranking, and it never sees them.
 import type { Database, Queryable } from '../db.ts';
 import { tokenize } from '../ml/text-embedding.ts';
+import { deserializeServing, predictServing, type FtrlServing } from '../ml/ftrl.ts';
+import { loadServing } from '../ml/registry.ts';
 import { paced, runAuction, shrunkCtr, type Candidate, type Win } from './auction.ts';
+import { AD_CTR, ctrFeatures } from './ctr-features.ts';
 
 export const REFRESH_MS = 30_000;
 /** A click rate to start from: the prior is worth this many impressions. */
@@ -124,6 +127,8 @@ export function choose(
   ctx: AdContext,
   seenToday: ReadonlyMap<string, number>,
   now: number,
+  /** A learned click model (part 5): per campaign, ad and context. Without one, shrunk averages. */
+  predictCtr?: (campaign: string, creative: string, ctx: AdContext) => number,
 ): Selection {
   const candidates: Candidate[] = [];
   const creatives = new Map<string, Creative & { advertiser: string }>();
@@ -131,8 +136,9 @@ export function choose(
     if (!matches(c, ctx)) continue;
     if (!paced(c.spentMicros, c.dailyBudgetMicros, dayFraction(now))) continue;
     if ((seenToday.get(c.id) ?? 0) >= c.frequencyCap) continue;
-    const ctr = shrunkCtr(c.clicks, c.impressions, PRIOR_CTR, PRIOR_STRENGTH);
+    const shrunk = shrunkCtr(c.clicks, c.impressions, PRIOR_CTR, PRIOR_STRENGTH);
     for (const cr of c.creatives) {
+      const ctr = predictCtr ? predictCtr(c.id, cr.id, ctx) : shrunk;
       candidates.push({ campaignId: c.id, creativeId: cr.id, maxCpcMicros: c.maxCpcMicros, ctr });
       creatives.set(cr.id, { ...cr, advertiser: c.advertiser });
     }
@@ -224,10 +230,14 @@ export function createAdServer(db: Pick<Database, 'asSystem'>): AdServer {
   let index: CampaignIndex = indexCampaigns([]);
   let size = 0;
   let loadedAt = -Infinity;
+  let model: FtrlServing | null = null;
   const refresh = async () => {
     const campaigns = await db.asSystem(loadIndex);
     index = indexCampaigns(campaigns);
     size = campaigns.length;
+    // The promoted click model, checked against its stored hash; none until one earns its place.
+    const serving = await loadServing(db, AD_CTR);
+    model = serving ? deserializeServing(serving.artifact) : null;
     loadedAt = Date.now();
   };
   return {
@@ -285,6 +295,19 @@ export function createAdServer(db: Pick<Database, 'asSystem'>): AdServer {
           },
           seenToday,
           now,
+          model
+            ? (campaign, creative, c) =>
+                predictServing(
+                  model as FtrlServing,
+                  ctrFeatures({
+                    campaign,
+                    creative,
+                    placement,
+                    field: c.fields[0] ?? null,
+                    hour: new Date(now).getUTCHours(),
+                  }),
+                )
+            : undefined,
         );
         const served: ServedAd[] = [];
         for (const w of wins) {
@@ -292,9 +315,9 @@ export function createAdServer(db: Pick<Database, 'asSystem'>): AdServer {
           if (!cr) continue;
           const token = (
             await q.query<{ token: string }>(
-              `INSERT INTO app.ad_impressions (campaign_id, creative_id, ad_id, placement, price_micros)
-               VALUES ($1, $2, $3, $4, $5) RETURNING token::text`,
-              [w.campaignId, w.creativeId, adId, placement, w.priceMicros],
+              `INSERT INTO app.ad_impressions (campaign_id, creative_id, ad_id, placement, price_micros, field)
+               VALUES ($1, $2, $3, $4, $5, $6) RETURNING token::text`,
+              [w.campaignId, w.creativeId, adId, placement, w.priceMicros, fields[0] ?? null],
             )
           ).rows[0]?.token;
           if (token)

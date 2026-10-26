@@ -4,6 +4,8 @@ import { loadConfig, ConfigError } from './config.ts';
 import { createDatabase } from './db.ts';
 import { detectCollusion } from './collusion.ts';
 import { completePendingDeletions } from './deletions.ts';
+import { AD_CTR, trainAdCtrJob } from './ads/ctr.ts';
+import { createAdServer } from './ads/serve.ts';
 import { createRecorder } from './ops/metrics.ts';
 import { compactMinutes, loadStatus, recordedRun, saveMinute } from './ops/store.ts';
 import { monitorDrift } from './ml/drift-monitor.ts';
@@ -145,8 +147,10 @@ try {
 const authAdmin = createSupabaseAdmin({ supabaseUrl: config.supabaseUrl, secretKey: config.supabaseSecretKey });
 const events = createEvents();
 const metrics = createRecorder();
+const adServer = createAdServer(db);
 const app = await buildServer({
   metrics,
+  adServer,
   adsEnabled: () => flags.enabled('ads'),
   config,
   db,
@@ -518,6 +522,29 @@ async function trainAll() {
     );
   } catch (err) {
     app.log.warn({ kind: errorKind(err), model: ROUTING }, 'routing monitor failed');
+  }
+  // The ad click model (ADR 0022 part 5): only while advertising is on, and it learns
+  // only from impressions, which exist only then. A promotion serves at the next request.
+  if (flags.enabled('ads')) {
+    try {
+      const outcome = await trainAdCtrJob(db);
+      if (outcome.status === 'promoted') await adServer.refresh();
+      app.log.info(
+        outcome.status === 'skipped'
+          ? { model: AD_CTR, status: outcome.status }
+          : {
+              model: AD_CTR,
+              status: outcome.status,
+              version: outcome.version,
+              logLoss: outcome.result.candidateLogLoss,
+              baselineLogLoss: outcome.result.baselineLogLoss,
+              impressions: outcome.result.counts.train + outcome.result.counts.validate + outcome.result.counts.test,
+            },
+        'model training',
+      );
+    } catch (err) {
+      app.log.warn({ kind: errorKind(err), model: AD_CTR }, 'model training failed');
+    }
   }
 }
 // Online comparison of search rankings (ADR 0015 part 6), hourly: promote a
