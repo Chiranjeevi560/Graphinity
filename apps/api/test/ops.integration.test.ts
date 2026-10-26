@@ -5,7 +5,8 @@
 // real server: every response is counted by route pattern.
 import { beforeAll, describe, expect, it } from 'vitest';
 import { BUCKETS_MS, bucketOf, createRecorder, type RouteMinute } from '../src/ops/metrics.ts';
-import { compactMinutes, loadStatus, recordedRun, saveMinute } from '../src/ops/store.ts';
+import { COOLDOWN_HOURS, dueProblems, moderatorIds, problemsOf, type Problem } from '../src/ops/alerts.ts';
+import { compactMinutes, loadStatus, recordedRun, saveMinute, type OpsStatus } from '../src/ops/store.ts';
 import { startApp, type TestApp } from './helpers/app.ts';
 import { must, type Body } from './helpers/must.ts';
 
@@ -211,5 +212,87 @@ describe('the operations page', () => {
     expect(question).toMatchObject({ method: 'GET', requests: 2 });
     expect(rows.find(r => r.route === 'unmatched')).toMatchObject({ requests: 1 });
     expect(JSON.stringify(rows)).not.toContain('123456');
+  });
+});
+
+describe('alerts', () => {
+  const job = (name: string, over: Partial<OpsStatus['jobs'][number]> = {}): OpsStatus['jobs'][number] => ({
+    job: name,
+    expectedSeconds: 60,
+    lastSuccessAt: '2026-10-26T10:00:00.000Z',
+    lastFailureAt: null,
+    lastErrorKind: null,
+    runs: 1,
+    failures: 0,
+    healthy: true,
+    ...over,
+  });
+  const base: OpsStatus = { objectives: [], alerts: [], routes: [], jobs: [] };
+
+  it('come from page alerts and unhealthy jobs only, in plain words', () => {
+    const problems = problemsOf({
+      ...base,
+      alerts: [
+        { objective: 'availability', severity: 'page', long: 60, short: 5, burnLong: 20.4, burnShort: 30 },
+        { objective: 'latency', severity: 'ticket', long: 1440, short: 120, burnLong: 3.5, burnShort: 4 },
+      ],
+      jobs: [
+        job('routing', { healthy: false, lastFailureAt: '2026-10-26T11:00:00.000Z', lastErrorKind: 'TimeoutError' }),
+        job('training', { healthy: false }),
+        job('deletions'),
+      ],
+    });
+    expect(problems.map(p => p.key)).toEqual(['slo:availability:60', 'job:routing', 'job:training']);
+    expect(problems[0]?.body).toContain('20 times too fast over the last 1 hours');
+    expect(problems[1]).toMatchObject({ title: 'Sending questions to people isn’t working' });
+    expect(problems[1]?.body).toContain('(TimeoutError)');
+    expect(problems[2]?.body).toContain('twice its usual time');
+  });
+
+  it('are sent once, again only after the cooldown, and anew when a cleared problem returns', async () => {
+    await h.t.owner.query('DELETE FROM app.ops_alerts');
+    const p: Problem = { key: 'job:routing', title: 't', body: 'b' };
+    const q: Problem = { key: 'slo:latency:60', title: 't', body: 'b' };
+    const due = (problems: Problem[]) => h.t.database.asSystem(tx => dueProblems(tx, problems));
+    expect((await due([p])).map(x => x.key)).toEqual(['job:routing']);
+    expect(await due([p])).toEqual([]);
+    // Still going after the cooldown: said again.
+    await h.t.owner.query(`UPDATE app.ops_alerts SET last_sent_at = now() - make_interval(hours => $1)`, [
+      COOLDOWN_HOURS + 1,
+    ]);
+    expect((await due([p, q])).map(x => x.key)).toEqual(['job:routing', 'slo:latency:60']);
+    // It clears, then comes back: news again, at once.
+    expect(await due([q])).toEqual([]);
+    const { rows } = await h.t.owner.query<{ resolved: boolean }>(
+      "SELECT resolved_at IS NOT NULL AS resolved FROM app.ops_alerts WHERE key = 'job:routing'",
+    );
+    expect(rows[0]?.resolved).toBe(true);
+    expect((await due([p, q])).map(x => x.key)).toEqual(['job:routing']);
+  });
+
+  it('go to every moderator who isn’t blocked, and only the server can keep their record', async () => {
+    const [a, b, c] = [await h.person(), await h.person(), await h.person()];
+    let n = 0;
+    for (const x of [a, b, c]) {
+      n += 1;
+      await h.call('POST', '/me/profile', x.token, {
+        handle: `alert.${String(n)}`,
+        country: 'IN',
+        fields: ['travel'],
+        adult: true,
+      });
+    }
+    await h.t.owner.query('INSERT INTO app.moderators (profile_id) VALUES ($1), ($2)', [a.id, b.id]);
+    await h.t.owner.query('INSERT INTO app.blocks (profile_id) VALUES ($1)', [b.id]);
+    const ids = await h.t.database.asSystem(q => moderatorIds(q));
+    expect(ids).toContain(a.id);
+    expect(ids).not.toContain(b.id);
+    expect(ids).not.toContain(c.id);
+    await expect(
+      h.t.database.withUser(a.id, q => q.query("INSERT INTO app.ops_alerts (key) VALUES ('job:routing-x')")),
+    ).rejects.toThrow();
+    expect(await h.t.database.withUser(a.id, async q => (await q.query('SELECT 1 FROM app.ops_alerts')).rowCount)).toBe(
+      0,
+    );
   });
 });

@@ -5,7 +5,7 @@ import { createDatabase } from './db.ts';
 import { detectCollusion } from './collusion.ts';
 import { completePendingDeletions } from './deletions.ts';
 import { createRecorder } from './ops/metrics.ts';
-import { compactMinutes, recordedRun, saveMinute } from './ops/store.ts';
+import { compactMinutes, loadStatus, recordedRun, saveMinute } from './ops/store.ts';
 import { monitorDrift } from './ml/drift-monitor.ts';
 import { createEvents } from './events.ts';
 import { embedMissing } from './backfill.ts';
@@ -34,7 +34,8 @@ import { monitorRouting } from './ml/routing-monitor.ts';
 import { deserializeRoutingModel, scoreRouting, scoreRoutingAt, type RoutingModel } from './ml/routing-model.ts';
 import { personalGraphQueueStatus, projectPersonalGraphSignals, purgeExpiredPersonalSignals } from './personal-data.ts';
 import { expireNetworkMarks } from './networks.ts';
-import { createLimiter, createPushSender } from './push-sender.ts';
+import { createAlertSender, createLimiter, createPushSender } from './push-sender.ts';
+import { dueProblems, moderatorIds, problemsOf } from './ops/alerts.ts';
 import { announceRouting, routeDueQuestions, type Explorer, type Ranker } from './routing.ts';
 import { systemClock } from './rate-limit.ts';
 import { buildServer } from './server.ts';
@@ -304,6 +305,35 @@ if (config.vapid) {
     limit(() => push(userId, event)).catch((err: unknown) => {
       app.log.warn({ kind: errorKind(err) }, 'push run failed');
     });
+  });
+
+  // Problems with Graphinity itself (ADR 0020), every 5 minutes: each new
+  // one to every moderator's devices, then quiet for 6 hours while it lasts.
+  const alert = createAlertSender({
+    db,
+    vapid: config.vapid,
+    fetch: (...args) => fetch(...args),
+    log: app.log,
+    now: () => Date.now(),
+  });
+  const runAlerts = serial(async () => {
+    if (!flags.enabled('push')) return;
+    await recordedRun(db, 'alerts', 300, async () => {
+      const { due, moderators } = await db.asSystem(async q => ({
+        due: await dueProblems(q, problemsOf(await loadStatus(q))),
+        moderators: await moderatorIds(q),
+      }));
+      for (const problem of due) for (const id of moderators) await limit(() => alert(id, problem));
+      if (due.length) app.log.info({ problems: due.length, moderators: moderators.length }, 'alerts sent');
+    }).catch((err: unknown) => {
+      app.log.warn({ kind: errorKind(err) }, 'alerts run failed');
+    });
+  });
+  const alertTimer = setInterval(runAlerts, 5 * 60_000);
+  alertTimer.unref();
+  app.addHook('onClose', (_instance, done) => {
+    clearInterval(alertTimer);
+    done();
   });
 }
 

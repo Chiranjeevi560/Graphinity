@@ -344,6 +344,9 @@ whenever a user-linked table is added.
 - Membership in a collusion group is not in a person's data export, like block reasons: telling a
   ring it is under review would tell it to change. It is deleted with the account.
 - Awards whose question was deleted can't be named by a guarded take-back row, so they stay.
+- Alerts (ADR 0020) say what is wrong in plain words and name an objective or a job, never a
+  person. The server's own jobs may now read who is blocked (to leave blocked moderators out); no
+  request can. The service worker opens only `/q/<id>` and `/ops`, whatever a push says.
 - Operations data (ADR 0020) holds route patterns, counts, times and job names, never a URL,
   address or person. Moderators can read it: it shows how busy each route is, which is acceptable
   for the people who already see every report. Only the server writes it, and the database refuses
