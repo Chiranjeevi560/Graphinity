@@ -85,8 +85,19 @@ export async function settle(page: Page) {
       throw new Error(`still loading after 10 s: ${[...pending].map(r => (r as { url(): string }).url()).join(', ')}`);
     await page.waitForTimeout(50);
   }
-  // Wait out route fades so contrast is measured on final colours.
-  await page.waitForFunction(() => document.getAnimations().every(a => a.playState !== 'running'));
+  // Wait out fades so contrast is measured on final colours. Checked two frames
+  // on: an element rendered a moment ago starts its fade only at the next frame,
+  // and checking before then measured a "Loading…" line at 5% opacity.
+  await page.waitForFunction(
+    () =>
+      new Promise<boolean>(resolve => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            resolve(document.getAnimations().every(a => a.playState !== 'running'));
+          });
+        });
+      }),
+  );
 }
 
 export async function audit(page: Page, screen: string) {
