@@ -6,7 +6,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { BUCKETS_MS, bucketOf, createRecorder, type RouteMinute } from '../src/ops/metrics.ts';
 import { COOLDOWN_HOURS, dueProblems, moderatorIds, problemsOf, type Problem } from '../src/ops/alerts.ts';
-import { compactMinutes, loadStatus, recordedRun, saveMinute, type OpsStatus } from '../src/ops/store.ts';
+import { compactMinutes, JOB_LABELS, loadStatus, recordedRun, saveMinute, type OpsStatus } from '../src/ops/store.ts';
 import { startApp, type TestApp } from './helpers/app.ts';
 import { must, type Body } from './helpers/must.ts';
 
@@ -158,6 +158,8 @@ describe('the status', () => {
       "UPDATE app.ops_jobs SET last_started_at = now() - interval '3 minutes', last_success_at = now() - interval '3 minutes' WHERE job = 'test-stopped'",
     );
     const jobs = (await status()).jobs.filter(j => j.job.startsWith('test-'));
+    // Each job says what it does; one never named falls back to its id.
+    expect((await status()).jobs.find(j => j.job === 'test-works')?.label).toBe('test-works');
     expect(jobs.map(j => [j.job, j.healthy, j.runs, j.failures, j.lastErrorKind])).toEqual([
       ['test-fails', false, 1, 1, 'RangeError'],
       ['test-stopped', false, 1, 0, null],
@@ -218,6 +220,7 @@ describe('the operations page', () => {
 describe('alerts', () => {
   const job = (name: string, over: Partial<OpsStatus['jobs'][number]> = {}): OpsStatus['jobs'][number] => ({
     job: name,
+    label: JOB_LABELS[name] ?? name,
     expectedSeconds: 60,
     lastSuccessAt: '2026-10-26T10:00:00.000Z',
     lastFailureAt: null,

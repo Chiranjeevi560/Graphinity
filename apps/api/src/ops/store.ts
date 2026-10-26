@@ -17,6 +17,22 @@ import {
   type Window,
 } from './slo.ts';
 
+/** Each background job as a person would say it, for the operations screen and alerts. */
+export const JOB_LABELS: Readonly<Record<string, string>> = {
+  deletions: 'Finishing account deletions',
+  'signal-expiry': 'Forgetting expired activity',
+  'route-factor-expiry': 'Forgetting old routing records',
+  'search-expiry': 'Forgetting old searches',
+  'graph-projection': 'Updating personal graphs',
+  routing: 'Sending questions to people',
+  'embedding-backfill': 'Understanding new questions',
+  training: 'Training Graphinity’s own models',
+  'search-judge': 'Comparing search rankings',
+  'drift-monitor': 'Checking models still fit',
+  'collusion-review': 'Looking for groups picking each other',
+  alerts: 'Sending these alerts',
+};
+
 export const RETENTION_DAYS = 35;
 /** Minutes older than this are added into hours. */
 export const MINUTE_HOURS = 48;
@@ -135,6 +151,8 @@ export async function recordedRun<T>(
 
 export interface JobHealth {
   job: string;
+  /** What it does, in plain words. */
+  label: string;
   expectedSeconds: number;
   lastSuccessAt: string | null;
   lastFailureAt: string | null;
@@ -252,6 +270,7 @@ export async function loadStatus(q: Queryable): Promise<OpsStatus> {
     )
   ).rows.map(j => ({
     job: j.job,
+    label: JOB_LABELS[j.job] ?? j.job,
     expectedSeconds: j.expected_seconds,
     lastSuccessAt: j.last_success_at?.toISOString() ?? null,
     lastFailureAt: j.last_failure_at?.toISOString() ?? null,
