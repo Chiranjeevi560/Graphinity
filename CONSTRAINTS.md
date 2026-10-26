@@ -39,7 +39,7 @@ Checked by `node scripts/floor-guard.mjs` on everything changed since `origin/ma
 | Browser errors | Zero console errors or CSP violations (expected 404s aside) | A CSP violation means something was blocked | `npm run test:e2e` | task end, CI |
 | Engines | Chromium and WebKit locally; plus Firefox in CI | Firefox won't start on macOS 27 (see Known limits) | `npm run test:e2e`, CI | task end, CI |
 | Page speed | Lighthouse mobile: performance ≥ 95, accessibility 100, best practices 100, SEO 100, LCP ≤ 2500 ms, CLS ≤ 0.1, TBT ≤ 200 ms | LCP/CLS are Google's "good" thresholds; 95 holds today's 99 with room for noise | `npm run check:perf` | task end, CI |
-| Bundle size (brotli) | Main script ≤ 62.15 kB, styles ≤ 6.37 kB, all scripts ≤ 103.53 kB | Ratchet: today + 0.5%. Growth must be a decision | `npm run check:size` | task end, CI |
+| Bundle size (brotli) | Main script ≤ 62.15 kB, styles ≤ 6.42 kB, all scripts ≤ 105.62 kB | Ratchet: today + 0.5%. Growth must be a decision | `npm run check:size` | task end, CI |
 | Secrets | No findings in git history or uncommitted changes (values always redacted) | External judge | `npm run check:secrets` | task end, CI |
 | Dependencies | Nothing known-vulnerable at high or above | External database (OSV) | `npm run check:deps` | task end, CI |
 | Licences | Every dependency under one of: MIT, Apache-2.0, ISC, MPL-2.0, BSD-3-Clause, BSD-2-Clause, 0BSD, BlueOak-1.0.0, CC-BY-4.0, CC0-1.0, Python-2.0 | Today's list (2026-10-20): all permissive or file-level copyleft. A new licence (above all GPL or AGPL, which could oblige us to publish more than we choose) must be a decision | `npm run check:licenses` | task end, CI |

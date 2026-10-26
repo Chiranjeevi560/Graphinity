@@ -1,7 +1,7 @@
 # ADR 0020: Request metrics, SLOs and job health, at no cost
 
-- **Status:** Accepted and built 2026-10-26. Alerts and the operations screen follow in their own
-  changes.
+- **Status:** Accepted and built 2026-10-26. The operations screen is built; alert delivery follows
+  in its own change.
 
 ## Problem
 
@@ -78,6 +78,16 @@ budget:
 - the alerts firing now;
 - the 20 slowest routes over the last day (p50, p95, p99);
 - every job's health.
+
+**The screen:** Operations, for moderators (Profile → Operations), says it in plain words:
+
+- whether everything is within its objectives, and if not, what's wrong and what to do;
+- each objective's 30 days, with the allowance left;
+- each background job by what it does ("Sending questions to people"), with when it last worked or
+  failed;
+- the slowest requests today.
+
+Every row stacks the name over its figures, so nothing wraps raggedly at phone widths.
 
 ## Performance and scale
 

@@ -171,7 +171,7 @@ Each needs `npm run db:start`, creates its own scratch database and drops it.
 ### Operations: request metrics, SLOs and job health
 
 The server counts every response by route pattern and saves the counts once a minute (ADR 0020). A
-moderator sees them at `GET /ops/status`:
+moderator sees them on the Operations screen (Profile → Operations, or `GET /ops/status`):
 
 - the availability (99.5%) and latency (95% within 500 ms) objectives over 30 days;
 - the error budget left, and the alerts firing;
