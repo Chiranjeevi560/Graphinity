@@ -129,6 +129,8 @@ describe('conversions', () => {
       'not_counted',
     );
     expect((await report('not-a-key', order)).statusCode).toBe(401);
+    // No key at all.
+    expect((await w.h.call('POST', '/ads/conversions', undefined, order)).json<Body>().error).toBe('bad_key');
     expect(
       (await report(key.value, { ...order, externalId: 'o5', convertedAt: '2020-01-01T00:00:00.000Z' })).json<Body>()
         .error,
@@ -188,6 +190,71 @@ describe('conversions', () => {
       expect(new URL(await click(live, person)).searchParams.has('gr_click')).toBe(false);
     } finally {
       await w.h.t.owner.query("UPDATE app.feature_flags SET enabled = true WHERE name = 'ads_measurement'");
+    }
+  });
+});
+
+describe('campaign reports', () => {
+  it('give the business its campaign’s numbers and credit, and nobody else sees them', async () => {
+    const live = await ownCampaign();
+    const key = await makeKey(live.owner, live.advertiser);
+    const person = await w.member();
+    await w.h.t.owner.query("UPDATE app.feature_flags SET enabled = true WHERE name = 'ads_behavioral'");
+    try {
+      await w.h.call('PUT', '/me/consents', person.token, {
+        choices: [
+          { category: 'ads_personalization', enabled: true },
+          { category: 'ads_measurement', enabled: true },
+        ],
+      });
+      const clickId = must(new URL(await click(live, person)).searchParams.get('gr_click'));
+      expect((await report(key.value, { clickId, externalId: 'r-1', valueMicros: 4_000_000 })).statusCode).toBe(201);
+      const read = (token: string) => w.h.call('GET', `/ads/campaigns/${live.campaign}/report`, token);
+      const res = await read(live.owner.token);
+      expect(res.statusCode, res.body).toBe(200);
+      const body = res.json<{
+        report: {
+          impressions: number;
+          clicks: number;
+          spentMicros: number;
+          businessConversions: number;
+          joinedPaths: number;
+          credited: Record<string, { conversions: number; valueMicros: number }>;
+        };
+      }>().report;
+      expect([body.impressions, body.clicks, body.businessConversions, body.joinedPaths]).toEqual([1, 1, 1, 1]);
+      expect(body.spentMicros).toBeGreaterThan(0);
+      for (const model of ['last_click', 'first_touch', 'linear', 'time_decay', 'position', 'data_driven'])
+        expect(body.credited[model]).toEqual({ conversions: 1, valueMicros: 4_000_000 });
+      // Nothing about the person who bought.
+      expect(res.body).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
+      // Another person, and a moderator (who reviews every campaign), get nothing.
+      expect((await read((await w.member()).token)).statusCode).toBe(404);
+      const moderator = await w.member();
+      await w.h.t.owner.query('INSERT INTO app.moderators (profile_id) VALUES ($1)', [moderator.id]);
+      expect((await read(moderator.token)).json<Body>().error).toBe('not_found');
+      // Once the person stops allowing measurement, their impressions no longer join into a path.
+      await w.h.call('PUT', '/me/consents', person.token, {
+        choices: [{ category: 'ads_measurement', enabled: false }],
+      });
+      const after = (await read(live.owner.token)).json<{
+        report: { joinedPaths: number; businessConversions: number };
+      }>();
+      expect([after.report.businessConversions, after.report.joinedPaths]).toEqual([1, 0]);
+    } finally {
+      await w.h.t.owner.query("UPDATE app.feature_flags SET enabled = false WHERE name = 'ads_behavioral'");
+    }
+  });
+
+  it('aren’t available while advertising is switched off', async () => {
+    const live = await ownCampaign();
+    w.setOn(false);
+    try {
+      expect(
+        (await w.h.call('GET', `/ads/campaigns/${live.campaign}/report`, live.owner.token)).json<Body>().error,
+      ).toBe('ads_off');
+    } finally {
+      w.setOn(true);
     }
   });
 });

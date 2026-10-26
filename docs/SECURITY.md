@@ -366,6 +366,12 @@ whenever a user-linked table is added.
   "not counted". Click ids reach advertisers only for people who allow measurement. Known limit:
   a person who withdraws measurement can't recall click ids already handed to an advertiser (they
   name nobody); conversions against them still count until the 30-day window closes.
+- Attribution reports (ADR 0022 part 6b): only a business's members read its campaigns' reports
+  (checked in the query with `app.is_ad_member`, so moderators' wider campaign access doesn't
+  extend to them). Impressions are read by the system role only; a person's impressions join into
+  a path only while they allow measurement now, and only totals leave. Known limit until part 8:
+  a report over very few people is not protected against inference by a business that also knows
+  who bought from it.
 - Alerts (ADR 0020) say what is wrong in plain words and name an objective or a job, never a
   person. The server's own jobs may now read who is blocked (to leave blocked moderators out); no
   request can. The service worker opens only `/q/<id>` and `/ops`, whatever a push says.

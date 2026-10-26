@@ -6,6 +6,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Database } from '../db.ts';
+import { RULE_MODELS, ruleCredit, shapleyModel, type Path, type Touch } from '../ads/attribution.ts';
 import { TokenBuckets, type BucketOptions, type Clock } from '../rate-limit.ts';
 import { fail, pgCode, signedIn } from './common.ts';
 
@@ -150,4 +151,155 @@ export function registerAdMeasurementRoutes(
       return fail(reply, 404, 'not_counted', 'That conversion wasn’t counted: check the key and the click id.');
     },
   );
+
+  // A campaign's numbers for the business that runs it: what it showed, what was tapped and
+  // spent, and its share of the business's conversions under each attribution model. Paths
+  // exist only for people who allow both personalized ads and measurement (their impressions
+  // name their ad identity); every other conversion credits its one click. Holdout experiments,
+  // not these models, measure what a campaign truly adds (ADR 0022 part 6b).
+  app.get(
+    '/ads/campaigns/:id/report',
+    {
+      config: { auth: 'required' },
+      schema: { params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } }, required: ['id'] } },
+    },
+    async (req, reply) => {
+      if (!deps.enabled()) return off(reply);
+      const user = signedIn(req);
+      const { id } = req.params as { id: string };
+      // Moderators can read every campaign to review it; a report is for the business's own members.
+      const found = await db.withUser(
+        user.id,
+        async q =>
+          (
+            await q.query<{ id: string; advertiser_id: string }>(
+              'SELECT id::text, advertiser_id::text FROM app.ad_campaigns WHERE public_id = $1 AND app.is_ad_member(advertiser_id)',
+              [id],
+            )
+          ).rows[0],
+      );
+      if (!found) return fail(reply, 404, 'not_found', 'There’s no such campaign you run.');
+      const data = await db.asSystem(async q => {
+        // Impressions are the system's alone: people's ad identities never reach a business.
+        const totals = (
+          await q.query<{ impressions: number; clicks: number; spent: string }>(
+            `SELECT count(*)::int AS impressions, count(clicked_at)::int AS clicks, coalesce(sum(charged_micros), 0)::text AS spent
+             FROM app.ad_impressions WHERE campaign_id = $1 AND shown_at > now() - interval '30 days'`,
+            [found.id],
+          )
+        ).rows[0] ?? { impressions: 0, clicks: 0, spent: '0' };
+        // The business's conversions in 30 days, each with the click it came from.
+        const conversions = (
+          await q.query<{
+            campaign: string;
+            ad_id: string | null;
+            clicked_at: Date;
+            converted_at: Date;
+            value: string;
+          }>(
+            `SELECT i.campaign_id::text AS campaign, i.ad_id::text, i.clicked_at, c.converted_at, c.value_micros::text AS value
+             FROM app.ad_conversions c JOIN app.ad_impressions i ON i.id = c.impression_id
+             WHERE c.advertiser_id = $1 AND c.converted_at > now() - interval '30 days'
+             ORDER BY c.id LIMIT $2`,
+            [found.advertiser_id, REPORT_CONVERSIONS],
+          )
+        ).rows;
+        // Impressions of the business's campaigns by people who allow measurement now (only
+        // these join into paths): 30 days before a conversion that may itself be 30 days old.
+        const seen = (
+          await q.query<{ ad_id: string; campaign: string; at: Date }>(
+            `SELECT i.ad_id::text, i.campaign_id::text AS campaign, i.shown_at AS at
+             FROM app.ad_impressions i JOIN app.ad_campaigns c ON c.id = i.campaign_id
+             JOIN app.ad_identities d ON d.ad_id = i.ad_id AND app.ads_permitted(d.profile_id, 'ads_measurement')
+             WHERE c.advertiser_id = $1 AND i.shown_at > now() - interval '60 days'
+             ORDER BY i.id DESC LIMIT $2`,
+            [found.advertiser_id, REPORT_IMPRESSIONS],
+          )
+        ).rows;
+        return { totals, conversions, seen };
+      });
+      const report = campaignReport(found.id, data.conversions, data.seen, Date.now());
+      return {
+        report: {
+          days: 30,
+          impressions: data.totals.impressions,
+          clicks: data.totals.clicks,
+          spentMicros: Number(data.totals.spent),
+          businessConversions: data.conversions.length,
+          ...report,
+        },
+      };
+    },
+  );
+}
+
+/** At most this many conversions and impressions go into one report (newest impressions first). */
+const REPORT_CONVERSIONS = 10_000;
+const REPORT_IMPRESSIONS = 200_000;
+const WINDOW_MS = 30 * 86_400_000;
+
+/**
+ * One campaign's share of its business's conversions (and their value) under every attribution
+ * model. A conversion by a person whose identity is known has a path: their impressions of the
+ * business's campaigns in the 30 days before it. Any other conversion credits its one click.
+ * People seen in the last 30 days who didn't convert are what the data-driven model compares
+ * against.
+ */
+export function campaignReport(
+  campaign: string,
+  conversions: ReadonlyArray<{
+    campaign: string;
+    ad_id: string | null;
+    clicked_at: Date;
+    converted_at: Date;
+    value: string;
+  }>,
+  seen: ReadonlyArray<{ ad_id: string; campaign: string; at: Date }>,
+  now: number,
+) {
+  const byPerson = new Map<string, Touch[]>();
+  for (const s of seen) {
+    const list = byPerson.get(s.ad_id) ?? [];
+    list.push({ campaign: s.campaign, at: s.at.getTime() });
+    byPerson.set(s.ad_id, list);
+  }
+  const converters = new Set<string>();
+  let joined = 0;
+  const paths = conversions.map(c => {
+    const at = c.converted_at.getTime();
+    const click = [{ campaign: c.campaign, at: c.clicked_at.getTime() }];
+    let touches: Touch[] = click;
+    if (c.ad_id) {
+      converters.add(c.ad_id);
+      const before = (byPerson.get(c.ad_id) ?? []).filter(t => t.at <= at && t.at > at - WINDOW_MS);
+      if (before.length) {
+        touches = before;
+        joined += 1;
+      }
+    }
+    return { path: { touches, converted: true, at }, value: Number(c.value) };
+  });
+  const others: Path[] = [];
+  for (const [adId, touches] of byPerson) {
+    if (converters.has(adId)) continue;
+    const recent = touches.filter(t => t.at > now - WINDOW_MS);
+    if (recent.length) others.push({ touches: recent, converted: false, at: now });
+  }
+  const shapley = shapleyModel([...paths.map(p => p.path), ...others]);
+  const models: Array<[string, (p: Path) => Map<string, number>]> = [
+    ...RULE_MODELS.map(m => [m, (p: Path) => ruleCredit(p, m)] as [string, (p: Path) => Map<string, number>]),
+    ['data_driven', shapley],
+  ];
+  const credited: Record<string, { conversions: number; valueMicros: number }> = {};
+  for (const [name, model] of models) {
+    let share = 0;
+    let value = 0;
+    for (const p of paths) {
+      const w = model(p.path).get(campaign) ?? 0;
+      share += w;
+      value += w * p.value;
+    }
+    credited[name] = { conversions: Math.round(share * 100) / 100, valueMicros: Math.round(value) };
+  }
+  return { credited, joinedPaths: joined };
 }
