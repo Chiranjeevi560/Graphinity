@@ -345,7 +345,7 @@ export function registerAdvertiserRoutes(
                 additionalProperties: false,
                 required: ['kind', 'value'],
                 properties: {
-                  kind: { enum: ['field', 'keyword', 'country', 'interest'] },
+                  kind: { enum: ['field', 'keyword', 'country', 'interest', 'audience'] },
                   value: { type: 'string', maxLength: 40 },
                 },
               },

@@ -5,6 +5,7 @@ import { createDatabase } from './db.ts';
 import { detectCollusion } from './collusion.ts';
 import { completePendingDeletions } from './deletions.ts';
 import { AD_CTR, trainAdCtrJob } from './ads/ctr.ts';
+import { buildAudiences } from './ads/audience-build.ts';
 import { createAdServer } from './ads/serve.ts';
 import { createRecorder } from './ops/metrics.ts';
 import { compactMinutes, loadStatus, recordedRun, saveMinute } from './ops/store.ts';
@@ -577,6 +578,28 @@ const searchJudgeTimer = setInterval(judgeSearch, 60 * 60_000);
 searchJudgeTimer.unref();
 app.addHook('onClose', (_instance, done) => {
   clearInterval(searchJudgeTimer);
+  done();
+});
+// Audiences (ADR 0022 part 7), hourly while advertising is on: who is in each, from people
+// who allow personalized ads now. Only how many were built reaches the logs.
+const buildAdAudiences = () => {
+  if (!flags.enabled('ads')) return;
+  recordedRun(db, 'ad-audiences', 3600, () => buildAudiences(db)).then(
+    async built => {
+      if (built) {
+        await adServer.refresh();
+        app.log.info({ built }, 'ad audiences built');
+      }
+    },
+    (err: unknown) => {
+      app.log.warn({ kind: errorKind(err) }, 'ad audience build failed');
+    },
+  );
+};
+const audienceTimer = setInterval(buildAdAudiences, 60 * 60_000);
+audienceTimer.unref();
+app.addHook('onClose', (_instance, done) => {
+  clearInterval(audienceTimer);
   done();
 });
 const firstTraining = setTimeout(runTraining, 10 * 60_000);

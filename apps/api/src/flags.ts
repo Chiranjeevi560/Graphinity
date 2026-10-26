@@ -37,6 +37,8 @@ export const FLAG_DEFAULTS = {
   ads_partner_sites: false,
   /** Real-time bidding with outside exchanges and bidders. */
   ads_rtb: false,
+  /** Audiences, ad reminders and look-alikes (part 7). */
+  ads_audiences: false,
 } as const;
 
 export type FlagName = keyof typeof FLAG_DEFAULTS;

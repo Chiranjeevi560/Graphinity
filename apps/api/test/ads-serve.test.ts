@@ -29,6 +29,7 @@ const campaign = (
     { id: `${id}-1`, headline: 'Ferries to the islands', body: 'Daily boats.', domain: 'ferries.example.in' },
   ],
   targets: new Map(Object.entries(targets).map(([k, v]) => [k, new Set(v)])),
+  reminders: new Set(),
   ...over,
 });
 const ctx = (over: Partial<AdContext> = {}): AdContext => ({
@@ -113,5 +114,38 @@ describe('recording interests', () => {
     const failing = { withUser: () => Promise.reject(new TypeError('database down')) };
     await recordAdInterest(failing, { warn: (obj, msg) => warnings.push({ obj, msg }) }, 'someone', 'travel', 1);
     expect(warnings).toEqual([{ obj: { kind: 'TypeError' }, msg: 'ad interest not recorded' }]);
+  });
+});
+
+describe('audiences', () => {
+  it('match only readers in one of the targeted audiences, and nobody untracked', () => {
+    const c = campaign('aud', { audience: ['A'] });
+    const noon = Date.UTC(2026, 9, 27, 12);
+    const shown = (audiences: ReadonlyMap<string, number> | null) =>
+      choose([c], ctx({ audiences }), new Map(), noon).wins.length;
+    expect(shown(new Map([['A', noon]]))).toBe(1);
+    expect(shown(new Map([['B', noon]]))).toBe(0);
+    expect(shown(new Map())).toBe(0);
+    expect(shown(null)).toBe(0);
+  });
+
+  it('cool a reminder with time since the tap, and cap it at 3 a day', () => {
+    const noon = Date.UTC(2026, 9, 27, 12);
+    // The reminder bids a fifth more: it wins fresh, and loses once cooled for a week (×e^−1).
+    const reminder = campaign(
+      'r',
+      { audience: ['R'] },
+      { reminders: new Set(['R']), frequencyCap: 10, maxCpcMicros: 1_200_000 },
+    );
+    const plain = campaign('p', {}, { frequencyCap: 10 });
+    const first = (tapAt: number) =>
+      choose([reminder, plain], ctx({ placement: 'question', audiences: new Map([['R', tapAt]]) }), new Map(), noon)
+        .wins[0]?.campaignId;
+    expect(first(noon)).toBe('r');
+    expect(first(noon - 7 * 86_400_000)).toBe('p');
+    expect(choose([reminder], ctx({ audiences: new Map([['R', noon]]) }), new Map([['r', 3]]), noon).wins).toHaveLength(
+      0,
+    );
+    expect(choose([plain], ctx(), new Map([['p', 3]]), noon).wins).toHaveLength(1);
   });
 });

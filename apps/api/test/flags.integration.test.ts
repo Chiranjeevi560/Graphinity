@@ -19,6 +19,7 @@ describe('feature flags', () => {
     expect(rows).toEqual([
       // The advertising platform, every part off until the owner and a lawyer say otherwise (ADR 0022).
       { name: 'ads', enabled: false },
+      { name: 'ads_audiences', enabled: false },
       { name: 'ads_behavioral', enabled: false },
       { name: 'ads_cross_device', enabled: false },
       { name: 'ads_measurement', enabled: false },

@@ -70,6 +70,7 @@ describe('serving with a learned model', () => {
     clicks: 0,
     creatives: [{ id: `${id}-1`, headline: 'h', body: 'b', domain: 'd.example' }],
     targets: new Map(),
+    reminders: new Set(),
   });
   const ctx: AdContext = { placement: 'question', fields: ['travel'], words: [], country: 'IN', interests: null };
 
