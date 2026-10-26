@@ -210,6 +210,19 @@ describe('campaign reports', () => {
       const clickId = must(new URL(await click(live, person)).searchParams.get('gr_click'));
       expect((await report(key.value, { clickId, externalId: 'r-1', valueMicros: 4_000_000 })).statusCode).toBe(201);
       const read = (token: string) => w.h.call('GET', `/ads/campaigns/${live.campaign}/report`, token);
+      // One person behind it: nothing is shown.
+      expect((await read(live.owner.token)).json<{ report: object }>().report).toEqual({
+        days: 30,
+        belowMinimum: true,
+        minimumPeople: 25,
+      });
+      // 24 more viewers, untracked: 25 people.
+      await w.h.t.owner.query(
+        `INSERT INTO app.ad_impressions (campaign_id, creative_id, placement, price_micros)
+         SELECT c.id, cr.id, 'search', 1000 FROM app.ad_campaigns c JOIN app.ad_creatives cr ON cr.campaign_id = c.id,
+                generate_series(1, 24) WHERE c.public_id = $1`,
+        [live.campaign],
+      );
       const res = await read(live.owner.token);
       expect(res.statusCode, res.body).toBe(200);
       const body = res.json<{
@@ -222,7 +235,7 @@ describe('campaign reports', () => {
           credited: Record<string, { conversions: number; valueMicros: number }>;
         };
       }>().report;
-      expect([body.impressions, body.clicks, body.businessConversions, body.joinedPaths]).toEqual([1, 1, 1, 1]);
+      expect([body.impressions, body.clicks, body.businessConversions, body.joinedPaths]).toEqual([25, 1, 1, 1]);
       expect(body.spentMicros).toBeGreaterThan(0);
       for (const model of ['last_click', 'first_touch', 'linear', 'time_decay', 'position', 'data_driven'])
         expect(body.credited[model]).toEqual({ conversions: 1, valueMicros: 4_000_000 });

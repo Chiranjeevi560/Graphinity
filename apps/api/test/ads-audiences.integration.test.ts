@@ -3,10 +3,9 @@
 // never shown person by person, and gone the moment someone turns
 // personalized ads off. Campaigns can target their own business's ready
 // audiences; reminders are capped at 3 a day and 7 a week.
-import { randomUUID } from 'node:crypto';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { buildAudiences } from '../src/ads/audience-build.ts';
-import { startAdWorld } from './helpers/ads.ts';
+import { crowd as makeCrowd, startAdWorld } from './helpers/ads.ts';
 import { must, type Body } from './helpers/must.ts';
 
 let w: Awaited<ReturnType<typeof startAdWorld>>;
@@ -15,43 +14,9 @@ beforeAll(async () => {
   return w.h.close;
 });
 
-let crowds = 0;
-/**
- * `n` people who allow personalized ads, made straight in the database (the API would take
- * minutes), each with the given interests and country. Returns their profile and ad ids.
- */
-async function crowd(n: number, interests: Record<string, number>, country = 'IN', allows = true) {
-  crowds += 1;
-  const ids = Array.from({ length: n }, () => randomUUID());
-  const o = w.h.t.owner;
-  // A profile needs a topic by commit: both in one statement.
-  await o.query(
-    `WITH p AS (
-       INSERT INTO app.profiles (id, handle, country, adult_confirmed_at)
-       SELECT id, 'crowd' || $2 || '.' || ord, $3, now() FROM unnest($1::uuid[]) WITH ORDINALITY AS t(id, ord)
-       RETURNING id)
-     INSERT INTO app.profile_fields (profile_id, field) SELECT id, 'travel' FROM p`,
-    [ids, String(crowds), country],
-  );
-  if (allows)
-    await o.query(
-      `INSERT INTO app.user_consent_settings (user_id, category, enabled, policy_version)
-     SELECT id, 'ads_personalization', true, c.policy_version FROM unnest($1::uuid[]) AS t(id)
-     JOIN app.consent_categories c ON c.name = 'ads_personalization'`,
-      [ids],
-    );
-  await o.query('INSERT INTO app.ad_identities (profile_id) SELECT unnest($1::uuid[])', [ids]);
-  for (const [field, score] of Object.entries(interests))
-    await o.query(
-      `INSERT INTO app.ad_interests (ad_id, field, score)
-       SELECT ad_id, $2, $3 FROM app.ad_identities WHERE profile_id = ANY($1)`,
-      [ids, field, score],
-    );
-  const adIds = (
-    await o.query<{ ad_id: string }>('SELECT ad_id::text FROM app.ad_identities WHERE profile_id = ANY($1)', [ids])
-  ).rows.map(r => r.ad_id);
-  return { ids, adIds };
-}
+/** People who allow personalized ads, made in bulk (helpers/ads.ts). */
+const crowd = (n: number, interests: Record<string, number>, country = 'IN', allows = true) =>
+  makeCrowd(w, n, interests, country, allows);
 
 const make = (owner: { token: string }, advertiser: string, body: object) =>
   w.h.call('POST', `/ads/advertisers/${advertiser}/audiences`, owner.token, body);

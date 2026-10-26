@@ -420,6 +420,19 @@ and the platform is on. `DELETE /me/ad-interests/:field` (counts as a write) rem
   when unknown, older than an hour, or advertising is off. Both have their own rate limit (429).
 
 
+### Private campaign reports (ADR 0022 part 8)
+
+- `POST /ads/reports/private` (a member of the business) with `{ campaignId, startDate, endDate, breakdown }`
+  (dates `YYYY-MM-DD`, UTC, at most 92 days, ending yesterday or earlier; `breakdown` is `day`, `country`,
+  `placement` or `audience`) → 200 `{ report: { campaignId, breakdown, startDate, endDate, cells: [{ day, value,
+  impressions, clicks, conversions }], suppressed, privacy: { epsilonCharged, epsilonRemainingToday, epsilonPerMetric,
+  clipping, minimumPeople, minimumImpressions } } }`. Numbers carry fixed noise; cells under 25 people or 50
+  impressions are left out and counted in `suppressed`. 400 `invalid_range`, 400 `day_not_over`, 400 `too_fine`
+  (an audience breakdown of a campaign targeting more than 3 audiences), 404 `not_found` (not a member, moderators
+  included), 429 `privacy_budget_spent` (new details only; anything already released stays available).
+- `GET /ads/campaigns/:id/report` now returns `{ report: { days: 30, belowMinimum: true, minimumPeople: 25 } }`
+  while fewer than 25 people saw the campaign in 30 days, and `belowMinimum: false` with the numbers otherwise.
+
 ### Audiences (ADR 0022 part 7)
 
 Available while `ads` and `ads_audiences` are on (otherwise 404 `ads_off`, or 403 `not_allowed`).
