@@ -12,6 +12,8 @@ import { buildServer, defaultLimits } from '../../src/server.ts';
 import { createTestDatabase } from './database.ts';
 import { fakeAuthAdmin, TEST_ISSUER, testIssuer } from './tokens.ts';
 
+import type { MetricsRecorder } from '../../src/ops/metrics.ts';
+
 export const IP_HASH_KEY = Buffer.alloc(32, 9);
 
 export async function startApp(
@@ -27,6 +29,7 @@ export async function startApp(
     searchRankers?: () => Rankers;
     limits?: Partial<typeof defaultLimits>;
     graphAnalyzer?: GraphAnalyzer;
+    metrics?: MetricsRecorder;
   } = {},
 ) {
   const t = await createTestDatabase();
@@ -51,6 +54,7 @@ export async function startApp(
     embedder: opts.embedder ?? null,
     speller: opts.speller ?? null,
     ...(opts.graphAnalyzer ? { graphAnalyzer: opts.graphAnalyzer } : {}),
+    ...(opts.metrics ? { metrics: opts.metrics } : {}),
     ...(opts.recommendationsEnabled ? { recommendationsEnabled: opts.recommendationsEnabled } : {}),
     ...(opts.searchEnabled ? { searchEnabled: opts.searchEnabled } : {}),
     searchRandom: opts.searchRandom ?? (() => 0.999),

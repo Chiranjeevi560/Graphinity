@@ -168,6 +168,35 @@ in `apps/api/src/flags.ts`.
 
 Each needs `npm run db:start`, creates its own scratch database and drops it.
 
+### Operations: request metrics, SLOs and job health
+
+The server counts every response by route pattern and saves the counts once a minute (ADR 0020). A
+moderator sees them at `GET /ops/status`:
+
+- the availability (99.5%) and latency (95% within 500 ms) objectives over 30 days;
+- the error budget left, and the alerts firing;
+- the slowest routes;
+- each background job's last success and failure.
+
+The same numbers in SQL:
+
+```sql
+SELECT job, healthy_hint, last_success_at, last_failure_at, last_error_kind, runs, failures
+FROM (SELECT *, coalesce(last_success_at, last_started_at) > now() - make_interval(secs => 2 * expected_seconds)
+             AND (last_failure_at IS NULL OR last_failure_at < last_success_at) AS healthy_hint
+      FROM app.ops_jobs) j ORDER BY job;
+```
+
+**What to do:**
+
+- **An unhealthy job:** read its log lines (`<job> failed`, with the error's kind).
+- **A page alert:** look at the slowest routes and failures first; a burst of 5xx after a deploy
+  means rolling back on Render.
+- **A free uptime check:** wakes the sleeping instance and tells you when it's down. Point one
+  (e.g. UptimeRobot's free plan) at `/health`. It's an account of yours, so it's your call.
+
+`node scripts/benchmark-ops.mjs` re-measures the recorder and the histogram (no database).
+
 ### Drift monitoring
 
 Daily, 30 minutes after start (logged as `drift monitor`, one line per model with its version, the

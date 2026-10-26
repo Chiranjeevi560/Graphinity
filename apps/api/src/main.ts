@@ -4,6 +4,8 @@ import { loadConfig, ConfigError } from './config.ts';
 import { createDatabase } from './db.ts';
 import { detectCollusion } from './collusion.ts';
 import { completePendingDeletions } from './deletions.ts';
+import { createRecorder } from './ops/metrics.ts';
+import { compactMinutes, recordedRun, saveMinute } from './ops/store.ts';
 import { monitorDrift } from './ml/drift-monitor.ts';
 import { createEvents } from './events.ts';
 import { embedMissing } from './backfill.ts';
@@ -141,7 +143,9 @@ try {
 
 const authAdmin = createSupabaseAdmin({ supabaseUrl: config.supabaseUrl, secretKey: config.supabaseSecretKey });
 const events = createEvents();
+const metrics = createRecorder();
 const app = await buildServer({
+  metrics,
   config,
   db,
   clock: systemClock,
@@ -157,10 +161,32 @@ const app = await buildServer({
 });
 logger.current = app.log;
 
+// Request metrics (ADR 0020): this minute's counts into Postgres once a
+// minute, so the operations page and SLO alerts survive the free instance
+// sleeping. A failed save drops one minute of counts, never a request.
+const flushMetrics = () => {
+  const rows = metrics.flush();
+  db.asSystem(async q => {
+    await saveMinute(q, new Date(), rows);
+    await compactMinutes(q);
+  }).catch((err: unknown) => {
+    app.log.warn({ kind: errorKind(err) }, 'metrics flush failed');
+  });
+};
+const metricsTimer = setInterval(flushMetrics, 60_000);
+metricsTimer.unref();
+app.addHook('onClose', (_instance, done) => {
+  clearInterval(metricsTimer);
+  flushMetrics();
+  done();
+});
+
 // Finish any account deletions Supabase couldn't complete at the time: now,
 // then every 5 minutes. The keep-awake ping keeps this instance running.
 const runDeletions = () => {
-  completePendingDeletions({ db, authAdmin, subjectKey: config.ipHashKey, log: app.log })
+  recordedRun(db, 'deletions', 300, () =>
+    completePendingDeletions({ db, authAdmin, subjectKey: config.ipHashKey, log: app.log }),
+  )
     .then(r => {
       if (r.completed || r.failed) app.log.info(r, 'pending deletions');
     })
@@ -182,7 +208,7 @@ app.addHook('onClose', (_instance, done) => {
 
 // Personal signal events have a documented maximum 365-day retention.
 const purgeSignals = () => {
-  purgeExpiredPersonalSignals(db).then(
+  recordedRun(db, 'signal-expiry', 3600, () => purgeExpiredPersonalSignals(db)).then(
     deleted => {
       if (deleted) app.log.info({ deleted }, 'expired personal signals removed');
     },
@@ -191,7 +217,7 @@ const purgeSignals = () => {
     },
   );
   // Routing factors are kept 180 days (migration 0016), then deleted.
-  purgeOldRouteFactors(db).then(
+  recordedRun(db, 'route-factor-expiry', 3600, () => purgeOldRouteFactors(db)).then(
     deleted => {
       if (deleted) app.log.info({ deleted }, 'old routing factors removed');
     },
@@ -200,7 +226,7 @@ const purgeSignals = () => {
     },
   );
   // Searches recorded to improve search are kept 365 days at most (migration 0022).
-  purgeExpiredSearches(db).then(
+  recordedRun(db, 'search-expiry', 3600, () => purgeExpiredSearches(db)).then(
     deleted => {
       if (deleted) app.log.info({ deleted }, 'expired searches removed');
     },
@@ -220,7 +246,7 @@ app.addHook('onClose', (_instance, done) => {
 // Graph projection is bounded and asynchronous so user-facing writes only add
 // the consented source event; a worker claims at most 100 events per pass.
 const projectGraphSignals = () => {
-  projectPersonalGraphSignals(db).then(
+  recordedRun(db, 'graph-projection', 15, () => projectPersonalGraphSignals(db)).then(
     projected => {
       if (projected) app.log.info({ projected }, 'personal graph events projected');
     },
@@ -285,7 +311,7 @@ if (config.vapid) {
 // minute for the next waves. One run at a time; asks during a run are
 // picked up by one more run straight after it.
 const runRouting = serial(() =>
-  routeDueQuestions(db, app.log, ranker, explorer)
+  recordedRun(db, 'routing', 60, () => routeDueQuestions(db, app.log, ranker, explorer))
     .then(results => {
       announceRouting(events, results);
       const people = results.reduce((n, r) => n + r.asked.length, 0);
@@ -299,7 +325,7 @@ events.onAsked(runRouting);
 // Embeddings a question is missing, a few each minute.
 const runBackfill = serial(async () => {
   if (!flags.enabled('embeddings') || !live.current()) return;
-  await embedMissing(db, embedder).then(
+  await recordedRun(db, 'embedding-backfill', 60, () => embedMissing(db, embedder)).then(
     n => {
       if (n) app.log.info({ questions: n }, 'embedded questions');
     },
@@ -320,6 +346,12 @@ routingTimer.unref();
 // wins its quality gate serves at once. Logs carry numbers only, never text.
 const runTraining = serial(async () => {
   if (!flags.enabled('model_training')) return;
+  // Recorded as one run: each model's step below logs its own failures and carries on.
+  await recordedRun(db, 'training', 86_400, trainAll).catch((err: unknown) => {
+    app.log.warn({ kind: errorKind(err) }, 'training run failed');
+  });
+});
+async function trainAll() {
   try {
     const outcome = await trainTextEmbeddingJob(db);
     if (outcome.status === 'promoted') {
@@ -434,13 +466,13 @@ const runTraining = serial(async () => {
   } catch (err) {
     app.log.warn({ kind: errorKind(err), model: ROUTING }, 'routing monitor failed');
   }
-});
+}
 // Online comparison of search rankings (ADR 0015 part 6), hourly: promote a
 // candidate that wins, reject one that loses, roll back a promotion that the
 // replaced version beats. Counts and the interval only in logs.
 const judgeSearch = () => {
   if (!flags.enabled('learned_search_ranking')) return;
-  runSearchJudge(db).then(
+  recordedRun(db, 'search-judge', 3600, () => runSearchJudge(db)).then(
     async outcome => {
       if (outcome.action !== 'none') await loadSearchRankers();
       app.log.info(
@@ -482,13 +514,14 @@ app.addHook('onClose', (_instance, done) => {
 // Numbers about features only in logs.
 const runDriftMonitor = serial(async () => {
   try {
-    const report = await monitorDrift(db);
+    const report = await recordedRun(db, 'drift-monitor', 86_400, () => monitorDrift(db));
     for (const m of report)
       app.log.info(
         {
           model: m.model,
           version: m.version ?? null,
           skipped: m.skipped ?? null,
+          errorKind: m.errorKind ?? null,
           drifted: m.features.filter(f => f.drifted).map(f => f.feature),
           maxPsi: Math.max(0, ...m.features.map(f => f.psi)),
         },
@@ -512,7 +545,7 @@ app.addHook('onClose', (_instance, done) => {
 // moderators; nothing happens to anyone until one decides. Counts only in logs.
 const runCollusion = serial(async () => {
   try {
-    const outcome = await detectCollusion(db);
+    const outcome = await recordedRun(db, 'collusion-review', 86_400, () => detectCollusion(db));
     app.log.info(outcome, 'collusion review');
   } catch (err) {
     app.log.warn({ kind: errorKind(err) }, 'collusion review failed');

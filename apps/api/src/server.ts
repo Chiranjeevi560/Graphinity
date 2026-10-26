@@ -23,6 +23,8 @@ import type { Rankers } from './search/rankers.ts';
 import { registerConsentRoutes } from './routes/consent.ts';
 import { registerPersonalGraphRoutes } from './routes/personal-graph.ts';
 import { registerRecommendationRoutes } from './routes/recommendations.ts';
+import { registerOpsRoutes } from './routes/ops.ts';
+import type { MetricsRecorder } from './ops/metrics.ts';
 
 declare module 'fastify' {
   interface FastifyContextConfig {
@@ -97,6 +99,8 @@ export interface Deps {
   limits?: Limits;
   /** Where logs go. Defaults to stdout. */
   logStream?: { write(line: string): void };
+  /** Counts every response by route pattern (ADR 0020). */
+  metrics?: MetricsRecorder;
 }
 
 // Copy for errors: what happened, and what to do.
@@ -256,6 +260,8 @@ export async function buildServer(deps: Deps) {
   // One line per request: which route pattern (never the raw URL, which may
   // hold a name), the status and the time taken.
   app.addHook('onResponse', async (req, reply) => {
+    const route = req.routeOptions.url ?? 'unmatched';
+    deps.metrics?.record(route, req.method, reply.statusCode, reply.elapsedTime);
     req.log.info(
       {
         method: req.method,
@@ -323,6 +329,7 @@ export async function buildServer(deps: Deps) {
   registerPushRoutes(app, { db, vapidPublicKey: deps.vapidPublicKey ?? null });
   registerPointRoutes(app, { db });
   registerGraphRoutes(app, { db, clock });
+  registerOpsRoutes(app, { db });
 
   return app;
 }
