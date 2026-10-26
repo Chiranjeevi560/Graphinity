@@ -43,6 +43,9 @@ export function registerConsentRoutes(app: FastifyInstance, deps: ConsentDeps) {
                 (c.prompt_once AND s.user_id IS NULL) AS "awaitingAnswer"
          FROM app.consent_categories c
          LEFT JOIN app.user_consent_settings s ON s.category = c.name AND s.user_id = $1
+         -- Purposes not offered now (advertising while it's off, migration 0029) are left out,
+         -- unless the person has one on: they can always turn it off.
+         WHERE app.consent_offered(c.name) OR coalesce(s.enabled, false)
          ORDER BY c.required_for_service DESC, c.name`,
         [user.id],
       );
@@ -83,12 +86,20 @@ export function registerConsentRoutes(app: FastifyInstance, deps: ConsentDeps) {
       }
 
       const result = await deps.db.withUser(user.id, async q => {
-        const categories = await q.query<{ name: string; policy_version: number; required_for_service: boolean }>(
-          `SELECT name, policy_version, required_for_service FROM app.consent_categories
-           WHERE name = ANY($1::text[])`,
+        const categories = await q.query<{
+          name: string;
+          policy_version: number;
+          required_for_service: boolean;
+          offered: boolean;
+        }>(
+          `SELECT name, policy_version, required_for_service, app.consent_offered(name) AS offered
+           FROM app.consent_categories WHERE name = ANY($1::text[])`,
           [choices.map(choice => choice.category)],
         );
         if (categories.rows.length !== choices.length) return { error: 'unknown' as const };
+        const offered = new Map(categories.rows.map(c => [c.name, c.offered]));
+        if (choices.some(choice => choice.enabled && !offered.get(choice.category)))
+          return { error: 'unknown' as const };
         const byName = new Map(categories.rows.map(category => [category.name, category]));
         if (choices.some(choice => byName.get(choice.category)?.required_for_service && !choice.enabled)) {
           return { error: 'required' as const };

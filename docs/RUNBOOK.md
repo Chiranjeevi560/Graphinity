@@ -168,6 +168,23 @@ in `apps/api/src/flags.ts`.
 
 Each needs `npm run db:start`, creates its own scratch database and drops it.
 
+### Advertising (ADR 0022): off until you and a lawyer say otherwise
+
+Every part is off. Before any of it runs in a country, a lawyer approves its rule there:
+
+```sql
+-- See the rules: the default (country NULL) is opt-in and not approved, for every purpose.
+SELECT country, purpose, basis, legal_approved, note FROM app.ad_jurisdiction_rules ORDER BY country NULLS FIRST, purpose;
+-- After a lawyer's written approval for India, for example:
+INSERT INTO app.ad_jurisdiction_rules (country, purpose, basis, legal_approved, note)
+VALUES ('IN', 'ads_personalization', 'opt_in', true, 'Approved by <lawyer>, <date>, DPDP Act 2023');
+-- Then the switches: the master, and each capability.
+UPDATE app.feature_flags SET enabled = true, updated_at = now() WHERE name IN ('ads', 'ads_behavioral');
+```
+
+While `ads` is off, nobody is asked about ad purposes; turning it on shows them in "Your data choices",
+off until each person turns them on.
+
 ### Operations: request metrics, SLOs and job health
 
 The server counts every response by route pattern and saves the counts once a minute (ADR 0020). A
