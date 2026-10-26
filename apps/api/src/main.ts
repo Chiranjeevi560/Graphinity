@@ -226,6 +226,17 @@ const purgeSignals = () => {
       app.log.warn({ kind: errorKind(err) }, 'routing factor expiry failed');
     },
   );
+  // Advertising interests: 13 months at most, sooner once faded (migration 0030).
+  recordedRun(db, 'ad-interest-expiry', 3600, () =>
+    db.asSystem(async q => (await q.query<{ n: number }>('SELECT app.expire_ad_interests() AS n')).rows[0]?.n ?? 0),
+  ).then(
+    deleted => {
+      if (deleted) app.log.info({ deleted }, 'expired ad interests removed');
+    },
+    (err: unknown) => {
+      app.log.warn({ kind: errorKind(err) }, 'ad interest expiry failed');
+    },
+  );
   // Searches recorded to improve search are kept 365 days at most (migration 0022).
   recordedRun(db, 'search-expiry', 3600, () => purgeExpiredSearches(db)).then(
     deleted => {

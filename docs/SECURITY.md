@@ -347,9 +347,9 @@ whenever a user-linked table is added.
 - Advertising (ADR 0022) uses a person's data only when `app.ads_permitted()` says so: switches on,
   the country's rule approved by a lawyer (only the owner can change rules) and the person's own
   choice. Ad systems see a random `ad_id`, rotated when personalized ads are turned off; a test
-  holds every `app.ad_*` table to never referring to a person. Known limit: the rotation unlinks
-  future data, and old rows under the previous `ad_id` must be deleted by each ad table's own job
-  or cascade as those tables arrive.
+  holds every `app.ad_*` table to never referring to a person. Rotation replaces the identity row,
+  so everything under the old `ad_id` is deleted by cascade (every ad table references it).
+  Interest signals are recorded only for the signed-in person, as topics, never words.
 - Alerts (ADR 0020) say what is wrong in plain words and name an objective or a job, never a
   person. The server's own jobs may now read who is blocked (to leave blocked moderators out); no
   request can. The service worker opens only `/q/<id>` and `/ops`, whatever a push says.

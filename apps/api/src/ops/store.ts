@@ -31,6 +31,7 @@ export const JOB_LABELS: Readonly<Record<string, string>> = {
   'drift-monitor': 'Checking models still fit',
   'collusion-review': 'Looking for groups picking each other',
   alerts: 'Sending these alerts',
+  'ad-interest-expiry': 'Forgetting old advertising interests',
 };
 
 export const RETENTION_DAYS = 35;

@@ -1,7 +1,7 @@
 # ADR 0022: The advertising platform, consent-gated and off by default
 
-- **Status:** Accepted 2026-10-26. Part 1 (the privacy foundation) built; parts 2–9 follow in order,
-  each in its own change.
+- **Status:** Accepted 2026-10-26. Parts 1 (privacy foundation) and 2 (interest graph) built;
+  parts 3–9 follow in order, each in its own change.
 - **Owner decision (2026-10-26):** engineer a complete Google/Meta-class advertising platform.
   Implement only what is legal with the consent each jurisdiction requires. Build everything that
   needs legal approval, partners or infrastructure, but keep it switched off.
@@ -30,7 +30,7 @@ unless a jurisdiction-specific consent and a lawyer's approval allow more.
 | # | Part | What it does | State |
 |---|---|---|---|
 | 1 | **Privacy foundation** | Ad consent purposes; the law per country; pseudonymous ad identities; switches; one permission function | **Built (this change)** |
-| 2 | Interest graph | Interest categories per ad identity from consented searches and reading, decaying; taxonomy from fields and commercial intent (ADR 0004) | Next |
+| 2 | **Interest graph** | Topic scores per ad identity from searches and reads while `ads_personalization` is permitted; halve every 30 days; never the words | **Built** |
 | 3 | Campaigns | Advertisers and their members, campaigns, ad groups, plain-text creatives, contextual and interest targeting, budgets, schedules, frequency caps | Planned |
 | 4 | Serving and auction | Candidate selection by targeting; eCPM = bid × predicted click rate × quality; generalized second-price auction with reserve; budget pacing; frequency capping; sponsored units returned apart from results and labelled | Planned |
 | 5 | Click prediction | Logistic regression on hashed features, learned online (FTRL-Proximal, McMahan et al. 2013), calibrated, benchmarked against simpler baselines; through the model registry with gates and drift monitoring | Planned |
@@ -84,6 +84,36 @@ these hold:
 - While `ads` is off, the ad purposes aren't shown, and the database refuses turning one on.
 - Turning one off is always allowed, and someone who said yes keeps seeing the choice until they
   withdraw it.
+
+## Part 2, as built (migration 0030)
+
+**Collection:**
+
+- A read of a question (weight 1), or a search (weight 2, for its topic filter or the topic most of
+  its top three results share), calls `app.record_ad_interest`.
+- That function records only if `ads_permitted(person, 'ads_personalization')`, and only for the
+  signed-in person, with a bounded weight.
+- Purpose limitation: data collected for other purposes (search logs, reading history) is never
+  reused. The signal is taken at the moment, and only as a topic, never the query's words.
+
+**Storage:**
+
+- One row per (ad identity, topic): a score decayed to its last update, so each signal is O(1),
+  computed as decayed score + weight, halving every 30 days.
+- No event history is kept.
+- Rows go after 13 months without a signal, or once faded under 0.01 (an hourly job).
+- The taxonomy is Graphinity's fields; product-level categories join with commerce data.
+
+**Withdrawal:** turning `ads_personalization` off replaces the identity row (migration 0030
+redefines the rotation). Every ad table hanging off `ad_id` is then deleted by cascade, in the same
+transaction.
+
+**Transparency:** `GET /me/ad-interests` shows the person's topics as strengths relative to their
+strongest; `DELETE /me/ad-interests/:field` removes one; the data export includes them.
+
+**Scale:** about 20 topics per person is about 2 billion rows at 100 million people (about 200 GB).
+The primary key leads with `ad_id`, so the table partitions by its hash. Serving reads one
+identity's handful of rows.
 
 ## Scale (100 million people)
 

@@ -24,6 +24,7 @@ import { registerConsentRoutes } from './routes/consent.ts';
 import { registerPersonalGraphRoutes } from './routes/personal-graph.ts';
 import { registerRecommendationRoutes } from './routes/recommendations.ts';
 import { registerOpsRoutes } from './routes/ops.ts';
+import { registerAdRoutes } from './routes/ads.ts';
 import type { MetricsRecorder } from './ops/metrics.ts';
 
 declare module 'fastify' {
@@ -330,6 +331,7 @@ export async function buildServer(deps: Deps) {
   registerPointRoutes(app, { db });
   registerGraphRoutes(app, { db, clock });
   registerOpsRoutes(app, { db });
+  registerAdRoutes(app, { db });
 
   return app;
 }

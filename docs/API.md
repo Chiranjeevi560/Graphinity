@@ -398,6 +398,14 @@ unchanged choice creates no extra event. `GET /me/consents/audit` returns the ca
 choice events. Audit history cannot be edited or deleted through the API; account deletion removes
 it with the account.
 
+
+### `GET /me/ad-interests` (signed in)
+
+The caller's advertising profile (ADR 0022): `{ interests: [{ field: { slug, name }, strength, updatedAt }] }`,
+strongest first; `strength` is 0–100 relative to the strongest. Empty unless they allow personalized ads
+and the platform is on. `DELETE /me/ad-interests/:field` (counts as a write) removes one topic
+(`{ removed: { field } }`, 404 `not_found` if absent). The data export includes `adInterests`.
+
 ### Personal graph
 
 - `GET /me/graph` returns the caller's nodes, edges, signal events, and collections for inspection.

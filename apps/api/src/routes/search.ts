@@ -2,6 +2,7 @@
 // searches for never appears in a URL, a browser history or a proxy's log.
 // Results are questions anyone may see, each with the reasons it was found,
 // in words: no numbers about other people (trust, reputation) reach the client.
+import { recordAdInterest, SEARCH_WEIGHT, searchTopic } from '../ads/interests.ts';
 import type { FastifyInstance } from 'fastify';
 import type { Database } from '../db.ts';
 import { RELATED_AT } from '../precheck.ts';
@@ -193,6 +194,14 @@ export function registerSearchRoutes(
               now: new Date(clock.now()),
             })
           : null;
+      // A signal for the person's advertising interests, only if they allow it (ADR 0022).
+      const topic = userId
+        ? searchTopic(
+            field,
+            results.map(r => r.field.slug),
+          )
+        : null;
+      if (userId && topic) await recordAdInterest(db, req.log, userId, topic, SEARCH_WEIGHT);
       return { results, corrections, meaning: meaningUsed, ...(searchId ? { searchId } : {}) };
     },
   );

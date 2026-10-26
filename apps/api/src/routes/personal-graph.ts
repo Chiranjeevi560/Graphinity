@@ -308,6 +308,10 @@ export function registerPersonalGraphRoutes(app: FastifyInstance, deps: Personal
            ON s.category = c.name AND s.user_id = $1 ORDER BY c.name`,
         [user.id],
       );
+      // The advertising profile (ADR 0022): topics and how strong, as of now.
+      const adInterests = await q.query(
+        'SELECT field, name, score, updated_at AS "updatedAt" FROM app.my_ad_interests()',
+      );
       const consentHistory = await q.query(
         `SELECT category, enabled, policy_version AS "policyVersion", source, changed_at AS "changedAt"
          FROM app.user_consent_audit_log WHERE user_id = $1 ORDER BY changed_at, id`,
@@ -367,6 +371,7 @@ export function registerPersonalGraphRoutes(app: FastifyInstance, deps: Personal
         },
         consents: consents.rows,
         consentHistory: consentHistory.rows,
+        adInterests: adInterests.rows,
         personalKnowledgeGraph: {
           nodes: nodes.rows,
           edges: edges.rows,
