@@ -9,6 +9,7 @@
 // learning from what they write.
 import { underCollusionReview } from '../collusion.ts';
 import type { Database, Queryable } from '../db.ts';
+import { errorKind } from '../jobs.ts';
 import { FACTOR_ORDER, FACTORS_VERSION } from '../routing-score.ts';
 import { FEATURE_NAMES, rankingFeatures } from '../search/features.ts';
 import { SEARCH_RANKER } from '../search/rankers.ts';
@@ -25,7 +26,9 @@ export const RETENTION_DAYS = 400;
 export interface ModelDrift {
   model: string;
   /** Why nothing was measured, when nothing was. */
-  skipped?: 'nothing serving' | 'no training profile';
+  skipped?: 'nothing serving' | 'no training profile' | 'failed';
+  /** For a failure: the error's kind, never its message. */
+  errorKind?: string;
   version?: number;
   features: FeatureDrift[];
   drifted: boolean;
@@ -144,11 +147,26 @@ async function measure(q: Queryable, watched: Watched): Promise<ModelDrift> {
   return { model: watched.name, version: serving.version, features, drifted: features.some(f => f.drifted) };
 }
 
+/**
+ * Each model in its own transaction: one that can't be measured (damaged
+ * weights, say) is reported as failed and never stops the others.
+ */
 export async function monitorDrift(db: Pick<Database, 'asSystem'>): Promise<ModelDrift[]> {
-  return db.asSystem(async q => {
-    await q.query('DELETE FROM app.ml_drift WHERE measured_at < now() - make_interval(days => $1)', [RETENTION_DAYS]);
-    const out: ModelDrift[] = [];
-    for (const w of WATCHED) out.push(await measure(q, w));
-    return out;
-  });
+  await db.asSystem(q =>
+    q.query('DELETE FROM app.ml_drift WHERE measured_at < now() - make_interval(days => $1)', [RETENTION_DAYS]),
+  );
+  const out: ModelDrift[] = [];
+  for (const w of WATCHED)
+    out.push(
+      await db
+        .asSystem(q => measure(q, w))
+        .catch((err: unknown) => ({
+          model: w.name,
+          skipped: 'failed' as const,
+          errorKind: errorKind(err),
+          features: [],
+          drifted: false,
+        })),
+    );
+  return out;
 }

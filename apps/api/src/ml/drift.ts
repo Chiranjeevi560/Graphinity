@@ -15,6 +15,8 @@
 // moves of flags (30% to 45% is PSI 0.097). Every function is pure and
 // deterministic.
 
+import { valueAt } from './linalg.ts';
+
 export const PROFILE_POINTS = 201;
 /** PSI's shares are floored here, so an empty bin can't make it infinite. */
 const FLOOR = 1e-4;
@@ -54,7 +56,7 @@ export interface FeatureDrift {
  */
 function quantileOf(sorted: Float64Array, q: number): number {
   const i = Math.max(0, Math.ceil(q * sorted.length) - 1);
-  return sorted[Math.min(i, sorted.length - 1)] ?? 0;
+  return valueAt(sorted, Math.min(i, sorted.length - 1));
 }
 
 const sortedOf = (values: ArrayLike<number>) => Float64Array.from(values).sort();
@@ -82,7 +84,7 @@ function rank(a: ArrayLike<number>, x: number, inclusive: boolean): number {
   let hi = a.length;
   while (lo < hi) {
     const mid = (lo + hi) >> 1;
-    const v = a[mid] ?? 0;
+    const v = valueAt(a, mid);
     if (inclusive ? v <= x : v < x) lo = mid + 1;
     else hi = mid;
   }
@@ -97,8 +99,8 @@ function rank(a: ArrayLike<number>, x: number, inclusive: boolean): number {
  */
 function referenceCdf(q: readonly number[], x: number, inclusive: boolean): number {
   const k = q.length - 1;
-  const first = q[0] ?? 0;
-  const last = q[k] ?? 0;
+  const first = valueAt(q, 0);
+  const last = valueAt(q, k);
   if (x < first || (!inclusive && x === first)) return 0;
   if (x > last || (inclusive && x === last)) return 1;
   const below = rank(q, x, false);
@@ -109,8 +111,9 @@ function referenceCdf(q: readonly number[], x: number, inclusive: boolean): numb
     return (inclusive ? upTo - 1 : below) / k;
   }
   // Strictly between q[below - 1] and q[below].
-  const a = q[below - 1] ?? first;
-  const b = q[below] ?? last;
+  // 0 < below <= k here, so both reads are inside the quantiles.
+  const a = valueAt(q, below - 1);
+  const b = valueAt(q, below);
   return (below - 1 + (b > a ? (x - a) / (b - a) : 0)) / k;
 }
 
@@ -125,9 +128,9 @@ export function psi(reference: Profile, current: ArrayLike<number>): number {
   if (current.length === 0) return 0;
   const q = reference.quantiles;
   const k = q.length - 1;
-  const min = q[0] ?? 0;
-  const max = q[k] ?? 0;
-  const edges = [...new Set([1, 2, 3, 4, 5, 6, 7, 8, 9].map(d => q[Math.round((d * k) / 10)] ?? 0))].sort(
+  const min = valueAt(q, 0);
+  const max = valueAt(q, k);
+  const edges = [...new Set([1, 2, 3, 4, 5, 6, 7, 8, 9].map(d => valueAt(q, Math.round((d * k) / 10))))].sort(
     (a, b) => a - b,
   );
   // Bins: below min, [min, e0], (e0, e1], ..., (e_last, max], above max.
@@ -141,14 +144,14 @@ export function psi(reference: Profile, current: ArrayLike<number>): number {
   expected.push(1 - previous, 0);
   const counts = new Array<number>(edges.length + 3).fill(0);
   for (let i = 0; i < current.length; i++) {
-    const v = current[i] ?? 0;
+    const v = valueAt(current, i);
     const bin = v < min ? 0 : v > max ? edges.length + 2 : 1 + rank(edges, v, false);
-    counts[bin] = (counts[bin] ?? 0) + 1;
+    counts[bin] = valueAt(counts, bin) + 1;
   }
   let total = 0;
   for (let i = 0; i < counts.length; i++) {
-    const a = Math.max(FLOOR, (counts[i] ?? 0) / current.length);
-    const e = Math.max(FLOOR, expected[i] ?? 0);
+    const a = Math.max(FLOOR, valueAt(counts, i) / current.length);
+    const e = Math.max(FLOOR, valueAt(expected, i));
     total += (a - e) * Math.log(a / e);
   }
   return total;
@@ -222,7 +225,7 @@ export function featureDrift(
 export function profilesOf(rows: readonly (readonly number[])[], names: readonly string[]): Record<string, Profile> {
   const out: Record<string, Profile> = {};
   names.forEach((name, j) => {
-    const p = profileOf(rows.map(r => r[j] ?? 0));
+    const p = profileOf(rows.map(r => valueAt(r, j)));
     if (p) out[name] = p;
   });
   return out;
@@ -232,7 +235,7 @@ export function profilesOf(rows: readonly (readonly number[])[], names: readonly
 export function columnsOf(rows: readonly (readonly number[])[], names: readonly string[]): Record<string, number[]> {
   const out: Record<string, number[]> = {};
   names.forEach((name, j) => {
-    out[name] = rows.map(r => r[j] ?? 0);
+    out[name] = rows.map(r => valueAt(r, j));
   });
   return out;
 }

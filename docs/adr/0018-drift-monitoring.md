@@ -32,6 +32,8 @@ still look like its training data.
   These are exploit routes, and searches that weren't interleaved by people not under collusion
   review: the populations training reads.
 - One row per feature goes into `app.ml_drift` (migration 0026: system only, kept 400 days).
+- Each model is measured in its own transaction. One that can't be measured (damaged weights, say)
+  is reported as failed, with its error's kind, and never stops the others.
 - If anything drifted, training starts at once instead of at the next daily run. The gates still
   decide whether a new version serves.
 
