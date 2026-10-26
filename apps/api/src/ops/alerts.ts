@@ -17,21 +17,6 @@ export interface Problem {
   body: string;
 }
 
-const jobWords: Readonly<Record<string, string>> = {
-  deletions: 'Finishing account deletions',
-  'signal-expiry': 'Forgetting expired activity',
-  'route-factor-expiry': 'Forgetting old routing records',
-  'search-expiry': 'Forgetting old searches',
-  'graph-projection': 'Updating personal graphs',
-  routing: 'Sending questions to people',
-  'embedding-backfill': 'Understanding new questions',
-  training: 'Training Graphinity’s own models',
-  'search-judge': 'Comparing search rankings',
-  'drift-monitor': 'Checking models still fit',
-  'collusion-review': 'Looking for groups picking each other',
-  alerts: 'Sending these alerts',
-};
-
 const windowWords = (minutes: number) =>
   minutes < 60 ? `${String(minutes)} minutes` : `${String(minutes / 60)} hours`;
 
@@ -51,7 +36,7 @@ export function problemsOf(status: OpsStatus): Problem[] {
     const failed = j.lastFailureAt !== null && (j.lastSuccessAt === null || j.lastFailureAt > j.lastSuccessAt);
     out.push({
       key: `job:${j.job}`,
-      title: `${jobWords[j.job] ?? j.job} isn’t working`,
+      title: `${j.label} isn’t working`,
       body: failed
         ? `Its last run failed${j.lastErrorKind ? ` (${j.lastErrorKind})` : ''}. Its log lines say why.`
         : 'It hasn’t finished a run in twice its usual time. Its log lines say why.',

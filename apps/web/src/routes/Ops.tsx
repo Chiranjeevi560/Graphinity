@@ -20,6 +20,7 @@ interface Status {
   routes: Array<{ method: string; route: string; requests: number; errors: number; p95: number | null }>;
   jobs: Array<{
     job: string;
+    label: string;
     expectedSeconds: number;
     lastSuccessAt: string | null;
     lastFailureAt: string | null;
@@ -41,22 +42,6 @@ const windowWords = (minutes: number) =>
     : minutes < 1440
       ? `${String(minutes / 60)} hours`
       : `${String(minutes / 1440)} days`;
-
-/** A job's name as a person would say it. */
-const jobWords: Record<string, string> = {
-  deletions: 'Finishing account deletions',
-  'signal-expiry': 'Forgetting expired activity',
-  'route-factor-expiry': 'Forgetting old routing records',
-  'search-expiry': 'Forgetting old searches',
-  'graph-projection': 'Updating personal graphs',
-  routing: 'Sending questions to people',
-  'embedding-backfill': 'Understanding new questions',
-  training: 'Training Graphinity’s own models',
-  'search-judge': 'Comparing search rankings',
-  'drift-monitor': 'Checking models still fit',
-  'collusion-review': 'Looking for groups picking each other',
-  alerts: 'Sending alerts to moderators',
-};
 
 /** For moderators: whether Graphinity is working as it should, in plain words. */
 export default function OpsPage() {
@@ -102,7 +87,7 @@ export default function OpsPage() {
             {unhealthy.map(j => (
               <li key={j.job} className="review-item">
                 <p className="text-body ops-problem">
-                  {jobWords[j.job] ?? j.job}:{' '}
+                  {j.label}:{' '}
                   {j.lastFailureAt && (!j.lastSuccessAt || j.lastFailureAt > j.lastSuccessAt)
                     ? `failed ${timeAgo(j.lastFailureAt, now)}${j.lastErrorKind ? ` (${j.lastErrorKind})` : ''}.`
                     : `hasn’t worked since ${j.lastSuccessAt ? timeAgo(j.lastSuccessAt, now) : 'it started'}.`}
@@ -153,7 +138,7 @@ export default function OpsPage() {
           <ul className="standing-list">
             {status.jobs.map(j => (
               <li key={j.job} className="standing-row ops-row">
-                <span className="text-body">{jobWords[j.job] ?? j.job}</span>
+                <span className="text-body">{j.label}</span>
                 <span className={`text-subhead ops-figures ${j.healthy ? 'secondary' : 'ops-problem'}`}>
                   {j.lastFailureAt && (!j.lastSuccessAt || j.lastFailureAt > j.lastSuccessAt)
                     ? `Failed ${timeAgo(j.lastFailureAt, now)}`
