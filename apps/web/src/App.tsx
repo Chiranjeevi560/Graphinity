@@ -19,6 +19,7 @@ const Ask = lazy(() => import('./routes/Ask.tsx'));
 const Question = lazy(() => import('./routes/Question.tsx'));
 const Search = lazy(() => import('./routes/Search.tsx'));
 const ReviewPage = lazy(() => import('./routes/Review.tsx'));
+const OpsPage = lazy(() => import('./routes/Ops.tsx'));
 const Privacy = lazy(() => import('./routes/Privacy.tsx'));
 const Terms = lazy(() => import('./routes/Terms.tsx'));
 const Goodbye = lazy(() => import('./routes/Goodbye.tsx'));
@@ -74,6 +75,8 @@ function route(path: string, state: SessionState): ReactNode {
       return state.status === 'ready' ? <Me profile={state.profile} /> : <Redirect to="/" />;
     case '/review':
       return state.status === 'ready' && state.profile.moderator ? <ReviewPage /> : <Redirect to="/" />;
+    case '/ops':
+      return state.status === 'ready' && state.profile.moderator ? <OpsPage /> : <Redirect to="/" />;
     case '/ask':
       return state.status === 'ready' ? <Ask profile={state.profile} /> : <Redirect to="/" />;
     case '/me/edit':

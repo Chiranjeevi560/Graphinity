@@ -72,9 +72,14 @@ export default function Me({ profile }: { profile: Profile }) {
         Your data choices
       </LinkButton>
       {profile.moderator && (
-        <LinkButton to="/review" variant="secondary" className="btn-block">
-          Review reports
-        </LinkButton>
+        <>
+          <LinkButton to="/review" variant="secondary" className="btn-block">
+            Review reports
+          </LinkButton>
+          <LinkButton to="/ops" variant="secondary" className="btn-block">
+            Operations
+          </LinkButton>
+        </>
       )}
 
       <section className="profile-footer">

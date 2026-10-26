@@ -523,6 +523,25 @@
   margin-left: calc(-1 * var(--space-2));
 }
 
+/* Operations (moderators). */
+.ops-row {
+  /* Name above, figures below, the same on every row and width: figures
+     beside a name wrapped raggedly at phone widths. */
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+}
+.ops-route {
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.ops-problem {
+  color: var(--red-text);
+}
+.ops-calm {
+  color: var(--green-text);
+}
+
 /* Privacy and terms. */
 .legal {
   display: flex;
