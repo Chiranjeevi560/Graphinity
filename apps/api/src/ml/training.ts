@@ -22,6 +22,9 @@ import { SPELLING_ALGORITHM, type SpellingInput, type SpellingResult } from './t
 import { loadRoutingExamples } from './routing-data.ts';
 import { lastRejectedAt } from './registry.ts';
 import { ROUTING_ALGORITHM, type RoutingInput, type RoutingResult } from './train-routing.ts';
+import { profilesOf, type Profile } from './drift.ts';
+import { FACTOR_ORDER } from '../routing-score.ts';
+import { FEATURE_NAMES } from '../search/features.ts';
 
 export const TEXT_EMBEDDING = 'text-embedding';
 export const SPELLING = 'spelling';
@@ -88,6 +91,8 @@ async function trainJob<D extends { size: number; fingerprint: string }, R exten
   describe: (result: R) => Omit<ModelRecord, 'name' | 'reason' | 'dataset'> & { dataset: Record<string, unknown> },
   /** What passing the offline gate makes it: the serving version, or a candidate for online comparison. */
   onPass: 'production' | 'candidate' = 'production',
+  /** Each input feature's profile in the training data, for drift monitoring (ADR 0018). */
+  profile?: (data: D) => Record<string, Profile>,
 ): Promise<TrainingOutcome<R>> {
   const data = await load();
   if (data.size < minimum.count)
@@ -107,7 +112,7 @@ async function trainJob<D extends { size: number; fingerprint: string }, R exten
   const record = {
     ...described,
     name,
-    dataset: { ...described.dataset, fingerprint: data.fingerprint },
+    dataset: { ...described.dataset, fingerprint: data.fingerprint, ...(profile ? { profile: profile(data) } : {}) },
     reason: result.decision.reason,
   };
   if (result.decision.promote && result.artifact) {
@@ -201,6 +206,12 @@ export function trainRoutingJob(
       metrics: { ...result.metrics, difference: result.decision.difference },
       baseline: result.baseline,
     }),
+    'production',
+    data =>
+      profilesOf(
+        data.examples.map(e => e.factors),
+        FACTOR_ORDER,
+      ),
   );
 }
 
@@ -232,5 +243,10 @@ export function trainSearchRankerJob(
       baseline: result.baseline,
     }),
     'candidate',
+    data =>
+      profilesOf(
+        data.searches.flatMap(s => s.results.map(r => r.features)),
+        FEATURE_NAMES,
+      ),
   );
 }
