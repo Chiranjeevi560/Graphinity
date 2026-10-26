@@ -152,14 +152,18 @@ export function registerAdRoutes(
       const row = await db.asSystem(
         async q =>
           (
-            await q.query<{ destination: string }>('SELECT destination FROM app.record_ad_click($1, $2)', [
-              token,
-              viewer,
-            ])
+            await q.query<{ destination: string; click_id: string | null }>(
+              'SELECT destination, click_id::text FROM app.record_ad_click($1, $2)',
+              [token, viewer],
+            )
           ).rows[0],
       );
       if (!row) return fail(reply, 404, 'not_found', 'This ad isn’t available any more.');
-      return { destination: row.destination };
+      // A click id the advertiser can report a sale back with, only for people who allow measurement.
+      if (!row.click_id) return { destination: row.destination };
+      const url = new URL(row.destination);
+      url.searchParams.set('gr_click', row.click_id);
+      return { destination: url.toString() };
     },
   );
 }

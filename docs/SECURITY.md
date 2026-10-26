@@ -361,6 +361,11 @@ whenever a user-linked table is added.
   proven by a two-connection race. Known limits: invalid traffic beyond these rules and the rate
   limit (bots varying addresses) is part 6's work; an impression shown before midnight UTC but
   clicked after counts against the day it was shown.
+- Conversions (ADR 0022 part 6a): advertiser API keys are stored only as SHA-256 (32 random bytes
+  each), at most 10 working per business, revocation final; every refused report answers the same
+  "not counted". Click ids reach advertisers only for people who allow measurement. Known limit:
+  a person who withdraws measurement can't recall click ids already handed to an advertiser (they
+  name nobody); conversions against them still count until the 30-day window closes.
 - Alerts (ADR 0020) say what is wrong in plain words and name an objective or a job, never a
   person. The server's own jobs may now read who is blocked (to leave blocked moderators out); no
   request can. The service worker opens only `/q/<id>` and `/ops`, whatever a push says.

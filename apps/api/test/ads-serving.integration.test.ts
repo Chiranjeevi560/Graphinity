@@ -7,105 +7,35 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import pg from 'pg';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { createAdServer } from '../src/ads/serve.ts';
-import { startApp, type TestApp } from './helpers/app.ts';
+import type { TestApp } from './helpers/app.ts';
+import { startAdWorld, type Ad } from './helpers/ads.ts';
 import { must, type Body } from './helpers/must.ts';
 
+let w: Awaited<ReturnType<typeof startAdWorld>>;
 let h: TestApp;
-let adsOn = true;
-let names = 0;
-const server = { current: null as ReturnType<typeof createAdServer> | null };
 
 beforeAll(async () => {
-  h = await startApp(() => Date.now(), {
-    adsEnabled: () => adsOn,
-    // The real ad server over the test database, refreshed on demand in each test.
-    adServer: {
-      serve: (input: Parameters<ReturnType<typeof createAdServer>['serve']>[0]) => must(server.current).serve(input),
-      refresh: () => must(server.current).refresh(),
-    },
-  });
-  server.current = createAdServer(h.t.database);
-  await h.t.owner.query("UPDATE app.feature_flags SET enabled = true WHERE name IN ('ads', 'ads_behavioral')");
-  await h.t.owner.query('UPDATE app.ad_jurisdiction_rules SET legal_approved = true');
+  w = await startAdWorld('serve');
+  h = w.h;
   return h.close;
 });
 
-async function member(country = 'IN') {
-  const p = await h.person();
-  names += 1;
-  const handle = `serve.${String(names)}`;
-  expect(
-    (await h.call('POST', '/me/profile', p.token, { handle, country, fields: ['travel'], adult: true })).statusCode,
-  ).toBe(201);
-  await h.t.owner.query("UPDATE app.profiles SET created_at = now() - interval '2 days' WHERE id = $1", [p.id]);
-  return { ...p, handle };
-}
-
-/** A business with one active campaign and one approved ad, targeted as given. */
-async function liveCampaign(targets: Array<{ kind: string; value: string }>, over: Record<string, number> = {}) {
-  const owner = await member();
-  const advertiser = must(
-    (await h.call('POST', '/ads/advertisers', owner.token, { name: `Business ${String(names)}`, country: 'IN' })).json<{
-      advertiser: { id: string };
-    }>().advertiser.id,
-  );
-  const campaign = must(
-    (
-      await h.call('POST', `/ads/advertisers/${advertiser}/campaigns`, owner.token, {
-        name: 'Ferries',
-        objective: 'clicks',
-        dailyBudgetMicros: 50_000_000,
-        // Each newer campaign bids a little more, so the one under test wins its auction
-        // against those earlier tests left running.
-        maxCpcMicros: 2_000_000 + names * 10_000,
-        ...over,
-      })
-    ).json<{ campaign: { id: string } }>().campaign.id,
-  );
-  await h.call('POST', `/ads/campaigns/${campaign}/creatives`, owner.token, {
-    headline: `Ferries ${String(names)}`,
-    body: 'Daily boats from Panaji, book a seat in two minutes.',
-    destinationUrl: 'https://ferries.example.in/book',
-  });
-  await h.call('PUT', `/ads/campaigns/${campaign}/targeting`, owner.token, { targets });
-  await h.call('PATCH', `/ads/campaigns/${campaign}`, owner.token, { status: 'active' });
-  // Approved, as a moderator would.
-  await h.t.owner.query("UPDATE app.ad_advertisers SET status = 'active' WHERE public_id = $1", [advertiser]);
-  await h.t.owner.query('ALTER TABLE app.ad_creatives DISABLE TRIGGER ad_creatives_guard');
-  await h.t.owner.query(
-    `UPDATE app.ad_creatives SET status = 'approved', reviewed_at = now()
-     WHERE campaign_id = (SELECT id FROM app.ad_campaigns WHERE public_id = $1)`,
-    [campaign],
-  );
-  await h.t.owner.query('ALTER TABLE app.ad_creatives ENABLE TRIGGER ad_creatives_guard');
-  await must(server.current).refresh();
-  return { owner, campaign, headline: `Ferries ${String(names)}` };
-}
-
-async function question(field = 'travel') {
-  const asker = await member();
-  const res = await h.call('POST', '/questions', asker.token, {
-    title: `Is the night ferry to the islands safe in June, case ${String(names)}?`,
-    field,
-  });
-  return must(res.json<{ question: { id: string } }>().question.id);
-}
-
-type Ad = { token: string; headline: string; domain: string; label: string; advertiser: string };
-const select = async (token: string | undefined, body: object) =>
-  (await h.call('POST', '/ads/select', token, body)).json<{ ads: Ad[] }>().ads;
+const member = (country?: string) => w.member(country);
+const liveCampaign = (targets: Array<{ kind: string; value: string }>, over?: Record<string, number>) =>
+  w.liveCampaign(targets, over);
+const question = (field?: string) => w.question(field);
+const select = (token: string | undefined, body: object) => w.select(token, body);
 
 describe('while the platform is off', () => {
   it('pages simply have no ads, and taps lead nowhere', async () => {
     const live = await liveCampaign([{ kind: 'field', value: 'travel' }]);
     const q = await question();
-    adsOn = false;
+    w.setOn(false);
     try {
       expect(await select(undefined, { placement: 'question', questionId: q })).toEqual([]);
       expect((await h.call('POST', `/ads/click/${crypto.randomUUID()}`)).statusCode).toBe(404);
     } finally {
-      adsOn = true;
+      w.setOn(true);
     }
     const { rows } = await h.t.owner.query(
       'SELECT 1 FROM app.ad_impressions i JOIN app.ad_campaigns c ON c.id = i.campaign_id WHERE c.public_id = $1',
@@ -181,7 +111,7 @@ describe('choosing ads', () => {
     const q = must(
       (
         await h.call('POST', '/questions', author.token, {
-          title: `Is the night ferry to the islands safe in July, case ${String(names)}?`,
+          title: `Is the night ferry to the islands safe in July, case ${String(w.names())}?`,
           field: 'travel',
         })
       ).json<{ question: { id: string } }>().question.id,
@@ -264,7 +194,7 @@ describe('clicks', () => {
       );
       if (ad) tokens.push(ad.token);
       // Pacing may hold it back; show it anyway for this test by refreshing spend.
-      await must(server.current).refresh();
+      await w.server().refresh();
     }
     await Promise.all(tokens.map(t => h.call('POST', `/ads/click/${t}`)));
     const { rows } = await h.t.owner.query<{ s: string }>(
@@ -318,6 +248,20 @@ describe('clicks', () => {
     expect(Number(must(rows[0]).s)).toBe(20_000_000);
   });
 
+  it('need to say which question a question page’s ads are for', async () => {
+    expect((await h.call('POST', '/ads/select', undefined, { placement: 'question' })).json<Body>().error).toBe(
+      'invalid_request',
+    );
+  });
+
+  it('are refused past the click rate limit too', async () => {
+    const p = await member();
+    let limited = false;
+    for (let i = 0; i < 80 && !limited; i++)
+      limited = (await h.call('POST', `/ads/click/${crypto.randomUUID()}`, p.token)).statusCode === 429;
+    expect(limited).toBe(true);
+  });
+
   it('are refused past the rate limit, like any other writing request', async () => {
     const p = await member();
     let limited = false;
@@ -339,12 +283,12 @@ describe('knowledge results stay apart from ads', () => {
       search: strip((await h.call('POST', '/search', reader.token, { query: 'night ferry islands june' })).body),
     });
     const on = await look();
-    adsOn = false;
+    w.setOn(false);
     await h.t.owner.query("UPDATE app.feature_flags SET enabled = false WHERE name = 'ads'");
     try {
       expect(await look()).toEqual(on);
     } finally {
-      adsOn = true;
+      w.setOn(true);
       await h.t.owner.query("UPDATE app.feature_flags SET enabled = true WHERE name = 'ads'");
     }
     expect(JSON.stringify(on)).not.toMatch(/Sponsored|Ferries \d/);
