@@ -114,27 +114,35 @@ function referenceCdf(q: readonly number[], x: number, inclusive: boolean): numb
   return (below - 1 + (b > a ? (x - a) / (b - a) : 0)) / k;
 }
 
-/** PSI over the reference's deciles (equal-share bins; ties merged). O(m log m). */
+/**
+ * PSI over the reference's deciles (equal-share bins; ties merged), plus a
+ * bin each for values below the reference's minimum and above its maximum,
+ * where the reference has no share: without them a feature that was constant
+ * in training (every word known) couldn't show anything moving below it.
+ * O(m log m).
+ */
 export function psi(reference: Profile, current: ArrayLike<number>): number {
   if (current.length === 0) return 0;
   const q = reference.quantiles;
   const k = q.length - 1;
+  const min = q[0] ?? 0;
+  const max = q[k] ?? 0;
   const edges = [...new Set([1, 2, 3, 4, 5, 6, 7, 8, 9].map(d => q[Math.round((d * k) / 10)] ?? 0))].sort(
     (a, b) => a - b,
   );
-  // Bins: (-inf, e0], (e0, e1], ..., (e_last, inf).
-  const expected: number[] = [];
+  // Bins: below min, [min, e0], (e0, e1], ..., (e_last, max], above max.
+  const expected: number[] = [0];
   let previous = 0;
   for (const e of edges) {
     const upTo = referenceCdf(q, e, true);
     expected.push(upTo - previous);
     previous = upTo;
   }
-  expected.push(1 - previous);
-  const counts = new Array<number>(edges.length + 1).fill(0);
+  expected.push(1 - previous, 0);
+  const counts = new Array<number>(edges.length + 3).fill(0);
   for (let i = 0; i < current.length; i++) {
     const v = current[i] ?? 0;
-    const bin = rank(edges, v, false);
+    const bin = v < min ? 0 : v > max ? edges.length + 2 : 1 + rank(edges, v, false);
     counts[bin] = (counts[bin] ?? 0) + 1;
   }
   let total = 0;

@@ -147,7 +147,7 @@ export function trainTextEmbeddingJob(
     result => ({
       algorithm: ALGORITHM,
       params: result.params,
-      dataset: result.dataset,
+      dataset: { ...result.dataset, profile: result.reference.profile, centroid: result.reference.centroid },
       metrics: { ...result.metrics, difference: result.decision.difference },
       baseline: result.baseline,
     }),

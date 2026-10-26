@@ -71,6 +71,15 @@ describe('PSI', () => {
     expect(psi(ref, current)).toBeCloseTo(expected, 10);
   });
 
+  it('sees values below a constant reference (every word known in training, some unknown now)', () => {
+    const ref = must(profileOf(new Array<number>(1000).fill(1)));
+    const half = [...new Array<number>(500).fill(1), ...new Array<number>(500).fill(0.4)];
+    expect(psi(ref, half)).toBeGreaterThan(1);
+    expect(psi(ref, new Array<number>(1000).fill(1))).toBeCloseTo(0, 12);
+    // And above one.
+    expect(psi(must(profileOf(new Array<number>(1000).fill(0))), half)).toBeGreaterThan(1);
+  });
+
   it('stays finite when a bin is empty', () => {
     const ref = must(profileOf(normal(1000, 1)));
     expect(Number.isFinite(psi(ref, new Array<number>(500).fill(100)))).toBe(true);

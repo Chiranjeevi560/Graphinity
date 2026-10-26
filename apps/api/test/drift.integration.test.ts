@@ -2,9 +2,11 @@
 // serving routing model's training profile against the inputs it was served
 // in the last week, one row per feature, nothing for models with nothing to
 // compare, and only the server's own jobs can see any of it.
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { profilesOf } from '../src/ml/drift.ts';
+import { centroidOf, EMBEDDING_SIGNALS, embeddingSignals } from '../src/ml/embedding-drift.ts';
+import { serializeModel, trainTextEmbedding } from '../src/ml/text-embedding.ts';
 import { monitorDrift, RETENTION_DAYS } from '../src/ml/drift-monitor.ts';
 import { gaussian, seededRandom } from '../src/ml/linalg.ts';
 import { FACTOR_ORDER } from '../src/routing-score.ts';
@@ -130,5 +132,97 @@ describe('the drift monitor', () => {
       ),
     ).rejects.toThrow();
     expect((await t.database.asSystem(async q => q.query('SELECT 1 FROM app.ml_drift'))).rowCount).toBeGreaterThan(0);
+  });
+});
+
+describe('the text model', () => {
+  const KNOWN = ['customs', 'duty', 'watch', 'phone', 'airport', 'border', 'import', 'tax', 'camera', 'laptop'];
+  const NEW = ['solar', 'subsidy', 'roof', 'school', 'admission', 'fees', 'hospital', 'scan', 'queue', 'grant'];
+  const sentence = (words: readonly string[], seed: number) => {
+    const r = seededRandom(seed);
+    return Array.from({ length: 8 }, () => words[Math.floor(r() * words.length)] ?? 'duty').join(' ');
+  };
+  let people = 0;
+  async function person(consents: boolean): Promise<string> {
+    const id = randomUUID();
+    people += 1;
+    await t.owner.query('BEGIN');
+    await t.owner.query(
+      `INSERT INTO app.profiles (id, handle, country, adult_confirmed_at) VALUES ($1, $2, 'IN', now())`,
+      [id, `drift.person${String(people)}`],
+    );
+    await t.owner.query("INSERT INTO app.profile_fields (profile_id, field) VALUES ($1, 'imports-customs')", [id]);
+    await t.owner.query('COMMIT');
+    await t.owner.query("UPDATE app.profiles SET created_at = now() - interval '60 days' WHERE id = $1", [id]);
+    await t.owner.query(
+      "INSERT INTO app.user_consent_settings (user_id, category, enabled, policy_version) VALUES ($1, 'model_training', $2, 1)",
+      [id, consents],
+    );
+    return id;
+  }
+  async function asked(asker: string, words: readonly string[], n: number, seed: number) {
+    for (let i = 0; i < n; i++)
+      await t.owner.query(
+        "INSERT INTO app.questions (asker_id, field, title, body) VALUES ($1, 'imports-customs', $2, '')",
+        [asker, sentence(words, seed + i)],
+      );
+  }
+  const text = async () => must((await monitorDrift(t.database)).find(m => m.model === 'text-embedding'));
+
+  it('flags new questions full of words the serving model never learned, from consenting askers only', async () => {
+    const model = trainTextEmbedding(
+      Array.from({ length: 300 }, (_, i) => sentence(KNOWN, i)),
+      { dims: 8, minCount: 1 },
+    );
+    const centroid = centroidOf(
+      model,
+      Array.from({ length: 300 }, (_, i) => sentence(KNOWN, i)),
+    );
+    const heldOut = embeddingSignals(
+      model,
+      Array.from({ length: 400 }, (_, i) => sentence(KNOWN, 10_000 + i)),
+      centroid,
+    );
+    const profile = profilesOf(
+      heldOut.coverage.map((_, i) => EMBEDDING_SIGNALS.map(name => heldOut[name][i] ?? 0)),
+      EMBEDDING_SIGNALS,
+    );
+    const artifact = serializeModel(model);
+    await t.owner.query(
+      `INSERT INTO app.ml_models (name, version, algorithm, dataset, status, artifact, artifact_sha256, promoted_at)
+       VALUES ('text-embedding', 1, 'ppmi-svd-sif', $1, 'production', $2, $3, now())`,
+      [
+        JSON.stringify({ fingerprint: 'drift', profile, centroid }),
+        artifact,
+        createHash('sha256').update(artifact).digest('hex'),
+      ],
+    );
+    const [yes, no] = [await person(true), await person(false)];
+    // Questions from before the last week are never read, however different.
+    await asked(yes, NEW, 250, 35_000);
+    await t.owner.query("UPDATE app.questions SET created_at = now() - interval '8 days' WHERE asker_id = $1", [yes]);
+    await asked(yes, KNOWN, 250, 20_000);
+    // Nor those of someone who doesn't allow learning from what they write.
+    await asked(no, NEW, 250, 30_000);
+    const same = await text();
+    expect(same.drifted).toBe(false);
+    expect(same.features.map(f => [f.feature, f.n])).toEqual([
+      ['centroid_similarity', 250],
+      ['coverage', 250],
+    ]);
+    await asked(yes, NEW, 250, 40_000);
+    const moved = await text();
+    expect(moved.drifted).toBe(true);
+    expect(moved.features.find(f => f.feature === 'coverage')).toMatchObject({ drifted: true, n: 500 });
+  });
+
+  it('refuses to read weights that fail their integrity check', async () => {
+    // The registry refuses to replace weights; damage is what this checks, so go around that rule.
+    await t.owner.query("SET session_replication_role = 'replica'");
+    await t.owner.query(
+      "UPDATE app.ml_models SET artifact_sha256 = repeat('0', 64) WHERE name = 'text-embedding' AND version = 1",
+    );
+    await t.owner.query("SET session_replication_role = 'origin'");
+    await expect(monitorDrift(t.database)).rejects.toThrow(/integrity/);
   });
 });

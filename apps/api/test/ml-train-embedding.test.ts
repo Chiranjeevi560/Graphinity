@@ -48,6 +48,19 @@ describe('one training run', () => {
     expect(result.baseline).toMatchObject({ kind: 'model', version: 3 });
   });
 
+  it('profiles the held-out questions for drift monitoring, against a centre from training questions only', () => {
+    const result = trainAndEvaluate({ questions: qs, answers: [], serving: null, options: { dims: 8 } });
+    expect(Object.keys(result.reference.profile).sort()).toEqual(['centroid_similarity', 'coverage']);
+    expect(result.reference.profile.coverage?.n).toBe(heldOut.length);
+    expect(result.reference.centroid).toHaveLength(8);
+    expect(Math.hypot(...result.reference.centroid)).toBeCloseTo(1, 9);
+    // Rewriting a held-out question changes its profile, never the centre.
+    const rewritten = qs.map(q => (isHeldOut(q.id) ? { ...q, title: 'something else entirely about boats' } : q));
+    const again = trainAndEvaluate({ questions: rewritten, answers: [], serving: null, options: { dims: 8 } });
+    expect(again.reference.centroid).toEqual(result.reference.centroid);
+    expect(again.reference.profile.coverage).not.toEqual(result.reference.profile.coverage);
+  });
+
   it('keeps weights only for a version that is promoted', () => {
     const result = trainAndEvaluate({ questions: qs, answers: [], serving: null, options: { dims: 8 } });
     // Too few held-out queries to decide: not promoted, so no weights.
