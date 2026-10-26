@@ -182,6 +182,9 @@ VALUES ('IN', 'ads_personalization', 'opt_in', true, 'Approved by <lawyer>, <dat
 UPDATE app.feature_flags SET enabled = true, updated_at = now() WHERE name IN ('ads', 'ads_behavioral');
 ```
 
+The ad click model (`name = 'ad-ctr'` in `app.ml_models`) trains in the daily run once `ads` is on and
+there are 20,000 impressions and 200 clicks in 30 days; each version's reason says how it compared.
+
 While `ads` is off, nobody is asked about ad purposes; turning it on shows them in "Your data choices",
 off until each person turns them on.
 

@@ -1,7 +1,8 @@
 # ADR 0022: The advertising platform, consent-gated and off by default
 
-- **Status:** Accepted 2026-10-26. Parts 1–4 built (privacy foundation, interest graph,
-  campaigns, serving and auction); parts 5–9 follow in order, each in its own change.
+- **Status:** Accepted 2026-10-26. Parts 1–5 built (privacy foundation, interest graph,
+  campaigns, serving and auction, click prediction); parts 6–9 follow in order, each in its own
+  change.
 - **Owner decision (2026-10-26):** engineer a complete Google/Meta-class advertising platform.
   Implement only what is legal with the consent each jurisdiction requires. Build everything that
   needs legal approval, partners or infrastructure, but keep it switched off.
@@ -33,7 +34,7 @@ unless a jurisdiction-specific consent and a lawyer's approval allow more.
 | 2 | **Interest graph** | Topic scores per ad identity from searches and reads while `ads_personalization` is permitted; halve every 30 days; never the words | **Built** |
 | 3 | **Campaigns** | Advertisers and their staff, campaigns with budgets in micro-units and frequency caps, plain-text ads reviewed by moderators outside the business, contextual and interest targeting | **Built** |
 | 4 | **Serving and auction** | Candidates by targeting from an in-memory index; generalized second-price auction on bid × predicted click rate with a reserve; pacing; frequency caps only for people tracked by their choice; clicks charged once, only when valid; ads asked for apart from knowledge results | **Built** |
-| 5 | Click prediction | Logistic regression on hashed features, learned online (FTRL-Proximal, McMahan et al. 2013), calibrated, benchmarked against simpler baselines; through the model registry with gates and drift monitoring | Planned |
+| 5 | **Click prediction** | FTRL-Proximal on hashed impression features, gated against what serves on the newest impressions, promoted through the registry | **Built** |
 | 6 | Measurement and attribution | Impressions, clicks, conversions under `ads_measurement`; last-click, linear, time-decay, position-based and data-driven (Shapley) attribution, benchmarked | Planned |
 | 7 | Audiences | Segments from interest rules, retargeting lists, lookalikes (nearest neighbours of a seed audience's interest vectors), every audience above a minimum size | Planned |
 | 8 | Reporting | Advertiser reports from aggregates only: suppressed small groups, differential-privacy noise, a privacy budget per advertiser | Planned |
@@ -200,6 +201,46 @@ identity's handful of rows.
 2.0 ms p50 at 1,000, 10,000 and 100,000 active campaigns. Scanning every campaign took 6.0 ms at
 100,000; the topic index made it 3× faster. Beyond that, precomputed click rates and per-topic
 shards keep each request bounded.
+
+## Part 5, as built (migration 0033)
+
+**Features (`src/ads/ctr-features.ts`, one function for training and serving):**
+
+- the impression's campaign, ad, placement, page topic (recorded with each impression from now on)
+  and UTC hour;
+- crosses of campaign by topic and campaign by placement, which a per-campaign average can't see.
+
+Nothing about the person.
+
+**Model:** FTRL-Proximal logistic regression (`src/ml/ftrl.ts`), learned one example at a time:
+
+- 2^20 hashed weights, with L1 keeping most at exactly 0;
+- defaults α 0.2, β 1, L1 1, L2 1;
+- a test checks the per-coordinate update against a hand-worked two-step calculation.
+
+**Daily, while `ads` is on (`src/ads/ctr.ts`):**
+
+- The last 30 days of impressions, in time order. It waits for 20,000 impressions and 200 clicks.
+- 70% to learn, the next 10% to choose α from {0.05, 0.2, 0.5}, and the newest 20% to judge.
+- It is promoted only if the 95% paired bootstrap of per-impression log loss lies below what serves:
+  shrunk per-campaign averages until a model serves, then that model.
+- The registry keeps every version, and the ad server reloads after a promotion, checking the stored
+  weights' hash.
+
+**Measured (`scripts/benchmark-ad-ctr.mjs`):** simulated logs with known true click rates,
+1,000,000 impressions, the newest 20% judged:
+
+| Estimate | Log loss | AUC | Picks the truly best of 4 ads |
+|---|---|---|---|
+| The truth | 0.1549 | 0.735 | 100% |
+| Shrunk per campaign (part 4) | 0.1614 | 0.678 | 60.6% |
+| **FTRL (built)** | **0.1568** | **0.717** | **79.9%** |
+
+- **The gain:** −0.0045 log loss per impression, with a 95% interval of [−0.0049, −0.0042]. It
+  closes about 70% of the gap to the truth.
+- **The learning rate matters:** at 200,000 impressions, α 0.05 gave AUC 0.68 and α 0.2 gave 0.70.
+  Hence α is chosen per run.
+- **Cost:** about 7 µs per training example.
 
 ## Scale (100 million people)
 
