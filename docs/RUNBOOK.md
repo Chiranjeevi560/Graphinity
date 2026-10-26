@@ -145,6 +145,7 @@ picks a change up within 30 seconds and logs `feature flag changed`. Off is alwa
 |---|---|
 | `embeddings` | No meaning from Graphinity's own model; the Ask check and Search match by words only |
 | `search` | `POST /search` (the Search screen) refuses with `search_off`; the Ask check keeps working |
+| `learned_search_ranking` | Off by default. On: a learned search ranking serves once one has won online, and candidates are compared by interleaving recorded searches. Off: fusion orders results and nothing is interleaved; training still runs |
 | `push` | No notifications to devices; everything still shows on the site |
 | `model_training` | No daily training of Graphinity's own models (text and spelling); serving versions keep serving |
 
@@ -157,6 +158,20 @@ SELECT name, enabled, note, updated_at FROM app.feature_flags;
 The API can read the flags but never change them. If the database can't be reached, servers keep
 the last values they read. A new flag is a migration (see `0002_feature_flags.sql`) plus its name
 in `apps/api/src/flags.ts`.
+
+### The learned search ranking
+
+Training runs daily (logged as `model training`, model `search-ranker`). The judge runs hourly while
+`learned_search_ranking` is on (logged as `search judge`, with decided searches, people and the 99%
+interval). Where each version stands:
+
+```sql
+SELECT version, status, reason, metrics -> 'online' AS online, created_at, promoted_at, retired_at
+FROM app.ml_models WHERE name = 'search-ranker' ORDER BY version DESC LIMIT 5;
+```
+
+To take a learned ranking out of service at once, switch `learned_search_ranking` off: fusion serves
+again within 30 seconds, and nothing is interleaved.
 
 ### Search word counts
 

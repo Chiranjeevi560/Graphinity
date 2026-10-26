@@ -23,6 +23,8 @@ export const FLAG_DEFAULTS = {
   learned_routing: false,
   /** Uncertainty-aware exploration for each wave's last place (ADR 0014); the owner turns it on. */
   routing_exploration: false,
+  /** A learned search ranking serves and is compared online (ADR 0015 part 6); the owner turns it on. */
+  learned_search_ranking: false,
 } as const;
 
 export type FlagName = keyof typeof FLAG_DEFAULTS;

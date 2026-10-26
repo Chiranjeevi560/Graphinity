@@ -6,7 +6,17 @@
 import { Worker } from 'node:worker_threads';
 import type { Database } from '../db.ts';
 import { loadCorpus } from './corpus.ts';
-import { latestFingerprint, loadServing, recordPromoted, recordRejected, type ModelRecord } from './registry.ts';
+import {
+  latestFingerprint,
+  loadServing,
+  recordCandidate,
+  recordPromoted,
+  recordRejected,
+  type ModelRecord,
+} from './registry.ts';
+import { loadSearchTraining } from '../search/ranker-data.ts';
+import { SEARCH_RANKER } from '../search/rankers.ts';
+import { SEARCH_RANKER_ALGORITHM, type SearchRankerInput, type SearchRankerResult } from './train-search-ranker.ts';
 import { ALGORITHM, type TrainingResult, type WorkerInput } from './train-embedding.ts';
 import { SPELLING_ALGORITHM, type SpellingInput, type SpellingResult } from './train-spelling.ts';
 import { loadRoutingExamples } from './routing-data.ts';
@@ -30,12 +40,17 @@ export const MIN_DOCUMENTS = 200;
 export type TrainingOutcome<R = TrainingResult> =
   | { status: 'skipped'; reason: string }
   | { status: 'rejected'; version: number; reason: string; result: R }
-  | { status: 'promoted'; version: number; reason: string; result: R };
+  | { status: 'promoted'; version: number; reason: string; result: R }
+  | { status: 'candidate'; version: number; reason: string; result: R };
+
+/** Recorded searches needed before a search-ranker run is attempted. */
+export const MIN_SEARCHES = 1000;
 
 export type WorkerJob =
   | { job: 'text-embedding'; input: WorkerInput }
   | { job: 'spelling'; input: SpellingInput }
-  | { job: 'routing'; input: RoutingInput };
+  | { job: 'routing'; input: RoutingInput }
+  | { job: 'search-ranker'; input: SearchRankerInput };
 
 /** Runs a job on a worker thread; the main thread stays free for requests. */
 function onWorker<R>(job: WorkerJob): Promise<R> {
@@ -55,6 +70,8 @@ function onWorker<R>(job: WorkerJob): Promise<R> {
 export const runOnWorker = (input: WorkerInput) => onWorker<TrainingResult>({ job: 'text-embedding', input });
 export const runSpellingOnWorker = (input: SpellingInput) => onWorker<SpellingResult>({ job: 'spelling', input });
 export const runRoutingOnWorker = (input: RoutingInput) => onWorker<RoutingResult>({ job: 'routing', input });
+export const runSearchRankerOnWorker = (input: SearchRankerInput) =>
+  onWorker<SearchRankerResult>({ job: 'search-ranker', input });
 
 interface Gated {
   decision: { promote: boolean; reason: string };
@@ -69,6 +86,8 @@ async function trainJob<D extends { size: number; fingerprint: string }, R exten
   load: () => Promise<D>,
   train: (data: D, serving: { version: number; artifact: Uint8Array } | null) => Promise<R>,
   describe: (result: R) => Omit<ModelRecord, 'name' | 'reason' | 'dataset'> & { dataset: Record<string, unknown> },
+  /** What passing the offline gate makes it: the serving version, or a candidate for online comparison. */
+  onPass: 'production' | 'candidate' = 'production',
 ): Promise<TrainingOutcome<R>> {
   const data = await load();
   if (data.size < minimum.count)
@@ -92,6 +111,10 @@ async function trainJob<D extends { size: number; fingerprint: string }, R exten
     reason: result.decision.reason,
   };
   if (result.decision.promote && result.artifact) {
+    if (onPass === 'candidate') {
+      const version = await recordCandidate(db, record, Buffer.from(result.artifact));
+      return { status: 'candidate', version, reason: result.decision.reason, result };
+    }
     const version = await recordPromoted(db, record, Buffer.from(result.artifact));
     return { status: 'promoted', version, reason: result.decision.reason, result };
   }
@@ -178,5 +201,36 @@ export function trainRoutingJob(
       metrics: { ...result.metrics, difference: result.decision.difference },
       baseline: result.baseline,
     }),
+  );
+}
+
+/**
+ * The learned search ranking (ADR 0015 part 6): from searches recorded under
+ * "improve search for everyone", not posts, so it isn't gated by the
+ * model_training consent. A model is a few hundred trees over result
+ * features, nothing about any person. Passing its offline gate makes it a
+ * candidate: online comparison (search/judge.ts) decides whether it serves.
+ */
+export function trainSearchRankerJob(
+  db: Pick<Database, 'asSystem'>,
+  options: { run?: (input: SearchRankerInput) => Promise<SearchRankerResult>; minSearches?: number } = {},
+): Promise<TrainingOutcome<SearchRankerResult>> {
+  return trainJob(
+    db,
+    SEARCH_RANKER,
+    { count: options.minSearches ?? MIN_SEARCHES, unit: 'recorded searches' },
+    async () => {
+      const loaded = await loadSearchTraining(db);
+      return { ...loaded, size: loaded.searches.length };
+    },
+    (data, serving) => (options.run ?? runSearchRankerOnWorker)({ searches: data.searches, serving }),
+    result => ({
+      algorithm: SEARCH_RANKER_ALGORITHM,
+      params: { ...result.params },
+      dataset: result.dataset,
+      metrics: { ...result.metrics, difference: result.decision.difference },
+      baseline: result.baseline,
+    }),
+    'candidate',
   );
 }

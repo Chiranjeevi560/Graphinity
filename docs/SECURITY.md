@@ -251,6 +251,29 @@ whenever a user-linked table is added.
   (consent before writing, the searcher's own search for opens) are defence in depth over the database
   and can't be told apart from it by any request.
 
+## Learning the search ranking (ADR 0015 part 6)
+
+- **Only recorded searches change.** Position-bias swaps (two neighbours among the top five, on a
+  tenth of recorded searches) and interleaving (two rankings mixed, on half of recorded searches
+  while a comparison runs) happen only for people with `search_improvement` on, and both are
+  disclosed on the privacy page. Visitors and everyone else see the serving ranking alone. Tested.
+- **Nothing serves without evidence.** A model passes an offline gate on people it never learned
+  from (IPS-NDCG@10, 99% paired bootstrap over people, gain of 0.01 or more), then waits as a
+  candidate until online interleaving shows a clear win (99%, at least 200 decided searches from 30
+  people, averaged per person so one heavy searcher can't decide). It is rejected on a clear loss or
+  after 28 days. After a promotion, the replaced version is compared for 14 days and restored if it
+  wins (automatic rollback). All behind the owner's `learned_search_ranking` switch, off by default.
+- **A model is a few hundred trees over result features:** nothing about any person. Training reads
+  everyone's recorded searches only in the job's system transaction; people appear hashed, only to
+  split and resample them.
+- **Registry integrity:** one candidate per model (unique index). A version's weights can be
+  removed but never replaced, by a database trigger, since the API role may now clear them. Every
+  artifact is checked against its SHA-256 before it serves. Tested.
+- **Gaming:** clicks are the signal, so fake accounts clicking could push a result. Bounded by the
+  per-person allowances, averaging per person in both gates, inverse-propensity clipping at 10, and
+  the owner's switch. Known gap: there is no detection of coordinated click accounts yet (part of the
+  fraud work).
+
 ## Question vectors (ADR 0015 part 5)
 
 - `app.question_embeddings` has row-level security forced. A request may only add the vector of a

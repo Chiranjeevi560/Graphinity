@@ -5,6 +5,7 @@ import { parentPort, workerData } from 'node:worker_threads';
 import { trainAndEvaluate } from './train-embedding.ts';
 import { trainRoutingAndEvaluate } from './train-routing.ts';
 import { trainSpellingAndEvaluate } from './train-spelling.ts';
+import { trainSearchRankerAndEvaluate } from './train-search-ranker.ts';
 import type { WorkerJob } from './training.ts';
 
 if (!parentPort) throw new Error('training-worker.ts runs only as a worker thread');
@@ -16,7 +17,9 @@ try {
       ? trainSpellingAndEvaluate(job.input)
       : job.job === 'routing'
         ? trainRoutingAndEvaluate(job.input)
-        : trainAndEvaluate(job.input);
+        : job.job === 'search-ranker'
+          ? trainSearchRankerAndEvaluate(job.input)
+          : trainAndEvaluate(job.input);
   port.postMessage({ ok: true, result }, result.artifact ? [result.artifact.buffer as ArrayBuffer] : []);
 } catch (err) {
   port.postMessage({ ok: false, error: err instanceof Error ? err.message : 'training failed' });

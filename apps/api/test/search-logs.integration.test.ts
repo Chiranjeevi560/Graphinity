@@ -3,7 +3,8 @@
 // moment it is turned off, even mid-write, and nothing for visitors.
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { Embedder } from '../src/embeddings.ts';
-import { improvementSince, purgeExpiredSearches, RANKER, recordSearch } from '../src/search/log.ts';
+import { improvementSince, purgeExpiredSearches, recordSearch } from '../src/search/log.ts';
+import { BASELINE_RANKER } from '../src/search/rankers.ts';
 import { startApp, type TestApp } from './helpers/app.ts';
 import { must } from './helpers/must.ts';
 
@@ -147,7 +148,7 @@ describe('recording searches', () => {
     expect(rows[0]).toEqual({
       query: 'customs duty camera',
       field: null,
-      ranker: RANKER,
+      ranker: BASELINE_RANKER,
       meaning_model: meaning.model,
       consent_version: 1,
       position: 1,
@@ -187,6 +188,9 @@ describe('recording searches', () => {
       meaningModel: null,
       shown: [],
       now: new Date(),
+      swap: null,
+      ranker: BASELINE_RANKER,
+      experiment: null,
     });
     expect(stale).toBeNull();
     expect(await recorded(p.id)).toEqual({ searches: 0, results: 0, opens: 0 });
@@ -254,6 +258,57 @@ describe('recording searches', () => {
       (await h.t.owner.query("SELECT consent_version FROM app.searches WHERE user_id = $1 AND ranker = 'test'", [p.id]))
         .rows,
     ).toEqual([{ consent_version: 1 }]);
+  });
+});
+
+describe('measuring position bias', () => {
+  it('swaps two neighbours only in recorded searches, and records where the ranker put each', async () => {
+    const swapping = await startApp(() => Date.now(), { embedder: meaning, searchRandom: () => 0 });
+    try {
+      const make = async (allow?: boolean) => {
+        const p = await swapping.person();
+        names += 1;
+        await swapping.call('POST', '/me/profile', p.token, {
+          handle: `swap.${String(names)}`,
+          country: 'IN',
+          fields: ['imports-customs'],
+          adult: true,
+        });
+        if (allow !== undefined)
+          await swapping.call('PUT', '/me/consents', p.token, {
+            choices: [{ category: 'search_improvement', enabled: allow }],
+          });
+        return p;
+      };
+      const asker = await make();
+      for (const title of ['Customs duty on a camera lens at Chennai airport?', 'Customs duty on a watch at Chennai?'])
+        await swapping.call('POST', '/questions', asker.token, { title, field: 'imports-customs' });
+      const run = async (token?: string) =>
+        (await swapping.call('POST', '/search', token, { query: 'customs duty camera lens' })).json<{
+          results: Array<{ id: string }>;
+          searchId?: string;
+        }>();
+      // Not recorded: shown exactly as ranked, never swapped.
+      const visitor = await run();
+      const off = await run((await make(false)).token);
+      expect(off.results.map(r => r.id)).toEqual(visitor.results.map(r => r.id));
+      // Recorded: the top two exchanged, and both orders written down.
+      const on = await make(true);
+      const swapped = await run(on.token);
+      expect(swapped.results.map(r => r.id)).toEqual([visitor.results[1]?.id, visitor.results[0]?.id]);
+      const { rows } = await swapping.t.owner.query(
+        `SELECT s.swap, r.position, r.ranked_position, r.question_id::text AS id
+         FROM app.searches s JOIN app.search_results r ON r.search_id = s.id
+         WHERE s.public_id = $1 ORDER BY r.position`,
+        [must(swapped.searchId)],
+      );
+      expect(rows).toEqual([
+        { swap: 1, position: 1, ranked_position: 2, id: visitor.results[1]?.id },
+        { swap: 1, position: 2, ranked_position: 1, id: visitor.results[0]?.id },
+      ]);
+    } finally {
+      await swapping.close();
+    }
   });
 });
 

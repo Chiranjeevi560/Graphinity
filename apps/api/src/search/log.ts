@@ -6,13 +6,15 @@
 import type { Database } from '../db.ts';
 import type { Found } from './engine.ts';
 
-/** The ranking that ordered the results, recorded with each search so learning knows what it saw. */
-export const RANKER = 'rrf-equal-v1';
-
 const DAY_MS = 86_400_000;
 
 export interface Shown {
+  /** Where it was shown, 1-based. */
   position: number;
+  /** Where the ranker put it, before any swap (the same when nothing was swapped). */
+  rankedPosition: number;
+  /** In an interleaved search, which ranker contributed it. */
+  team?: 'a' | 'b';
   found: Found;
 }
 
@@ -51,18 +53,33 @@ export async function recordSearch(
     now: Date;
     /** From improvementSince, read before the search began. */
     since: string;
+    /** The swapped neighbours' upper position, when this search measures position bias. */
+    swap: number | null;
+    /** The ranking that ordered the results (rankers.ts), so learning knows what it saw. */
+    ranker: string;
+    /** control/challenger when the results were interleaved. */
+    experiment: string | null;
   },
 ): Promise<string | null> {
   try {
     return await db.withUser(input.userId, async q => {
       // The consent version written here is replaced by the one the person accepted (trigger).
       const { rows } = await q.query<{ id: string; public_id: string }>(
-        `INSERT INTO app.searches (user_id, consent_version, query, field, ranker, meaning_model)
-         SELECT $1, s.policy_version, $2, $3, $4, $5
+        `INSERT INTO app.searches (user_id, consent_version, query, field, ranker, meaning_model, swap, experiment)
+         SELECT $1, s.policy_version, $2, $3, $4, $5, $7, $8
          FROM app.user_consent_settings s
          WHERE s.user_id = $1 AND s.category = 'search_improvement' AND s.enabled AND s.updated_at = $6::timestamptz
          RETURNING id::text AS id, public_id::text AS public_id`,
-        [input.userId, input.query, input.field, RANKER, input.meaningModel, input.since],
+        [
+          input.userId,
+          input.query,
+          input.field,
+          input.ranker,
+          input.meaningModel,
+          input.since,
+          input.swap,
+          input.experiment,
+        ],
       );
       const row = rows[0];
       if (!row) return null;
@@ -71,10 +88,13 @@ export async function recordSearch(
       const f = (s: Shown) => s.found;
       await q.query(
         `INSERT INTO app.search_results
-           (search_id, position, question_id, word_rank, meaning_rank, similarity, every_word, answer_count, answer_age_days)
-         SELECT $1, x.position, x.question_id, x.word_rank, x.meaning_rank, x.similarity, x.every_word, x.answer_count, x.age
-         FROM unnest($2::smallint[], $3::bigint[], $4::smallint[], $5::smallint[], $6::real[], $7::boolean[], $8::int[], $9::real[])
-           AS x(position, question_id, word_rank, meaning_rank, similarity, every_word, answer_count, age)`,
+           (search_id, position, ranked_position, team, question_id, word_rank, meaning_rank, similarity, every_word,
+            answer_count, answer_age_days)
+         SELECT $1, x.position, x.ranked, x.team, x.question_id, x.word_rank, x.meaning_rank, x.similarity,
+                x.every_word, x.answer_count, x.age
+         FROM unnest($2::smallint[], $10::smallint[], $11::text[], $3::bigint[], $4::smallint[], $5::smallint[],
+                     $6::real[], $7::boolean[], $8::int[], $9::real[])
+           AS x(position, ranked, team, question_id, word_rank, meaning_rank, similarity, every_word, answer_count, age)`,
         [
           id,
           input.shown.map(s => s.position),
@@ -88,6 +108,8 @@ export async function recordSearch(
             const at = f(s).lastAnsweredAt;
             return at ? Math.max(0, (input.now.getTime() - at.getTime()) / DAY_MS) : null;
           }),
+          input.shown.map(s => s.rankedPosition),
+          input.shown.map(s => s.team ?? null),
         ],
       );
       return row.public_id;

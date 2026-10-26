@@ -175,7 +175,10 @@ describe('the training job and the registry', () => {
   });
 
   it('refuses to serve weights that no longer match their hash', async () => {
+    // Damage below SQL (a disk, a restore): no update may replace weights (migration 0023), so it's simulated past that rule.
+    await t.owner.query('ALTER TABLE app.ml_models DISABLE TRIGGER ml_models_weights_fixed');
     await t.owner.query("UPDATE app.ml_models SET artifact = artifact || '\\x00'::bytea WHERE status = 'production'");
+    await t.owner.query('ALTER TABLE app.ml_models ENABLE TRIGGER ml_models_weights_fixed');
     await expect(loadServing(t.database, TEXT_EMBEDDING)).rejects.toThrow(/integrity check/);
   });
 

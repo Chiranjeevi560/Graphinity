@@ -19,6 +19,7 @@ import type { Speller } from './ml/spelling.ts';
 import { registerQuestionRoutes } from './routes/questions.ts';
 import { registerSearchRoutes } from './routes/search.ts';
 import { createSearchEngine } from './search/engine.ts';
+import type { Rankers } from './search/rankers.ts';
 import { registerConsentRoutes } from './routes/consent.ts';
 import { registerPersonalGraphRoutes } from './routes/personal-graph.ts';
 import { registerRecommendationRoutes } from './routes/recommendations.ts';
@@ -89,6 +90,10 @@ export interface Deps {
   recommendationsEnabled?: () => boolean;
   /** The search kill switch (POST /search). Defaults to on. */
   searchEnabled?: () => boolean;
+  /** Randomness for search's position-bias swaps (ADR 0015 part 6). Defaults to Math.random. */
+  searchRandom?: () => number;
+  /** The learned search rankings in service (ADR 0015 part 6). Defaults to none: fusion orders results. */
+  searchRankers?: () => Rankers;
   limits?: Limits;
   /** Where logs go. Defaults to stdout. */
   logStream?: { write(line: string): void };
@@ -304,6 +309,8 @@ export async function buildServer(deps: Deps) {
     limit: limits.search,
     eventLimit: limits.searchEvents,
     keySecret: config.ipHashKey,
+    ...(deps.searchRandom ? { random: deps.searchRandom } : {}),
+    ...(deps.searchRankers ? { rankers: deps.searchRankers } : {}),
   });
   registerLiveRoutes(app, { events, clock });
   registerModerationRoutes(app, { db });

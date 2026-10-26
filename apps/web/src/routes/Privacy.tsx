@@ -60,8 +60,9 @@ export default function Privacy() {
         <li>
           <strong>Searches.</strong> What you search for is sent to our server to find matches, never put in the page’s
           address. It is kept only if you turn on “Improve search for everyone”: then the search, the results you were
-          shown, which you opened and how long you read them, for at most a year, to rank results better. Turning it off
-          deletes all of it at once. Drafts you type while asking are never kept this way.
+          shown, which you opened and how long you read them, for at most a year, to rank results better. To learn
+          fairly, some of your searches show two neighbouring results swapped, or mix in a ranking being tried. Turning
+          it off deletes all of it at once and stops both. Drafts you type while asking are never kept this way.
         </li>
         <li>
           <strong>Network checks.</strong> To spot one person using several accounts, we keep a scrambled, one-way code
