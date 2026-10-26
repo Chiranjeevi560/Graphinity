@@ -7,6 +7,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Database } from '../db.ts';
 import { RULE_MODELS, ruleCredit, shapleyModel, type Path, type Touch } from '../ads/attribution.ts';
+import { MIN_PEOPLE } from '../ads/privacy.ts';
 import { TokenBuckets, type BucketOptions, type Clock } from '../rate-limit.ts';
 import { fail, pgCode, signedIn } from './common.ts';
 
@@ -182,12 +183,14 @@ export function registerAdMeasurementRoutes(
       const data = await db.asSystem(async q => {
         // Impressions are the system's alone: people's ad identities never reach a business.
         const totals = (
-          await q.query<{ impressions: number; clicks: number; spent: string }>(
-            `SELECT count(*)::int AS impressions, count(clicked_at)::int AS clicks, coalesce(sum(charged_micros), 0)::text AS spent
+          await q.query<{ people: number; impressions: number; clicks: number; spent: string }>(
+            // People: identities, and each untracked impression as its own (part 8's count).
+            `SELECT count(DISTINCT coalesce(ad_id::text, token::text))::int AS people, count(*)::int AS impressions,
+                    count(clicked_at)::int AS clicks, coalesce(sum(charged_micros), 0)::text AS spent
              FROM app.ad_impressions WHERE campaign_id = $1 AND shown_at > now() - interval '30 days'`,
             [found.id],
           )
-        ).rows[0] ?? { impressions: 0, clicks: 0, spent: '0' };
+        ).rows[0] ?? { people: 0, impressions: 0, clicks: 0, spent: '0' };
         // The business's conversions in 30 days, each with the click it came from.
         const conversions = (
           await q.query<{
@@ -218,10 +221,15 @@ export function registerAdMeasurementRoutes(
         ).rows;
         return { totals, conversions, seen };
       });
+      // Exact numbers over a handful of people would tell a business that knows its buyers who
+      // tapped (part 8): under MIN_PEOPLE, nothing is shown.
+      if (data.totals.people < MIN_PEOPLE)
+        return { report: { days: 30, belowMinimum: true, minimumPeople: MIN_PEOPLE } };
       const report = campaignReport(found.id, data.conversions, data.seen, Date.now());
       return {
         report: {
           days: 30,
+          belowMinimum: false,
           impressions: data.totals.impressions,
           clicks: data.totals.clicks,
           spentMicros: Number(data.totals.spent),

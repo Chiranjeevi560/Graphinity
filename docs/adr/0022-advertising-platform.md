@@ -2,7 +2,7 @@
 
 - **Status:** Accepted 2026-10-26. Parts 1–5 built (privacy foundation, interest graph,
   campaigns, serving and auction, click prediction), part 6 (conversion measurement and
-  attribution) and part 7 (audiences); 8–9 follow in order, each in its own change.
+  attribution), part 7 (audiences) and part 8 (private reporting); 9 follows, in its own changes.
 - **Owner decision (2026-10-26):** engineer a complete Google/Meta-class advertising platform.
   Implement only what is legal with the consent each jurisdiction requires. Build everything that
   needs legal approval, partners or infrastructure, but keep it switched off.
@@ -37,7 +37,7 @@ unless a jurisdiction-specific consent and a lawyer's approval allow more.
 | 5 | **Click prediction** | FTRL-Proximal on hashed impression features, gated against what serves on the newest impressions, promoted through the registry | **Built** |
 | 6 | Measurement and attribution | Click ids only under `ads_measurement`, API keys, conversions reported server to server (6a); multi-touch attribution models, benchmarked, and a report per campaign (6b) | **Built** |
 | 7 | Audiences | Segments from interest rules, ad reminders (retargeting) capped 3 a day and 7 a week and cooling with time, look-alikes (spherical k-means over a seed's interests with a popularity correction, benchmarked), every audience at least 100 people, behind `ads_audiences` | **Built** |
-| 8 | Reporting | Advertiser reports from aggregates only: suppressed small groups, differential-privacy noise, a privacy budget per advertiser | Planned |
+| 8 | Reporting | Advertiser reports by day, country, placement or audience over complete days: per-person clipping, fixed Laplace noise per cell (HMAC-seeded), cells under 25 people or 50 impressions suppressed, 2.0 ε per business per day; the 30-day report shows nothing under 25 people | **Built** |
 | 9 | Partner interfaces | OpenRTB 2.6 bid request/response adapters (DSPs, SSPs, exchanges), a partner tag (pixel) and SDK, a server-to-server conversion API; all behind their own switches | Planned |
 
 Fraud (invalid clicks and impressions) reuses the rate limits, the shared-network marks and
@@ -382,6 +382,60 @@ everything from looking like everyone.
 approximate nearest-neighbour query can't give. Scoring is O(people × K × topics), 74 ms at
 50,000; at 100 million it is a sharded batch job with a top-k heap per shard and a merge, which
 is also how the build would run there (`loadPeople` reads everyone into memory today).
+
+## Part 8, as built (migration 0037)
+
+**The threat:** a business that knows some of its customers compares reports (two date ranges, two
+breakdowns, the same query asked twice) to learn whether one particular person saw, tapped or
+bought. Every report goes through `POST /ads/reports/private`; the 30-day campaign report (part
+6b) shows nothing at all below 25 people.
+
+**How a report is made** (`src/ads/privacy.ts`, `src/routes/ad-reports.ts`):
+
+- **Cells:** one campaign, one complete UTC day, one breakdown value (the day itself, the reader's
+  country, the placement, or the audience that matched, recorded with each impression). Days still
+  under way are never released: the same fixed noise on a growing count would give away each
+  change exactly. Conversions count on the day they were *received*, which can't change once it's
+  over; the day of the sale can (a business may report it late).
+- **Clipping:** one person counts for at most 20 impressions, 3 clicks and 1 conversion in a cell.
+  An untracked viewer has no identity to clip by: each impression counts as its own person.
+- **Noise:** Laplace with scale Δ/ε, ε = 0.2 per metric, drawn from 53 bits of
+  HMAC-SHA256(secret, cell key and metric). Asking again returns the same number, so averaging
+  repeated answers removes nothing. The secret is 32 random bytes the server makes on first use,
+  readable by the system only.
+- **Suppression:** a cell is shown only with at least 25 people behind it (exact, a hard floor
+  the charter asks for) and at least 50 impressions after noise.
+- **Budget:** releasing a breakdown of a campaign's days costs 3 metrics × 0.2 × the cells one
+  person can be in (1 for day or country, 2 for placement, one per targeted audience); the days
+  are disjoint, so they compose in parallel and the release costs that once. A business has 2.0
+  per UTC day (`app.ad_privacy_budget_ledger`, `CHECK ≤ 2.0`); a breakdown already released costs
+  nothing again (`app.ad_report_releases`); `app.release_ad_report` does the accounting under an
+  advisory lock, as the system only. Laplace noise is pure ε-DP: δ stays 0. A breakdown finer than
+  one day's budget can hide (more than 3 audiences) is refused.
+
+**Benchmark** (`node scripts/benchmark-private-reports.mjs`, 2,000 cells per size, 4 impressions
+a person, 3% tapped, 10% of taps bought):
+
+| People in the cell | Suppressed | Median error: impressions | clicks | conversions |
+|---|---|---|---|---|
+| 25 | 31.6% | 43% | 100% | — |
+| 100 | 1.5% | 17.7% | 91.7% | 100% |
+| 1,000 | 0% | 1.8% | 9.2% | 25% |
+| 10,000 | 0% | 0.2% | 0.9% | 2.5% |
+| 100,000 | 0% | 0.0% | 0.1% | 0.3% |
+
+**Protection, measured:** an attacker who knows every click but one person's 3, and guesses from
+the noisy count, is right 54.88% of the time over 50,000 trials; the theoretical best for ε = 0.2
+is e^ε / (1 + e^ε) = 54.98%. With exact counts it would be right every time.
+
+**What this means for businesses:** small campaigns see little until they reach a few thousand
+people a day, as with the large platforms' own privacy-safe reporting; totals over many days are
+the sum of fixed per-day cells, so their noise grows only as the square root of the days.
+
+**Known limits:** the exact 25-person floor is not itself differentially private (whether a cell
+is shown depends on the true count); deleting an account turns its impressions untracked, which
+can change an already-released cell's clipping; both are small next to the noise and are kept
+for the charter's hard floor.
 
 ## Scale (100 million people)
 

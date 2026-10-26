@@ -377,6 +377,12 @@ whenever a user-linked table is added.
   "not counted". Click ids reach advertisers only for people who allow measurement. Known limit:
   a person who withdraws measurement can't recall click ids already handed to an advertiser (they
   name nobody); conversions against them still count until the 30-day window closes.
+- Private reporting (ADR 0022 part 8): businesses see only noised, clipped cells of complete UTC
+  days, never under 25 people; the noise is seeded by an HMAC over a 32-byte secret only the system
+  reads, so repeating a query reveals nothing new; a ledger caps each business at ε = 2.0 a day and
+  only the database function (as the system, under a lock) writes it. Measured: the strongest
+  single-person attacker is right 54.9% of the time (bound 55.0%). The 30-day campaign report shows
+  nothing under 25 people. Known limits are in the ADR (the exact floor; deleted accounts' clipping).
 - Audiences (ADR 0022 part 7): members are ad identities, written and read by the system's build
   job only; a business sees a status and a size rounded down to a hundred, nothing under 100
   (`CHECK` in the database, `insufficient` audiences store no members). A trigger refuses members

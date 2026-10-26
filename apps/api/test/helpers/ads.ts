@@ -3,6 +3,7 @@
 // (refreshed on demand), and helpers for people, live campaigns and
 // questions. Each world's campaigns bid a little more than the last, so the
 // one under test wins its auction against those earlier tests left running.
+import { randomUUID } from 'node:crypto';
 import { expect } from 'vitest';
 import { createAdServer } from '../../src/ads/serve.ts';
 import { startApp, type TestApp } from './app.ts';
@@ -103,4 +104,48 @@ export async function startAdWorld(prefix: string, flags: readonly string[] = ['
       on = value;
     },
   };
+}
+
+/**
+ * `n` people made straight in the database (the API would take minutes), each with a topic,
+ * the given decayed interests and country, an ad identity, and, unless `allows` is false, a yes
+ * to personalized ads. Returns their profile and ad ids.
+ */
+export async function crowd(
+  w: { h: TestApp },
+  n: number,
+  interests: Record<string, number>,
+  country = 'IN',
+  allows = true,
+) {
+  const ids = Array.from({ length: n }, () => randomUUID());
+  const tag = randomUUID().slice(0, 8);
+  const o = w.h.t.owner;
+  // A profile needs a topic by commit: both in one statement.
+  await o.query(
+    `WITH p AS (
+       INSERT INTO app.profiles (id, handle, country, adult_confirmed_at)
+       SELECT id, 'crowd' || $2 || '.' || ord, $3, now() FROM unnest($1::uuid[]) WITH ORDINALITY AS t(id, ord)
+       RETURNING id)
+     INSERT INTO app.profile_fields (profile_id, field) SELECT id, 'travel' FROM p`,
+    [ids, tag, country],
+  );
+  if (allows)
+    await o.query(
+      `INSERT INTO app.user_consent_settings (user_id, category, enabled, policy_version)
+       SELECT id, 'ads_personalization', true, c.policy_version FROM unnest($1::uuid[]) AS t(id)
+       JOIN app.consent_categories c ON c.name = 'ads_personalization'`,
+      [ids],
+    );
+  await o.query('INSERT INTO app.ad_identities (profile_id) SELECT unnest($1::uuid[])', [ids]);
+  for (const [field, score] of Object.entries(interests))
+    await o.query(
+      `INSERT INTO app.ad_interests (ad_id, field, score)
+       SELECT ad_id, $2, $3 FROM app.ad_identities WHERE profile_id = ANY($1)`,
+      [ids, field, score],
+    );
+  const adIds = (
+    await o.query<{ ad_id: string }>('SELECT ad_id::text FROM app.ad_identities WHERE profile_id = ANY($1)', [ids])
+  ).rows.map(r => r.ad_id);
+  return { ids, adIds };
 }

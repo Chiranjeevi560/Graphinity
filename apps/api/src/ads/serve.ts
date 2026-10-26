@@ -261,12 +261,14 @@ export interface AdServer {
 
 export function createAdServer(db: Pick<Database, 'asSystem'>): AdServer {
   let index: CampaignIndex = indexCampaigns([]);
+  let byId = new Map<string, IndexedCampaign>();
   let size = 0;
   let loadedAt = -Infinity;
   let model: FtrlServing | null = null;
   const refresh = async () => {
     const campaigns = await db.asSystem(loadIndex);
     index = indexCampaigns(campaigns);
+    byId = new Map(campaigns.map(c => [c.id, c]));
     size = campaigns.length;
     // The promoted click model, checked against its stored hash; none until one earns its place.
     const serving = await loadServing(db, AD_CTR);
@@ -365,11 +367,24 @@ export function createAdServer(db: Pick<Database, 'asSystem'>): AdServer {
         for (const w of wins) {
           const cr = creatives.get(w.creativeId);
           if (!cr) continue;
+          // For private reports (part 8): the reader's country, and which of the campaign's
+          // audiences they were reached through.
+          const audience = [...(byId.get(w.campaignId)?.targets.get('audience') ?? [])].find(a => audiences?.has(a));
           const token = (
             await q.query<{ token: string }>(
-              `INSERT INTO app.ad_impressions (campaign_id, creative_id, ad_id, placement, price_micros, field)
-               VALUES ($1, $2, $3, $4, $5, $6) RETURNING token::text`,
-              [w.campaignId, w.creativeId, adId, placement, w.priceMicros, fields[0] ?? null],
+              `INSERT INTO app.ad_impressions (campaign_id, creative_id, ad_id, placement, price_micros, field, country, audience_id)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, (SELECT id FROM app.ad_audiences WHERE public_id = $8))
+               RETURNING token::text`,
+              [
+                w.campaignId,
+                w.creativeId,
+                adId,
+                placement,
+                w.priceMicros,
+                fields[0] ?? null,
+                person?.country ?? null,
+                audience ?? null,
+              ],
             )
           ).rows[0]?.token;
           if (token)
