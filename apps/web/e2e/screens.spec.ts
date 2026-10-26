@@ -1,6 +1,6 @@
 // Every screen, measured against the quality bar (helpers.ts, audit).
 import {
-  answerPrivacyUpdateWhenAsked,
+  answerConsentWhenAsked,
   audit,
   clearConsoleErrors,
   consoleErrors,
@@ -138,7 +138,7 @@ test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
   await page.getByRole('button', { name: 'Imports & Customs' }).click();
   await page.getByText('I’m 18 or older').click();
   await audit(page, 'welcome 3: fields');
-  const answered = answerPrivacyUpdateWhenAsked(page);
+  const answered = answerConsentWhenAsked(page);
   await page.getByRole('button', { name: 'Create profile' }).click();
 
   await expect(page.getByRole('link', { name: `Your profile, @${handle}` })).toBeVisible();
@@ -234,7 +234,7 @@ test('every screen meets the bar', async ({ page, browserName }, testInfo) => {
   await page.getByRole('button', { name: 'Continue' }).click();
   await page.getByRole('button', { name: 'Imports & Customs' }).click();
   await page.getByText('I’m 18 or older').click();
-  const answeredToo = answerPrivacyUpdateWhenAsked(page);
+  const answeredToo = answerConsentWhenAsked(page);
   await page.getByRole('button', { name: 'Create profile' }).click();
   await expect(page).toHaveURL(new RegExp(`${questionUrl}$`));
   await answeredToo.done;

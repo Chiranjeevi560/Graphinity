@@ -1,0 +1,46 @@
+/* The welcome consent screen (ADR 0023): three answers of exactly equal size and weight. */
+.consent-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  width: 100%;
+}
+.consent-actions .btn {
+  padding: 0 var(--space-2);
+  white-space: normal;
+  line-height: 1.2;
+}
+.consent-list {
+  /* Block layout: rows keep their full height (a grid or flex column squeezed them to the minimum). */
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  max-height: 45vh;
+  overflow-y: auto;
+}
+.consent-list legend {
+  padding: 0;
+  margin-bottom: var(--space-2);
+}
+.dialog .consent-choice {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  margin-bottom: var(--space-1);
+  align-items: start;
+  /* Overrides the settings page's flex gap, which would also part title and description. */
+  gap: 0 var(--space-3);
+  min-height: var(--tap);
+  padding: var(--space-2) 0;
+  cursor: pointer;
+}
+.dialog .consent-choice input {
+  grid-row: span 2;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-top: 0.125rem;
+  accent-color: var(--accent);
+}
+.consent-purpose {
+  grid-column: 2;
+}

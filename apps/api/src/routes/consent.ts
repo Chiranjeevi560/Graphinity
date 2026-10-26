@@ -25,6 +25,8 @@ const choicesSchema = {
         },
       },
     },
+    // Where the choice was made: the welcome screen records 'onboarding' in the history.
+    source: { type: 'string', enum: ['settings', 'onboarding'] },
   },
 } as const;
 
@@ -33,24 +35,31 @@ export function registerConsentRoutes(app: FastifyInstance, deps: ConsentDeps) {
   app.get('/me/consents', { config: { auth: 'required' } }, async req => {
     const user = signedIn(req);
     return deps.db.withUser(user.id, async q => {
-      const { rows } = await q.query<{ name: string; awaitingAnswer: boolean } & Record<string, unknown>>(
+      const { rows } = await q.query<
+        { name: string; awaitingAnswer: boolean; unanswered: boolean } & Record<string, unknown>
+      >(
         `SELECT c.name, c.purpose, c.data_description AS "dataDescription", c.retention,
                 c.recipients, c.policy_version AS "policyVersion",
                 c.required_for_service AS "requiredForService",
                 COALESCE(s.enabled, c.required_for_service) AS enabled,
                 s.updated_at AS "updatedAt",
                 -- Asked once (migration 0019): waiting while the person has never answered it.
-                (c.prompt_once AND s.user_id IS NULL) AS "awaitingAnswer"
+                (c.prompt_once AND s.user_id IS NULL) AS "awaitingAnswer",
+                -- Optional and never answered (rows here are only purposes put to this person).
+                (NOT c.required_for_service AND s.user_id IS NULL) AS unanswered
          FROM app.consent_categories c
          LEFT JOIN app.user_consent_settings s ON s.category = c.name AND s.user_id = $1
-         -- Purposes not offered now (advertising while it's off, migration 0029) are left out,
-         -- unless the person has one on: they can always turn it off.
-         WHERE app.consent_offered(c.name) OR coalesce(s.enabled, false)
+         -- Purposes not put to this person (advertising while it's off, or not approved for
+         -- their country: migrations 0029, 0035) are left out, unless they have one on: they
+         -- can always turn it off.
+         WHERE app.consent_offered_for($1, c.name) OR coalesce(s.enabled, false)
          ORDER BY c.required_for_service DESC, c.name`,
         [user.id],
       );
       return {
-        categories: rows,
+        categories: rows.map(({ unanswered: _, ...rest }) => rest),
+        // Optional purposes this person has never answered: what the welcome screen asks about.
+        unanswered: rows.filter(r => r.unanswered).map(r => r.name),
         // The one-time privacy update: purposes to ask about now. Any answer, yes or no, is recorded
         // through PUT, after which they never appear here again.
         awaitingAnswer: rows
@@ -80,7 +89,10 @@ export function registerConsentRoutes(app: FastifyInstance, deps: ConsentDeps) {
     { config: { auth: 'required', write: true }, schema: { body: choicesSchema } },
     async (req, reply) => {
       const user = signedIn(req);
-      const { choices } = req.body as { choices: Array<{ category: string; enabled: boolean }> };
+      const { choices, source = 'settings' } = req.body as {
+        choices: Array<{ category: string; enabled: boolean }>;
+        source?: 'settings' | 'onboarding';
+      };
       if (new Set(choices.map(choice => choice.category)).size !== choices.length) {
         return fail(reply, 400, 'duplicate_consent_category', 'Choose each data use only once.');
       }
@@ -92,9 +104,9 @@ export function registerConsentRoutes(app: FastifyInstance, deps: ConsentDeps) {
           required_for_service: boolean;
           offered: boolean;
         }>(
-          `SELECT name, policy_version, required_for_service, app.consent_offered(name) AS offered
+          `SELECT name, policy_version, required_for_service, app.consent_offered_for($2, name) AS offered
            FROM app.consent_categories WHERE name = ANY($1::text[])`,
-          [choices.map(choice => choice.category)],
+          [choices.map(choice => choice.category), user.id],
         );
         if (categories.rows.length !== choices.length) return { error: 'unknown' as const };
         const offered = new Map(categories.rows.map(c => [c.name, c.offered]));
@@ -111,20 +123,20 @@ export function registerConsentRoutes(app: FastifyInstance, deps: ConsentDeps) {
           if (!category) return { error: 'unknown' as const };
           const { rows } = await q.query<{ category: string }>(
             `INSERT INTO app.user_consent_settings (user_id, category, enabled, policy_version, source)
-             VALUES ($1, $2, $3, $4, 'settings')
+             VALUES ($1, $2, $3, $4, $5)
              ON CONFLICT (user_id, category) DO UPDATE SET
                enabled = EXCLUDED.enabled, policy_version = EXCLUDED.policy_version,
                source = EXCLUDED.source, updated_at = now()
              WHERE app.user_consent_settings.enabled IS DISTINCT FROM EXCLUDED.enabled
                 OR app.user_consent_settings.policy_version IS DISTINCT FROM EXCLUDED.policy_version
              RETURNING category`,
-            [user.id, choice.category, choice.enabled, category.policy_version],
+            [user.id, choice.category, choice.enabled, category.policy_version, source],
           );
           if (rows.length) {
             await q.query(
               `INSERT INTO app.user_consent_audit_log (user_id, category, enabled, policy_version, source)
-               VALUES ($1, $2, $3, $4, 'settings')`,
-              [user.id, choice.category, choice.enabled, category.policy_version],
+               VALUES ($1, $2, $3, $4, $5)`,
+              [user.id, choice.category, choice.enabled, category.policy_version, source],
             );
             changed += 1;
           }

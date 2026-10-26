@@ -45,6 +45,80 @@ describe('consent controls', () => {
     expect((await read()).awaitingAnswer).toEqual([]);
   });
 
+  it('lists every optional use never answered, until it is, whatever the answer and wherever it was given', async () => {
+    const person = await createPerson('consent.welcome');
+    type Consents = { unanswered: string[]; categories: Array<{ name: string; requiredForService: boolean }> };
+    const read = async () => (await h.call('GET', '/me/consents', person.token)).json<Consents>();
+    const first = await read();
+    const optional = first.categories.filter(c => !c.requiredForService).map(c => c.name);
+    expect(first.unanswered.sort()).toEqual(optional.sort());
+    expect(first.unanswered).not.toContain('identity');
+    // Ad purposes aren't offered while advertising is off.
+    expect(first.unanswered.some(n => n.startsWith('ads_'))).toBe(false);
+    const [one, ...rest] = first.unanswered;
+    await h.call('PUT', '/me/consents', person.token, {
+      source: 'onboarding',
+      choices: [{ category: one, enabled: true }],
+    });
+    expect((await read()).unanswered.sort()).toEqual(rest.sort());
+    await h.call('PUT', '/me/consents', person.token, {
+      source: 'onboarding',
+      choices: rest.map(category => ({ category, enabled: false })),
+    });
+    expect((await read()).unanswered).toEqual([]);
+    const { rows } = await h.t.owner.query<{ source: string }>(
+      'SELECT DISTINCT a.source FROM app.user_consent_audit_log a WHERE a.user_id = $1',
+      [person.id],
+    );
+    expect(rows.map(r => r.source)).toEqual(['onboarding']);
+    expect(
+      (
+        await h.call('PUT', '/me/consents', person.token, {
+          source: 'partner',
+          choices: [{ category: one, enabled: false }],
+        })
+      ).statusCode,
+    ).toBe(400);
+  });
+
+  it('puts an ad purpose to a person only where their country’s rule is approved and allows it', async () => {
+    const [india, usa] = [await createPerson('consent.in'), await createPerson('consent.us')];
+    await h.t.owner.query('UPDATE app.profiles SET country = $2 WHERE id = $1', [usa.id, 'US']);
+    const unanswered = async (token: string) =>
+      (await h.call('GET', '/me/consents', token)).json<{ unanswered: string[] }>().unanswered;
+    await h.t.owner.query("UPDATE app.feature_flags SET enabled = true WHERE name = 'ads'");
+    try {
+      // On, but no lawyer has approved any rule yet: not asked, and can't be switched on.
+      expect((await unanswered(india.token)).filter(n => n.startsWith('ads_'))).toEqual([]);
+      const allow = (token: string) =>
+        h.call('PUT', '/me/consents', token, { choices: [{ category: 'ads_measurement', enabled: true }] });
+      expect((await allow(india.token)).statusCode).toBe(400);
+      await h.t.owner.query(
+        "UPDATE app.ad_jurisdiction_rules SET legal_approved = true WHERE purpose = 'ads_measurement'",
+      );
+      await h.t.owner.query(
+        "INSERT INTO app.ad_jurisdiction_rules (country, purpose, basis, legal_approved) VALUES ('US', 'ads_measurement', 'prohibited', true)",
+      );
+      expect(await unanswered(india.token)).toContain('ads_measurement');
+      expect(await unanswered(usa.token)).not.toContain('ads_measurement');
+      expect((await allow(usa.token)).statusCode).toBe(400);
+      // The database refuses it too, whoever asks.
+      await expect(
+        h.t.database.withUser(usa.id, q =>
+          q.query(
+            "INSERT INTO app.user_consent_settings (user_id, category, enabled, policy_version) VALUES ($1, 'ads_measurement', true, 1)",
+            [usa.id],
+          ),
+        ),
+      ).rejects.toThrow(/not offered/);
+      expect((await allow(india.token)).statusCode).toBe(200);
+    } finally {
+      await h.t.owner.query('DELETE FROM app.ad_jurisdiction_rules WHERE country IS NOT NULL');
+      await h.t.owner.query('UPDATE app.ad_jurisdiction_rules SET legal_approved = false');
+      await h.t.owner.query("UPDATE app.feature_flags SET enabled = false WHERE name = 'ads'");
+    }
+  });
+
   it('describes what really happens: nothing goes to an outside AI, and when reading time is measured', async () => {
     const person = await createPerson('consent.text');
     const categories = (await h.call('GET', '/me/consents', person.token)).json<{
