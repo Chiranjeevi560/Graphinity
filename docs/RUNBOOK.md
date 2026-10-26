@@ -159,6 +159,15 @@ The API can read the flags but never change them. If the database can't be reach
 the last values they read. A new flag is a migration (see `0002_feature_flags.sql`) plus its name
 in `apps/api/src/flags.ts`.
 
+### Measuring search
+
+- `node scripts/benchmark-search.mjs [questions]`: quality and per-stage latency, engine only.
+- `node scripts/load-search.mjs [questions]`: the real server under 1, 8 and 32 concurrent searches.
+- `node scripts/benchmark-ann.mjs`: index recall and speed.
+- `node scripts/benchmark-ltr.mjs`: learning from clicks.
+
+Each needs `npm run db:start`, creates its own scratch database and drops it.
+
 ### The learned search ranking
 
 Training runs daily (logged as `model training`, model `search-ranker`). The judge runs hourly while

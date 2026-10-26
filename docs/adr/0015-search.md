@@ -1,8 +1,8 @@
 # ADR 0015: Search, built in measured slices
 
 - **Status:** In progress. Part 1 (consent) accepted and built 2026-10-25. Part 2 (the engine)
-  part 5 (ANN), part 3 (search logs), part 4 (the Search screen) and part 6 (learning the ranking)
-  built 2026-10-26. Later parts are recorded here as they land.
+  part 5 (ANN), part 3 (search logs), part 4 (the Search screen), part 6 (learning the ranking) and part 7 (load
+  tests, locally) built 2026-10-26. Later parts are recorded here as they land.
 - **Owner decisions (2026-10-25):**
   1. **Both surfaces, one engine:** a Search screen and the Ask screen's "has this been asked?"
      check.
@@ -222,6 +222,30 @@ The 6 survivors of 23 rules broken on purpose are layers that another layer also
 
 - the API's own checks over the database's;
 - the own-rows check, which the invoker-run consent check already implies.
+
+## Part 7: load tests (locally)
+
+`node scripts/load-search.mjs`:
+
+- **What it runs:** the real API server (`buildServer`) over a seeded 100,000-question database (the
+  benchmark's own seeding), driven over HTTP for 10 s at each concurrency.
+- **Who searches:** visitors, and signed-in people with recording on (the heaviest path).
+- **Limits:** rate limits raised, so it measures the engine, not the limiter. The client shares the
+  server's Node process, so throughput is a lower bound.
+
+| 100,000 questions | 1 at a time: req/s, p50 / p95 | 8 at a time | 32 at a time |
+|---|---|---|---|
+| `POST /search`, visitor | 47, 23 / 27 ms | 190, 43 / 57 ms | 184, 178 / 195 ms |
+| `POST /search`, recorded | 43, 26 / 30 ms | 169, 48 / 64 ms | 166, 191 / 233 ms |
+| `POST /questions/precheck` | 93, 11 / 14 ms | 366, 22 / 28 ms | 362, 88 / 99 ms |
+
+- **No errors at any level.** The process (client included) held about 320 MB throughout.
+- **Throughput levels off** at about 190 searches a second, set by the server's 5-connection database
+  pool: past 8 concurrent searches, requests queue. That is far above anything a free single instance
+  will see.
+- **One person at a time,** the whole HTTP round trip is 23 ms p50, inside the 30 ms target.
+- **Not measured:** the deployed services. Render's free instance has a fraction of one CPU, so
+  latencies there will be higher; this runs after the branch is merged and deployed.
 
 ## Part 6: learning the ranking from consented searches (migration 0023, schema 38)
 
@@ -443,4 +467,5 @@ What this shows:
    - fresh held-out data per attempt;
    - synonyms from training users only, with a margin, excluding precheck keystrokes, with a
      5-account minimum and account-age limits.
-7. **Load tests** against p50 < 30 ms and p95 < 100 ms, locally and on the deployed services.
+7. ~~Load tests~~: built and run locally (above). The deployed services are measured after
+   deployment.

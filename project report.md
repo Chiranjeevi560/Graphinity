@@ -350,3 +350,7 @@ Found, not yet fixed: at 100k questions the meaning stage (unchanged, already us
 - Benchmark with known true relevance: NDCG@10 0.877 against 0.639 for today's fusion and 0.830 for a linear ranker at 50,000 searches; propensities estimated from the swaps give the same result (0.876). At 2,000 searches the trees don't yet significantly beat the linear ranker; at 10,000 and up they do.
 - Promotion only by evidence: an offline gate on held-out people (99%), then a candidate compared online by team-draft interleaving (99%, per person), rejected on a loss or after 28 days, and rolled back automatically if the version it replaced wins within 14 days. Behind the owner's `learned_search_ranking` switch, off by default.
 - 34 new tests; 24 rules broken on purpose, all caught. Not verified on real searches: the first model needs about 50,000 recorded searches.
+
+## Search, part 7: load tests (2026-10-26, Claude)
+
+- `scripts/load-search.mjs` drives the real server over HTTP at 100,000 questions: 190 searches a second at 8 concurrent (p95 57 ms), 23 ms p50 one at a time, no errors, flat memory. Throughput is set by the 5-connection database pool. Not yet measured on the deployed services (after merge and deploy).
