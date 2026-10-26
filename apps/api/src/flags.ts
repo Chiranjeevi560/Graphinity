@@ -25,6 +25,18 @@ export const FLAG_DEFAULTS = {
   routing_exploration: false,
   /** A learned search ranking serves and is compared online (ADR 0015 part 6); the owner turns it on. */
   learned_search_ranking: false,
+  /** The advertising platform (ADR 0022): every part below is off until the owner turns it on. */
+  ads: false,
+  /** Ads chosen from a person's consented interests, not only the page. */
+  ads_behavioral: false,
+  /** Conversion measurement and attribution. */
+  ads_measurement: false,
+  /** One advertising profile across a person's signed-in devices. */
+  ads_cross_device: false,
+  /** The partner tag and conversion API for advertisers' sites. */
+  ads_partner_sites: false,
+  /** Real-time bidding with outside exchanges and bidders. */
+  ads_rtb: false,
 } as const;
 
 export type FlagName = keyof typeof FLAG_DEFAULTS;

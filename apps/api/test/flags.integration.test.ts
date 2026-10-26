@@ -17,6 +17,13 @@ describe('feature flags', () => {
       'SELECT name, enabled FROM app.feature_flags ORDER BY name',
     );
     expect(rows).toEqual([
+      // The advertising platform, every part off until the owner and a lawyer say otherwise (ADR 0022).
+      { name: 'ads', enabled: false },
+      { name: 'ads_behavioral', enabled: false },
+      { name: 'ads_cross_device', enabled: false },
+      { name: 'ads_measurement', enabled: false },
+      { name: 'ads_partner_sites', enabled: false },
+      { name: 'ads_rtb', enabled: false },
       { name: 'embeddings', enabled: true },
       // Off until the owner chooses: who gets notified is their decision (ADR 0013).
       { name: 'learned_routing', enabled: false },
