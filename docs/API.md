@@ -407,6 +407,14 @@ and the platform is on. `DELETE /me/ad-interests/:field` (counts as a write) rem
 (`{ removed: { field } }`, 404 `not_found` if absent). The data export includes `adInterests`.
 
 
+### Ads on a page (ADR 0022 part 4)
+
+- `POST /ads/select` `{ placement: 'search' | 'question', questionId?, query?, field? }` (signed in optional)
+  → `{ ads: [{ token, headline, body, domain, advertiser, label: 'Sponsored' }] }`. Empty while advertising is off,
+  and for a hidden question. Asked for on its own: no knowledge response ever includes ads.
+- `POST /ads/click/:token` → `{ destination }`; counted once, charged only when valid; 404 `not_found`
+  when unknown, older than an hour, or advertising is off. Both have their own rate limit (429).
+
 ### Advertising: advertisers, campaigns, ads, targeting (ADR 0022 part 3)
 
 Everything here answers 404 `ads_off` while the `ads` switch is off. Money is in micro-units of the

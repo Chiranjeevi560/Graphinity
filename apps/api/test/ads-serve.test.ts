@@ -1,0 +1,107 @@
+import { describe, expect, it } from 'vitest';
+import {
+  choose as chooseFrom,
+  indexCampaigns,
+  matches,
+  type AdContext,
+  type IndexedCampaign,
+} from '../src/ads/serve.ts';
+
+const choose = (cs: IndexedCampaign[], ctx: AdContext, seen: Map<string, number>, now: number) =>
+  chooseFrom(indexCampaigns(cs), ctx, seen, now);
+
+const campaign = (
+  id: string,
+  targets: Record<string, string[]> = {},
+  over: Partial<IndexedCampaign> = {},
+): IndexedCampaign => ({
+  id,
+  advertiser: `Business ${id}`,
+  advertiserId: `a${id}`,
+  maxCpcMicros: 1_000_000,
+  dailyBudgetMicros: 100_000_000,
+  frequencyCap: 3,
+  spentMicros: 0,
+  impressions: 0,
+  clicks: 0,
+  creatives: [
+    { id: `${id}-1`, headline: 'Ferries to the islands', body: 'Daily boats.', domain: 'ferries.example.in' },
+  ],
+  targets: new Map(Object.entries(targets).map(([k, v]) => [k, new Set(v)])),
+  ...over,
+});
+const ctx = (over: Partial<AdContext> = {}): AdContext => ({
+  placement: 'search',
+  fields: ['travel'],
+  words: ['ferry', 'goa'],
+  country: 'IN',
+  interests: null,
+  ...over,
+});
+const noon = Date.UTC(2026, 9, 26, 12);
+
+describe('targeting', () => {
+  it('needs every kind a campaign uses to match, any value within a kind', () => {
+    expect(matches(campaign('1'), ctx())).toBe(true);
+    expect(matches(campaign('1', { field: ['travel', 'money-tax'] }), ctx())).toBe(true);
+    expect(matches(campaign('1', { field: ['money-tax'] }), ctx())).toBe(false);
+    expect(matches(campaign('1', { field: ['travel'], keyword: ['visa'] }), ctx())).toBe(false);
+    expect(matches(campaign('1', { keyword: ['goa'], country: ['IN'] }), ctx())).toBe(true);
+    // No country known (signed out): country-targeted campaigns don't serve.
+    expect(matches(campaign('1', { country: ['IN'] }), ctx({ country: null }))).toBe(false);
+  });
+
+  it('matches interests only for a reader who allows personalized ads', () => {
+    const c = campaign('1', { interest: ['travel'] });
+    expect(matches(c, ctx({ interests: null }))).toBe(false);
+    expect(matches(c, ctx({ interests: new Set(['money-tax']) }))).toBe(false);
+    expect(matches(c, ctx({ interests: new Set(['travel']) }))).toBe(true);
+  });
+});
+
+describe('the index', () => {
+  it('finds exactly what scanning every campaign would (property, 300 contexts)', () => {
+    const fields = ['travel', 'money-tax', 'health', 'imports-customs'];
+    const all = Array.from({ length: 60 }, (_, i) =>
+      campaign(
+        String(i),
+        i % 5 === 0 ? {} : { field: [fields[i % 4] ?? 'travel', ...(i % 7 === 0 ? ['health'] : [])] },
+      ),
+    );
+    const index = indexCampaigns(all);
+    for (let t = 0; t < 300; t++) {
+      const c = ctx({ fields: fields.filter((_, j) => (t >> j) & 1) });
+      const byScan = all
+        .filter(x => matches(x, c))
+        .map(x => x.id)
+        .sort();
+      const viaIndex = [...new Set([...index.anyField, ...c.fields.flatMap(f => index.byField.get(f) ?? [])])]
+        .filter(x => matches(x, c))
+        .map(x => x.id)
+        .sort();
+      expect(viaIndex).toEqual(byScan);
+    }
+  });
+});
+
+describe('choosing', () => {
+  it('leaves out campaigns ahead of their pacing or at their cap, and fills the placement’s slots', () => {
+    const fresh = campaign('fresh');
+    const ahead = campaign('ahead', {}, { spentMicros: 90_000_000 });
+    const capped = campaign('capped', {}, { frequencyCap: 1 });
+    const other = campaign('other', {}, { maxCpcMicros: 500_000 });
+    const picked = choose([fresh, ahead, capped, other], ctx(), new Map([['capped', 1]]), noon);
+    expect(picked.wins.map(w => w.campaignId)).toEqual(['fresh', 'other']);
+    expect(picked.creatives.get('fresh-1')?.advertiser).toBe('Business fresh');
+    // A question page has one slot.
+    expect(choose([fresh, other], ctx({ placement: 'question' }), new Map(), noon).wins).toHaveLength(1);
+  });
+
+  it('prefers the campaign people click more, at equal bids, once there is evidence', () => {
+    const clicked = campaign('clicked', {}, { impressions: 2000, clicks: 120 });
+    const ignored = campaign('ignored', {}, { impressions: 2000, clicks: 4 });
+    expect(choose([ignored, clicked], ctx({ placement: 'question' }), new Map(), noon).wins[0]?.campaignId).toBe(
+      'clicked',
+    );
+  });
+});

@@ -1,7 +1,7 @@
 # ADR 0022: The advertising platform, consent-gated and off by default
 
-- **Status:** Accepted 2026-10-26. Parts 1–3 built (privacy foundation, interest graph,
-  campaigns); parts 4–9 follow in order, each in its own change.
+- **Status:** Accepted 2026-10-26. Parts 1–4 built (privacy foundation, interest graph,
+  campaigns, serving and auction); parts 5–9 follow in order, each in its own change.
 - **Owner decision (2026-10-26):** engineer a complete Google/Meta-class advertising platform.
   Implement only what is legal with the consent each jurisdiction requires. Build everything that
   needs legal approval, partners or infrastructure, but keep it switched off.
@@ -32,7 +32,7 @@ unless a jurisdiction-specific consent and a lawyer's approval allow more.
 | 1 | **Privacy foundation** | Ad consent purposes; the law per country; pseudonymous ad identities; switches; one permission function | **Built (this change)** |
 | 2 | **Interest graph** | Topic scores per ad identity from searches and reads while `ads_personalization` is permitted; halve every 30 days; never the words | **Built** |
 | 3 | **Campaigns** | Advertisers and their staff, campaigns with budgets in micro-units and frequency caps, plain-text ads reviewed by moderators outside the business, contextual and interest targeting | **Built** |
-| 4 | Serving and auction | Candidate selection by targeting; eCPM = bid × predicted click rate × quality; generalized second-price auction with reserve; budget pacing; frequency capping; sponsored units returned apart from results and labelled | Planned |
+| 4 | **Serving and auction** | Candidates by targeting from an in-memory index; generalized second-price auction on bid × predicted click rate with a reserve; pacing; frequency caps only for people tracked by their choice; clicks charged once, only when valid; ads asked for apart from knowledge results | **Built** |
 | 5 | Click prediction | Logistic regression on hashed features, learned online (FTRL-Proximal, McMahan et al. 2013), calibrated, benchmarked against simpler baselines; through the model registry with gates and drift monitoring | Planned |
 | 6 | Measurement and attribution | Impressions, clicks, conversions under `ads_measurement`; last-click, linear, time-decay, position-based and data-driven (Shapley) attribution, benchmarked | Planned |
 | 7 | Audiences | Segments from interest rules, retargeting lists, lookalikes (nearest neighbours of a seed audience's interest vectors), every audience above a minimum size | Planned |
@@ -152,6 +152,54 @@ identity's handful of rows.
   (part 4).
 
 **Switch:** nothing can be created while `ads` is off, in the API (404 `ads_off`) and the database.
+
+## Part 4, as built (migration 0032)
+
+**Where ads come from:**
+
+- Ads come only from `POST /ads/select` (a placement: search or question). No search, question or
+  recommendation response carries one.
+- Tests prove both responses identical with advertising on or off, and that no search, ranking,
+  routing, consensus or reputation module imports ad code.
+- Each ad is labelled Sponsored and shows only the destination's domain; the address is given on
+  tap.
+
+**Choosing (`src/ads/serve.ts`):**
+
+- Campaigns that may serve now are held in memory: active, inside their dates, their business
+  approved, an approved ad, total budget left. They are refreshed every 30 seconds, indexed by
+  targeted topic.
+- Every targeting kind a campaign uses must match:
+  - topic;
+  - a query word;
+  - the reader's country (unknown when signed out, so country-targeted ads don't serve then);
+  - interest, only when `ads_personalization` is permitted for the reader.
+- **Pacing:** a campaign sits out while it spends ahead of the day's elapsed share plus 10%.
+- **Frequency caps** apply only to readers who allow personalized ads. Their impressions name their
+  `ad_id`; everyone else's impressions name nobody, so they have no cap.
+
+**The auction (`src/ads/auction.ts`):**
+
+- Ranked by bid × predicted click rate. The click rate is the campaign's 30 days shrunk toward a 2%
+  prior worth 200 impressions (empirical Bayes); part 5 learns it.
+- The winner of each slot pays the generalized second price: the least that keeps its place, never
+  above its bid nor below the 0.01 reserve.
+- One ad per campaign; ties break by bid, then id.
+- Property tests check every winner keeps its place at its price, and that one unit less would not.
+
+**Clicks (`app.record_ad_click`):**
+
+- Counted once, within an hour of showing.
+- Charged the impression's price only if the click isn't by the business's own staff and the day's
+  budget can take it.
+- One campaign at a time (an advisory lock): a two-connection race test proves two concurrent
+  clicks can't both squeeze under the budget.
+- Requests and clicks have their own rate limit, since each writes a row.
+
+**Measured (`scripts/benchmark-ad-serving.mjs`):** choosing ads in process costs 0.01, 0.08 and
+2.0 ms p50 at 1,000, 10,000 and 100,000 active campaigns. Scanning every campaign took 6.0 ms at
+100,000; the topic index made it 3× faster. Beyond that, precomputed click rates and per-topic
+shards keep each request bounded.
 
 ## Scale (100 million people)
 

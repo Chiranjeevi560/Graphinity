@@ -227,6 +227,17 @@ const purgeSignals = () => {
       app.log.warn({ kind: errorKind(err) }, 'routing factor expiry failed');
     },
   );
+  // Ad impressions: 13 months at most (migration 0032).
+  recordedRun(db, 'ad-impression-expiry', 3600, () =>
+    db.asSystem(async q => (await q.query<{ n: number }>('SELECT app.expire_ad_impressions() AS n')).rows[0]?.n ?? 0),
+  ).then(
+    deleted => {
+      if (deleted) app.log.info({ deleted }, 'expired ad impressions removed');
+    },
+    (err: unknown) => {
+      app.log.warn({ kind: errorKind(err) }, 'ad impression expiry failed');
+    },
+  );
   // Advertising interests: 13 months at most, sooner once faded (migration 0030).
   recordedRun(db, 'ad-interest-expiry', 3600, () =>
     db.asSystem(async q => (await q.query<{ n: number }>('SELECT app.expire_ad_interests() AS n')).rows[0]?.n ?? 0),
