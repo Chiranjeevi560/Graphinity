@@ -1,6 +1,7 @@
 // Asking, answering and reading. Anyone can read; writing needs a profile.
 // Every rule here is repeated in the database (db/migrations), which also
 // refuses an answer to your own question even if this code forgot to check.
+import { READ_WEIGHT } from '../ads/interests.ts';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Database } from '../db.ts';
 import type { Events } from '../events.ts';
@@ -275,6 +276,8 @@ export function registerQuestionRoutes(
             [viewer, id],
           );
         }
+        // A signal for the reader's advertising interests, only if they allow it (ADR 0022).
+        if (viewer) await q.query('SELECT app.record_ad_interest($1, $2, $3)', [viewer, question.field, READ_WEIGHT]);
         const answers = (
           await q.query<{
             id: string;
