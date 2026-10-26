@@ -12,6 +12,7 @@ import type { Database } from '../db.ts';
 import { loadComparable, settleComparison } from '../ml/registry.ts';
 import { pairedDifference, type Judged } from './metrics.ts';
 import { SEARCH_RANKER } from './rankers.ts';
+import { underCollusionReview } from '../collusion.ts';
 
 export const MIN_DECIDED = 200;
 export const MIN_PEOPLE = 30;
@@ -57,7 +58,7 @@ export async function loadInterleaved(db: Pick<Database, 'asSystem'>, experiment
        FROM app.searches s
        JOIN app.search_results r ON r.search_id = s.id
        LEFT JOIN app.search_opens o ON o.search_id = r.search_id AND o.position = r.position
-       WHERE s.experiment = $1
+       WHERE s.experiment = $1 AND NOT ${underCollusionReview('s.user_id')}
        GROUP BY s.id, s.user_id`,
       [experiment],
     );

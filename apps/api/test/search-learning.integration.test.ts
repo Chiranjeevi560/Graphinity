@@ -7,10 +7,11 @@ import { serializeLambdaMart, trainLambdaMart } from '../src/ml/lambdamart.ts';
 import { loadComparable, recordCandidate } from '../src/ml/registry.ts';
 import { trainSearchRankerJob } from '../src/ml/training.ts';
 import { rankingFeatures } from '../src/search/features.ts';
-import { MAX_DAYS, MIN_DECIDED, runSearchJudge } from '../src/search/judge.ts';
+import { MAX_DAYS, MIN_DECIDED, loadInterleaved, runSearchJudge } from '../src/search/judge.ts';
 import { LONG_READ_MS, loadSearchTraining } from '../src/search/ranker-data.ts';
 import { BASELINE_RANKER, SEARCH_RANKER, type Rankers } from '../src/search/rankers.ts';
 import { startApp, type TestApp } from './helpers/app.ts';
+import { underReview } from './helpers/collusion.ts';
 import { must } from './helpers/must.ts';
 
 let h: TestApp;
@@ -88,6 +89,16 @@ describe('training data, as logged', () => {
     expect(mine[0]?.user).toMatch(/^[0-9a-f]{16}$/);
     expect(mine[0]?.user).not.toContain(p.id.slice(0, 8));
     expect(data.fingerprint).toMatch(/^[0-9a-f]{64}$/);
+    // Someone in a group under collusion review teaches nothing, while it lasts.
+    const release = await underReview(h.t.owner, [p.id, asker.id, (await member()).id]);
+    expect((await loadSearchTraining(h.t.database)).searches).toHaveLength(0);
+    await h.t.owner.query("UPDATE app.searches SET experiment = 'collusion/test' WHERE public_id = $1", [
+      other.searchId,
+    ]);
+    expect(await loadInterleaved(h.t.database, 'collusion/test')).toEqual([]);
+    await release();
+    expect(await loadInterleaved(h.t.database, 'collusion/test')).toHaveLength(1);
+    expect((await loadSearchTraining(h.t.database)).searches).toHaveLength(1);
     await h.t.owner.query('DELETE FROM app.searches');
   });
 });

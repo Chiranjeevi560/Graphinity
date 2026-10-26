@@ -8,6 +8,7 @@ import { ROUTING, trainRoutingJob } from '../src/ml/training.ts';
 import { routeWave, type Ranker } from '../src/routing.ts';
 import { FACTOR_ORDER, psiOfVector } from '../src/routing-score.ts';
 import { startApp, type TestApp } from './helpers/app.ts';
+import { underReview } from './helpers/collusion.ts';
 import { must } from './helpers/must.ts';
 
 let h: TestApp;
@@ -216,6 +217,11 @@ describe('what training reads', () => {
       ].sort(),
     );
     expect(examples.every(e => e.askerId === asker.id && Math.round(e.askerAgeDays) === 15)).toBe(true);
+    // An asker under collusion review teaches routing nothing, while it lasts.
+    const release = await underReview(h.t.owner, [asker.id, must(people[0]).id, must(people[1]).id]);
+    expect((await loadRoutingExamples(h.t.database)).examples.filter(e => e.questionId === q)).toEqual([]);
+    await release();
+    expect((await loadRoutingExamples(h.t.database)).examples.filter(e => e.questionId === q)).toHaveLength(3);
   });
 
   it('counts an answer given more than 7 days after asking as no answer', async () => {

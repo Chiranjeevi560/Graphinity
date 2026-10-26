@@ -168,6 +168,18 @@ in `apps/api/src/flags.ts`.
 
 Each needs `npm run db:start`, creates its own scratch database and drops it.
 
+### Collusion review
+
+Runs daily, 20 minutes after start (logged as `collusion review`, with `found` and `added` counts).
+Groups appear on the Review page; nothing happens to anyone until a moderator decides (ADR 0017).
+To see where groups stand:
+
+```sql
+SELECT status, count(*) FROM app.collusion_groups GROUP BY status;
+```
+
+`node scripts/benchmark-fraud.mjs [accounts]` re-measures the detector on planted rings (no database).
+
 ### The learned search ranking
 
 Training runs daily (logged as `model training`, model `search-ranker`). The judge runs hourly while

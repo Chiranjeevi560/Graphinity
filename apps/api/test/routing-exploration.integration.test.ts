@@ -12,6 +12,7 @@ import { ROUTING } from '../src/ml/training.ts';
 import { routeWave } from '../src/routing.ts';
 import { FACTOR_ORDER } from '../src/routing-score.ts';
 import { startApp, type TestApp } from './helpers/app.ts';
+import { underReview } from './helpers/collusion.ts';
 import { must } from './helpers/must.ts';
 
 let h: TestApp;
@@ -374,6 +375,12 @@ describe('automatic retirement', () => {
     // Each person's record, as exploration reads it: 60 settled routes, judged, none helped.
     const histories = await h.t.database.asSystem(tx => loadHistories(tx, [must(people[0]).id]));
     expect(histories.get(must(people[0]).id)).toHaveLength(60);
+    // Routes from an asker under collusion review don't count in anyone's record.
+    const release = await underReview(h.t.owner, [asker.id, must(people[1]).id, must(people[2]).id]);
+    expect(
+      (await h.t.database.asSystem(tx => loadHistories(tx, [must(people[0]).id]))).get(must(people[0]).id),
+    ).toBeUndefined();
+    await release();
     expect(histories.get(must(people[0]).id)?.every(r => r.judged && !r.helped && !r.responded)).toBe(true);
     const watch = await monitorRouting(h.t.database);
     expect(watch.calibration).toMatchObject({ demote: true, observed: 0 });

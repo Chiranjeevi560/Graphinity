@@ -29,6 +29,7 @@ experience with it. The asker selects the most useful answer.
 | Pair cap | The same asker can award the same answerer points 3 times per 30 days; after that selection still works, no points move |
 | Trust | Counted once per distinct asker |
 | Shared network | Flagged for owner review, never auto-blocked (mobile carriers share addresses) |
+| Collusion rings | Found daily by measured detection (ADR 0017) and shown on the review page; a moderator decides. Confirmed: the points members gave each other are taken back, later picks between them move none |
 | Moderation | Owner only. Report reasons, auto-hide after 3 distinct reports, owner review page, new-account limits (3 questions / 10 answers on day one), block |
 | Account deletion | Deletes sign-in, profile, questions, answers, subscriptions. Points others already earned stay, with no link back |
 
