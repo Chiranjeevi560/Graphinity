@@ -9,6 +9,8 @@ import { TokenBuckets, visitorAddress, visitorKey, type BucketOptions, type Cloc
 import { serverTiming, type Found, type SearchEngine } from '../search/engine.ts';
 import { recordOwnSearch } from '../search/history.ts';
 import { improvementSince, recordOpen, recordSearch } from '../search/log.ts';
+import { applySwap, chooseSwap } from '../search/interventions.ts';
+import { INTERLEAVE_SHARE, NO_RANKERS, ordered, teamDraft, type Rankers } from '../search/rankers.ts';
 import { cleanLine, textProblem } from '../text.ts';
 import { fail } from './common.ts';
 
@@ -58,6 +60,8 @@ export function registerSearchRoutes(
     limit,
     eventLimit,
     keySecret,
+    random = Math.random,
+    rankers = () => NO_RANKERS,
   }: {
     db: Pick<Database, 'withUser'>;
     engine: SearchEngine;
@@ -69,6 +73,10 @@ export function registerSearchRoutes(
     /** Opens and reading times per person: two per result read, so apart from searches. */
     eventLimit: BucketOptions;
     keySecret: Buffer;
+    /** Chance for position-bias swaps and interleaving coins; tests pass their own. */
+    random?: () => number;
+    /** The learned rankings, when the owner has `learned_search_ranking` on (ADR 0015 part 6). */
+    rankers?: () => Rankers;
   },
 ) {
   // Each search embeds text and runs three queries, so it gets its own allowance:
@@ -118,12 +126,44 @@ export function registerSearchRoutes(
         pool: SEARCH_POOL,
       });
       reply.header('server-timing', serverTiming(timings));
-      const shown = found
-        .flatMap(f => {
-          const reasons = reasonsFor(f);
-          return reasons ? [{ f, reasons }] : [];
-        })
-        .slice(0, SEARCH_RESULTS);
+      // Only results with a reason are shown; the serving ranker orders them.
+      const eligible = found.flatMap(f => {
+        const reasons = reasonsFor(f);
+        return reasons ? [{ f, reasons }] : [];
+      });
+      const reasonOf = new Map(eligible.map(e => [e.f.id, e.reasons]));
+      const served = rankers();
+      const recorded = Boolean(userId && since);
+      const at = clock.now();
+      const byProduction = ordered(
+        served.production,
+        eligible.map(e => e.f),
+        at,
+      );
+      // While another ranker waits, half the recorded searches interleave the two; the rest
+      // may measure position bias instead. Nobody else's results ever change.
+      const interleave = recorded && served.challenger !== null && random() < INTERLEAVE_SHARE;
+      let shown: Array<{ f: Found; reasons: Reason[]; rankedPosition: number; team?: 'a' | 'b' }>;
+      let swap: number | null = null;
+      if (interleave && served.challenger) {
+        const byChallenger = ordered(
+          served.challenger,
+          eligible.map(e => e.f),
+          at,
+        );
+        shown = teamDraft(byProduction, byChallenger, SEARCH_RESULTS, random).map(({ found: f, team }, i) => ({
+          f,
+          reasons: reasonOf.get(f.id) ?? [],
+          rankedPosition: i + 1,
+          team,
+        }));
+      } else {
+        const ranked = byProduction
+          .slice(0, SEARCH_RESULTS)
+          .map((f, i) => ({ f, reasons: reasonOf.get(f.id) ?? [], rankedPosition: i + 1 }));
+        swap = recorded ? chooseSwap(random, ranked.length) : null;
+        shown = applySwap(ranked, swap);
+      }
       const results = shown.map(({ f, reasons }) => ({
         id: f.id,
         title: f.title,
@@ -141,7 +181,15 @@ export function registerSearchRoutes(
               query,
               field,
               meaningModel,
-              shown: shown.map(({ f }, i) => ({ position: i + 1, found: f })),
+              shown: shown.map(({ f, rankedPosition, team }, i) => ({
+                position: i + 1,
+                rankedPosition,
+                ...(team ? { team } : {}),
+                found: f,
+              })),
+              swap,
+              ranker: served.production.id,
+              experiment: interleave && served.challenger ? `${served.production.id}/${served.challenger.id}` : null,
               now: new Date(clock.now()),
             })
           : null;

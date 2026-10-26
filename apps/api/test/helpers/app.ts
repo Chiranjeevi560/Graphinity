@@ -7,6 +7,7 @@ import type { Embedder } from '../../src/embeddings.ts';
 import type { Speller } from '../../src/ml/spelling.ts';
 import type { GraphAnalyzer } from '../../src/graph-analyzer.ts';
 import { createEvents } from '../../src/events.ts';
+import type { Rankers } from '../../src/search/rankers.ts';
 import { buildServer, defaultLimits } from '../../src/server.ts';
 import { createTestDatabase } from './database.ts';
 import { fakeAuthAdmin, TEST_ISSUER, testIssuer } from './tokens.ts';
@@ -21,6 +22,9 @@ export async function startApp(
     speller?: Pick<Speller, 'correctDraft'>;
     recommendationsEnabled?: () => boolean;
     searchEnabled?: () => boolean;
+    /** Position-bias swaps: by default never, so results are predictable; a test asks for them. */
+    searchRandom?: () => number;
+    searchRankers?: () => Rankers;
     limits?: Partial<typeof defaultLimits>;
     graphAnalyzer?: GraphAnalyzer;
   } = {},
@@ -49,6 +53,8 @@ export async function startApp(
     ...(opts.graphAnalyzer ? { graphAnalyzer: opts.graphAnalyzer } : {}),
     ...(opts.recommendationsEnabled ? { recommendationsEnabled: opts.recommendationsEnabled } : {}),
     ...(opts.searchEnabled ? { searchEnabled: opts.searchEnabled } : {}),
+    searchRandom: opts.searchRandom ?? (() => 0.999),
+    ...(opts.searchRankers ? { searchRankers: opts.searchRankers } : {}),
     // Generous limits: these tests are about behaviour, not rate limiting.
     limits: {
       ...defaultLimits,

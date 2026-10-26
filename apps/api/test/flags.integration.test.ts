@@ -20,6 +20,7 @@ describe('feature flags', () => {
       { name: 'embeddings', enabled: true },
       // Off until the owner chooses: who gets notified is their decision (ADR 0013).
       { name: 'learned_routing', enabled: false },
+      { name: 'learned_search_ranking', enabled: false },
       { name: 'model_training', enabled: true },
       { name: 'push', enabled: true },
       { name: 'recommendations', enabled: true },

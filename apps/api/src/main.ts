@@ -16,11 +16,16 @@ import {
   SPELLING,
   TEXT_EMBEDDING,
   trainRoutingJob,
+  trainSearchRankerJob,
   trainSpellingJob,
   trainTextEmbeddingJob,
 } from './ml/training.ts';
 import { purgeOldRouteFactors } from './ml/routing-data.ts';
 import { purgeExpiredSearches } from './search/log.ts';
+import { loadComparable } from './ml/registry.ts';
+import { deserializeLambdaMart } from './ml/lambdamart.ts';
+import { ROLLBACK_DAYS, runSearchJudge } from './search/judge.ts';
+import { NO_RANKERS, SEARCH_RANKER, type Rankers } from './search/rankers.ts';
 import { monitorRouting } from './ml/routing-monitor.ts';
 import { deserializeRoutingModel, scoreRouting, scoreRoutingAt, type RoutingModel } from './ml/routing-model.ts';
 import { personalGraphQueueStatus, projectPersonalGraphSignals, purgeExpiredPersonalSignals } from './personal-data.ts';
@@ -115,6 +120,23 @@ const ranker = (): Ranker | null => {
   };
 };
 
+// Learned search ranking (ADR 0015 part 6): the serving model and any challenger
+// (a waiting candidate, or the version a promotion replaced), reloaded after
+// each training run and judgement. Serves only with `learned_search_ranking` on.
+let searchRankers: Rankers = NO_RANKERS;
+const loadSearchRankers = async () => {
+  const v = await loadComparable(db, SEARCH_RANKER, ROLLBACK_DAYS);
+  const served = (x: typeof v.production) =>
+    x ? { id: `lambdamart:v${String(x.version)}`, model: deserializeLambdaMart(x.artifact) } : null;
+  const challenger = v.candidate ?? v.retired;
+  searchRankers = { production: served(v.production) ?? NO_RANKERS.production, challenger: served(challenger) };
+};
+try {
+  await loadSearchRankers();
+} catch (err) {
+  console.warn(`search rankers not loaded (${errorKind(err)}); fusion orders results until they are`);
+}
+
 const authAdmin = createSupabaseAdmin({ supabaseUrl: config.supabaseUrl, secretKey: config.supabaseSecretKey });
 const events = createEvents();
 const app = await buildServer({
@@ -129,6 +151,7 @@ const app = await buildServer({
   speller: spelling.speller,
   recommendationsEnabled: () => flags.enabled('recommendations'),
   searchEnabled: () => flags.enabled('search'),
+  searchRankers: () => (flags.enabled('learned_search_ranking') ? searchRankers : NO_RANKERS),
 });
 logger.current = app.log;
 
@@ -361,6 +384,26 @@ const runTraining = serial(async () => {
   } catch (err) {
     app.log.warn({ kind: errorKind(err), model: ROUTING }, 'model training failed');
   }
+  try {
+    const outcome = await trainSearchRankerJob(db);
+    if (outcome.status === 'candidate') await loadSearchRankers();
+    app.log.info(
+      outcome.status === 'skipped'
+        ? { model: SEARCH_RANKER, status: outcome.status }
+        : {
+            model: SEARCH_RANKER,
+            status: outcome.status,
+            version: outcome.version,
+            ipsNdcg: outcome.result.metrics.candidate,
+            baseline: outcome.result.baseline.score,
+            heldOutPeople: outcome.result.dataset.heldOutPeople,
+            trainMs: outcome.result.metrics.trainMs,
+          },
+      'model training',
+    );
+  } catch (err) {
+    app.log.warn({ kind: errorKind(err), model: SEARCH_RANKER }, 'model training failed');
+  }
   // The serving routing model, checked against what happened (ADR 0014): retired if it falls
   // short, and exploration's numbers. Logs carry counts and rates only.
   try {
@@ -389,6 +432,38 @@ const runTraining = serial(async () => {
   } catch (err) {
     app.log.warn({ kind: errorKind(err), model: ROUTING }, 'routing monitor failed');
   }
+});
+// Online comparison of search rankings (ADR 0015 part 6), hourly: promote a
+// candidate that wins, reject one that loses, roll back a promotion that the
+// replaced version beats. Counts and the interval only in logs.
+const judgeSearch = () => {
+  if (!flags.enabled('learned_search_ranking')) return;
+  runSearchJudge(db).then(
+    async outcome => {
+      if (outcome.action !== 'none') await loadSearchRankers();
+      app.log.info(
+        {
+          model: SEARCH_RANKER,
+          action: outcome.action,
+          decided: outcome.verdict?.decided ?? 0,
+          people: outcome.verdict?.people ?? 0,
+          mean: outcome.verdict?.mean ?? null,
+          low: outcome.verdict?.low ?? null,
+          high: outcome.verdict?.high ?? null,
+        },
+        'search judge',
+      );
+    },
+    (err: unknown) => {
+      app.log.warn({ kind: errorKind(err), model: SEARCH_RANKER }, 'search judge failed');
+    },
+  );
+};
+const searchJudgeTimer = setInterval(judgeSearch, 60 * 60_000);
+searchJudgeTimer.unref();
+app.addHook('onClose', (_instance, done) => {
+  clearInterval(searchJudgeTimer);
+  done();
 });
 const firstTraining = setTimeout(runTraining, 10 * 60_000);
 firstTraining.unref();

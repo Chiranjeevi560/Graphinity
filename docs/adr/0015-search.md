@@ -1,7 +1,8 @@
 # ADR 0015: Search, built in measured slices
 
 - **Status:** In progress. Part 1 (consent) accepted and built 2026-10-25. Part 2 (the engine)
-  part 5 (ANN), part 3 (search logs) and part 4 (the Search screen) built 2026-10-26. Later parts are recorded here as they land.
+  part 5 (ANN), part 3 (search logs), part 4 (the Search screen) and part 6 (learning the ranking)
+  built 2026-10-26. Later parts are recorded here as they land.
 - **Owner decisions (2026-10-25):**
   1. **Both surfaces, one engine:** a Search screen and the Ask screen's "has this been asked?"
      check.
@@ -222,6 +223,92 @@ The 6 survivors of 23 rules broken on purpose are layers that another layer also
 - the API's own checks over the database's;
 - the own-rows check, which the invoker-run consent check already implies.
 
+## Part 6: learning the ranking from consented searches (migration 0023, schema 38)
+
+Replaces the fixed fusion weights with a ranking learned from what people open and read. It's built in
+three pieces, each measured.
+
+### The model: LambdaMART, chosen against a linear ranker
+
+`ml/lambdamart.ts` is gradient-boosted regression trees fitted to LambdaRank gradients (Burges 2010):
+the algorithm LightGBM and XGBoost run as `lambdarank`.
+
+- **Same essentials:** quantile-histogram splits, Newton leaf values, L2, shrinkage, per-result weights.
+- **Written out** because those libraries need native installs, which this repository disables.
+- **Features** (`search/features.ts`) are the logged point-in-time ones (word and meaning reciprocal
+  ranks, similarity, found-by flags, every-word, log answers, answer freshness), computed by one
+  function for training and serving.
+
+`scripts/benchmark-ltr.mjs`, a simulated world with known true relevance (interactions between
+features). Clicks follow a position-based model with η = 1, from today's fusion order. NDCG@10 against
+the truth on 1,000 held-out queries:
+
+| Searches | Fusion today | Linear (IPS) | LambdaMART raw clicks | LambdaMART IPS | IPS, propensities estimated | True labels (ceiling) |
+|---|---|---|---|---|---|---|
+| 2,000 | 0.633 | 0.828 | 0.797 | **0.833** | (too few clicks) | 0.890 |
+| 10,000 | 0.630 | 0.818 | 0.811 | **0.854** | (too few clicks) | 0.879 |
+| 50,000 | 0.639 | 0.830 | 0.825 | **0.877** | **0.876** | 0.892 |
+
+- **Against the linear ranker,** LambdaMART IPS gains:
+  - at 2,000 searches, +0.005: **not significant** (99% interval −0.004 to +0.014);
+  - at 10,000, +0.036 (0.028 to 0.044);
+  - at 50,000, +0.047 (0.040 to 0.054).
+
+  So the trees earn their place once there is data, and the job trains only then: measuring
+  position bias needs about 50,000 searches (below).
+- **The bias correction matters:** raw clicks lose 0.035 to 0.052.
+- **Cost, measured on an otherwise idle machine:** training takes about 3 s, 14 s and 75 s (worker
+  thread, daily), reranking 50 candidates 0.23 ms, and the model is about 200 KB.
+
+### Position bias, measured from people's own behaviour
+
+`search/interventions.ts` uses RandPair (Wang et al. 2018):
+
+- **The intervention:** on 10% of recorded searches, one neighbouring pair among the top five swaps
+  places.
+- **The estimate:** the same two results seen in both orders give each position's examination ratio,
+  in which the results' own pull cancels. Past five, a fitted power law.
+- **Recovery:** it recovers η = 0.5, 1 and 1.5 in tests; in the benchmark, η 0.97 against a true 1.0.
+- **Honest limit:** with swaps on 10% of searches, measuring every pair takes on the order of 50,000
+  recorded searches. Until then the job refuses to train, rather than guess a correction.
+- **Never for anyone else:** only recorded searches are swapped, as disclosed on the privacy page.
+
+### From training to serving, only by evidence
+
+1. **Offline gate** (`ml/train-search-ranker.ts`):
+   - One person in five is held out by a hash.
+   - The shown results are reordered by the candidate and by the baseline (the serving model, or the
+     logged order) and scored by IPS-NDCG@10, an unbiased estimate under the position model.
+   - It passes on a gain of 0.01 or more with a 99% paired bootstrap over people above zero. At least
+     200 held-out searches with a click, from 30 people.
+   - Passing makes it a **candidate**, at most one per model (unique index).
+2. **Online comparison** (`search/rankers.ts`, `search/judge.ts`):
+   - While a candidate waits, half of recorded searches show team-draft interleaving (Radlinski et
+     al. 2008) of the serving order and the candidate's.
+   - Hourly, each search is a win for the side whose results were opened more; outcomes are averaged
+     per person and resampled over people at 99%, with at least 200 decided searches from 30 people.
+   - A clear win serves; a clear loss, or no winner in 28 days, is rejected and its weights dropped.
+3. **Automatic rollback:** for 14 days after a promotion, the replaced version stays the challenger,
+   and is restored if it wins.
+4. **The owner's switch:** all of it serves and interleaves only with `learned_search_ranking` on,
+   off by default; training runs either way.
+
+Registry integrity: a version's weights can be removed, never replaced (trigger), and every artifact is
+checked against its hash before it serves.
+
+Tests:
+
+- **34 new:** unit, and the database end to end. The judge's promote, reject, time-out and roll-back
+  run against real interleaved logs; the route is tested serving and interleaving.
+- **24 rules broken on purpose,** all caught. Six first survived, and got tests or simplifications:
+  - the NDCG cutoff line was redundant (removed);
+  - the gradients are now tested exactly;
+  - the too-few-clicks guard, the gate rule and who is trained on are now tested;
+  - interleaved searches really are left out of training.
+
+Not verified: real searches. None are recorded yet; the first learned model needs on the order of
+50,000.
+
 ## Part 4: the Search screen
 
 - **Entry:** a search field on the home page, for everyone; `/search` for the screen. The query is
@@ -348,7 +435,7 @@ What this shows:
 3. ~~Search logs~~: built (above).
 4. ~~The Search screen~~: built (above).
 5. ~~ANN~~: built (above).
-6. **Learning:**
+6. ~~Learning~~: built (above). Still to do from the original list:
    - labels only from the searcher's own actions;
    - randomized top-5 swaps on a disclosed small share of consented sessions, so position bias can
      be estimated;

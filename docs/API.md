@@ -174,6 +174,9 @@ returned: no authors, trust, reputation or scores. Hidden questions never appear
 - With the `search` switch off: 503 `search_off`.
 - A signed-in search is saved to the person's own `search_history` only with that consent, as above.
 - `Server-Timing` as for the precheck.
+- Order: the engine's fused order, or, with the owner's `learned_search_ranking` on and a learned model
+  serving, that model's (ADR 0015 part 6). For a recorded search only, the order may also swap two
+  neighbours among the top five, or mix in a ranking being compared, as the privacy page says.
 - With `search_improvement` on (and only then), the search, the results shown in order with what the
   ranking knew about each, are recorded to improve search (ADR 0015 part 3), and the response carries
   `searchId`, a random id. Without it, there is no `searchId` and nothing is recorded. Visitors are

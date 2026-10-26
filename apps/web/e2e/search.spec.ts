@@ -54,6 +54,8 @@ test('searches from home, opens a result, and records the reading only when allo
   await page.getByRole('link', { name: /^Your profile/ }).click();
   await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeVisible();
+  // Signing out ends by going home: wait for it, or it could land after the next step.
+  await expect(page).toHaveURL(/\/$/);
   await page.evaluate(() => {
     history.pushState(null, '', '/search');
     window.dispatchEvent(new PopStateEvent('popstate'));

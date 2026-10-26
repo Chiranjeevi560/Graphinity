@@ -154,3 +154,154 @@ export async function recordPromoted(
     return version;
   });
 }
+
+/**
+ * Records a version that passed its offline gate as the one candidate waiting
+ * for online comparison (ADR 0015 part 6): any earlier candidate is rejected
+ * as superseded, its weights dropped. The serving version is untouched.
+ */
+export async function recordCandidate(
+  db: Pick<Database, 'asSystem'>,
+  record: ModelRecord,
+  artifact: Buffer,
+): Promise<number> {
+  const sha = createHash('sha256').update(artifact).digest('hex');
+  return db.asSystem(async q => {
+    await lockFor(q, record.name);
+    await q.query(
+      `UPDATE app.ml_models SET status = 'rejected', artifact = NULL, artifact_sha256 = NULL,
+              reason = 'superseded by a newer candidate'
+       WHERE name = $1 AND status = 'candidate'`,
+      [record.name],
+    );
+    const version = await nextVersion(q, record.name);
+    await q.query(
+      `INSERT INTO app.ml_models
+         (name, version, algorithm, params, dataset, metrics, baseline, status, reason, artifact, artifact_sha256)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'candidate', $8, $9, $10)`,
+      [
+        record.name,
+        version,
+        record.algorithm,
+        record.params,
+        record.dataset,
+        record.metrics,
+        record.baseline,
+        record.reason,
+        artifact,
+        sha,
+      ],
+    );
+    return version;
+  });
+}
+
+export interface StoredVersion {
+  version: number;
+  status: 'candidate' | 'production' | 'retired';
+  artifact: Buffer;
+  params: Record<string, unknown>;
+  retiredAt: Date | null;
+  createdAt: Date;
+}
+
+/**
+ * The versions online comparison needs: the serving one, the waiting
+ * candidate, and the most recently retired one if it was retired within
+ * `retiredWithinDays` (the one an automatic rollback would restore). Each
+ * artifact is checked against its hash.
+ */
+export async function loadComparable(
+  db: Pick<Database, 'asSystem'>,
+  name: string,
+  retiredWithinDays: number,
+): Promise<{ production: StoredVersion | null; candidate: StoredVersion | null; retired: StoredVersion | null }> {
+  return db.asSystem(async q => {
+    const { rows } = await q.query<{
+      version: number;
+      status: StoredVersion['status'];
+      artifact: Buffer;
+      artifact_sha256: string;
+      params: Record<string, unknown>;
+      retired_at: Date | null;
+      created_at: Date;
+    }>(
+      `(SELECT version, status, artifact, artifact_sha256, params, retired_at, created_at FROM app.ml_models
+        WHERE name = $1 AND status IN ('production', 'candidate'))
+       UNION ALL
+       (SELECT version, status, artifact, artifact_sha256, params, retired_at, created_at FROM app.ml_models
+        WHERE name = $1 AND status = 'retired' AND artifact IS NOT NULL
+          AND retired_at > now() - make_interval(days => $2)
+        ORDER BY retired_at DESC LIMIT 1)`,
+      [name, retiredWithinDays],
+    );
+    const out: { production: StoredVersion | null; candidate: StoredVersion | null; retired: StoredVersion | null } = {
+      production: null,
+      candidate: null,
+      retired: null,
+    };
+    for (const r of rows) {
+      if (createHash('sha256').update(r.artifact).digest('hex') !== r.artifact_sha256)
+        throw new Error(`model ${name} v${String(r.version)} failed its integrity check`);
+      out[r.status] = {
+        version: r.version,
+        status: r.status,
+        artifact: r.artifact,
+        params: r.params,
+        retiredAt: r.retired_at,
+        createdAt: r.created_at,
+      };
+    }
+    return out;
+  });
+}
+
+/** Online comparison's verdicts, each with its evidence, under the model's lock. */
+export async function settleComparison(
+  db: Pick<Database, 'asSystem'>,
+  name: string,
+  verdict:
+    | { kind: 'promote'; version: number; evidence: Record<string, unknown> }
+    | { kind: 'reject'; version: number; evidence: Record<string, unknown> }
+    | { kind: 'restore'; version: number; evidence: Record<string, unknown> },
+): Promise<void> {
+  await db.asSystem(async q => {
+    await lockFor(q, name);
+    const reason = JSON.stringify(verdict.evidence).slice(0, 500);
+    if (verdict.kind === 'reject') {
+      await q.query(
+        `UPDATE app.ml_models SET status = 'rejected', artifact = NULL, artifact_sha256 = NULL, reason = $3,
+                metrics = metrics || jsonb_build_object('online', $4::jsonb)
+         WHERE name = $1 AND version = $2 AND status = 'candidate'`,
+        [name, verdict.version, `lost online: ${reason}`, JSON.stringify(verdict.evidence)],
+      );
+      return;
+    }
+    // Promote a candidate, or restore a retired version (an automatic rollback): either way,
+    // the current serving version retires and the other serves.
+    const from = verdict.kind === 'promote' ? 'candidate' : 'retired';
+    const { rowCount } = await q.query(`SELECT 1 FROM app.ml_models WHERE name = $1 AND version = $2 AND status = $3`, [
+      name,
+      verdict.version,
+      from,
+    ]);
+    if (!rowCount) return;
+    await q.query(
+      `UPDATE app.ml_models SET status = 'retired', retired_at = now(),
+              reason = left($2 || reason, 500)
+       WHERE name = $1 AND status = 'production'`,
+      [name, verdict.kind === 'restore' ? 'rolled back: ' : 'replaced online: '],
+    );
+    await q.query(
+      `UPDATE app.ml_models SET status = 'production', promoted_at = now(), retired_at = NULL, reason = $3,
+              metrics = metrics || jsonb_build_object('online', $4::jsonb)
+       WHERE name = $1 AND version = $2`,
+      [
+        name,
+        verdict.version,
+        `${verdict.kind === 'restore' ? 'restored' : 'won'} online: ${reason}`,
+        JSON.stringify(verdict.evidence),
+      ],
+    );
+  });
+}

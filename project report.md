@@ -343,3 +343,10 @@ Found, not yet fixed: at 100k questions the meaning stage (unchanged, already us
 
 - A search field on the home page and a Search screen: results with reasons in words, the spelling model's extra words, a plain empty state, Back to the same results. The query never reaches an address. Reading time is recorded only for searches the person allowed recording for, and only while the page is in view.
 - Checked at 320, 375, 430 and desktop in light and dark; a focus-ring flaw over the field's icon was found and fixed. 6 unit tests, an end-to-end test in both engines, the accessibility audit; 7 rules broken on purpose, all caught.
+
+## Search, part 6: learning the ranking (2026-10-26, Claude)
+
+- LambdaMART (the algorithm behind LightGBM's lambdarank), written out without native code, learns the search order from what consenting people open and read. Position bias is measured from swaps of neighbouring results on a tenth of recorded searches and corrected by inverse-propensity weights.
+- Benchmark with known true relevance: NDCG@10 0.877 against 0.639 for today's fusion and 0.830 for a linear ranker at 50,000 searches; propensities estimated from the swaps give the same result (0.876). At 2,000 searches the trees don't yet significantly beat the linear ranker; at 10,000 and up they do.
+- Promotion only by evidence: an offline gate on held-out people (99%), then a candidate compared online by team-draft interleaving (99%, per person), rejected on a loss or after 28 days, and rolled back automatically if the version it replaced wins within 14 days. Behind the owner's `learned_search_ranking` switch, off by default.
+- 34 new tests; 24 rules broken on purpose, all caught. Not verified on real searches: the first model needs about 50,000 recorded searches.
