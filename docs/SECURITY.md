@@ -185,6 +185,17 @@ whenever a user-linked table is added.
   retired model can't return the next night. Exploration is off until the owner turns on
   `routing_exploration`.
 
+## The welcome consent screen (ADR 0023)
+
+- Asked of every signed-in person about each optional purpose they have never answered, with
+  three answers of identical size, weight and contrast ("Essential only", "Choose", "Accept all"),
+  each one tap; nothing ticked in advance; Escape records "Essential only". A browser test measures
+  the symmetry at 320–1280 wide in light and dark, and fails if one answer is styled differently.
+- "Accept all" can only turn on what is put to that person: `app.consent_offered_for` checks the
+  switch and, for advertising purposes, that their country's rule is approved and not prohibited.
+  The API refuses anything else, and so does the database trigger on `user_consent_settings`.
+- Signed-out visitors are asked nothing because nothing optional is collected from them.
+
 ## Consent for search (ADR 0015)
 
 - Learning from searches is its own optional purpose, `search_improvement`, separate from

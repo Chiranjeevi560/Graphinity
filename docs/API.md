@@ -386,13 +386,17 @@ Each category includes its purpose, information description, retention statement
 policy version. `identity` is required to provide the account service and cannot be disabled here.
 `awaitingAnswer` lists the ask-once purposes (today `search_improvement`) the caller has never answered:
 the web app asks about them once, and any answer recorded through `PUT` removes them for good.
-Purposes not offered now are left out: the advertising purposes (`ads_*`, ADR 0022) while the `ads`
-switch is off, unless the caller has one on, so they can always turn it off.
+`unanswered` lists every optional purpose put to the caller that they have never answered: the
+welcome consent screen (ADR 0023) asks about exactly these, and any recorded answer removes one.
+Purposes not put to the caller are left out: the advertising purposes (`ads_*`, ADR 0022) while the
+`ads` switch is off, or where the rule for the caller's country isn't approved by a lawyer or
+prohibits it (migration 0035), unless the caller has one on, so they can always turn it off.
 
 ### `PUT /me/consents` (signed in, counts as a write)
 
-`{ choices: [{ category, enabled }] }` updates one or more independent choices. Duplicate and
-unknown categories are refused, and so is turning on a purpose that isn't offered now
+`{ choices: [{ category, enabled }], source? }` updates one or more independent choices; `source` is
+`settings` (the default) or `onboarding` (the welcome screen), kept in the history. Duplicate and
+unknown categories are refused, and so is turning on a purpose that isn't put to the caller now
 (`unknown_consent_category`); turning one off is always accepted. Changed choices append to an account-private audit history; an
 unchanged choice creates no extra event. `GET /me/consents/audit` returns the caller's latest 500
 choice events. Audit history cannot be edited or deleted through the API; account deletion removes

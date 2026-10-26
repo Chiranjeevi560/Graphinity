@@ -8,8 +8,12 @@ test('searches from home, opens a result, and records the reading only when allo
   const word = `harmonium${browserName}${String(Date.now() % 1_000_000)}`;
   await signIn(page, 'A brand-new person');
   const handle = `finder.${browserName}${String(Date.now() % 1_000_000)}`;
-  await setUpIfNeeded(page, handle, { answerPrivacyUpdate: false });
-  await page.getByRole('dialog', { name: 'Two privacy updates' }).getByRole('button', { name: 'Allow' }).click();
+  await setUpIfNeeded(page, handle, { answerConsent: false });
+  const consent = page.getByRole('dialog', { name: 'Your data, your choice' });
+  await consent.getByRole('button', { name: 'Choose' }).click();
+  await consent.getByRole('checkbox', { name: /^Search improvement/ }).check();
+  await consent.getByRole('button', { name: 'Save choices' }).click();
+  await expect(consent).toBeHidden();
   // A question with a word nobody else uses, asked by this person (a new account may ask 3 a day).
   await asOwner(
     `INSERT INTO app.questions (asker_id, field, title)

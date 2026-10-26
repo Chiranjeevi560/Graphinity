@@ -57,18 +57,23 @@ describe('what ad systems may use', () => {
     const p = await member();
     await flags(true);
     try {
+      const adCategories = async () =>
+        (await h.call('GET', '/me/consents', p.token))
+          .json<{ categories: Array<{ name: string; enabled: boolean }> }>()
+          .categories.filter(c => c.name.startsWith('ads_'))
+          .map(c => [c.name, c.enabled]);
+      // On, but no lawyer has approved the rule: not even offered, and can't be chosen.
+      expect(await adCategories()).toEqual([]);
+      expect((await choose(p.token, 'ads_personalization', true)).statusCode).toBe(400);
+      await approve(true);
       // Offered now, and off until chosen.
-      const { categories } = (await h.call('GET', '/me/consents', p.token)).json<{
-        categories: Array<{ name: string; enabled: boolean }>;
-      }>();
-      expect(categories.filter(c => c.name.startsWith('ads_')).map(c => [c.name, c.enabled])).toEqual(
-        [...AD_PURPOSES].sort().map(n => [n, false]),
-      );
+      expect(await adCategories()).toEqual([...AD_PURPOSES].sort().map(n => [n, false]));
       expect((await choose(p.token, 'ads_personalization', true)).statusCode).toBe(200);
-      // Chosen, but no lawyer has approved the rule: still no.
+      expect(await permitted(p.id, 'ads_personalization')).toBe(true);
+      // Approval withdrawn: no longer, whatever they chose.
+      await approve(false);
       expect(await permitted(p.id, 'ads_personalization')).toBe(false);
       await approve(true);
-      expect(await permitted(p.id, 'ads_personalization')).toBe(true);
       // Another purpose the person never chose stays off (opt-in everywhere by default).
       expect(await permitted(p.id, 'ads_measurement')).toBe(false);
       // The purpose's own switch.
@@ -123,8 +128,10 @@ describe('what ad systems may use', () => {
   it('lets anyone who said yes withdraw even after the platform is switched off', async () => {
     const p = await member();
     await flags(true);
-    await choose(p.token, 'ads_personalization', true);
+    await approve(true);
+    expect((await choose(p.token, 'ads_personalization', true)).statusCode).toBe(200);
     await flags(false);
+    await approve(false);
     const { categories } = (await h.call('GET', '/me/consents', p.token)).json<{
       categories: Array<{ name: string }>;
     }>();

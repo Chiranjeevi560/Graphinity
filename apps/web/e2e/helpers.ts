@@ -242,23 +242,23 @@ export async function openHome(page: Page) {
 }
 
 /**
- * Watches for the one-time privacy update (ADR 0015) a signed-in page asks for
- * once, and answers "Not now" if it was still waiting, so it never covers a
+ * Watches for the welcome consent screen (ADR 0023) a signed-in page shows
+ * while choices are unanswered, and answers "Essential only" if it was still waiting, so it never covers a
  * test's next step. Keyed to the app's own request, not a timeout. `cancel`
  * stands it down (sign-in that lands on setup leaves answering to setup: two
  * watchers would both click, and the second would wait for a sheet that's gone).
  */
-export function answerPrivacyUpdateWhenAsked(page: Page): { done: Promise<void>; cancel: () => void } {
+export function answerConsentWhenAsked(page: Page): { done: Promise<void>; cancel: () => void } {
   let cancelled = false;
   const done = page
     .waitForResponse(r => new URL(r.url()).pathname === '/me/consents' && r.request().method() === 'GET', {
       timeout: 30_000,
     })
     .then(async r => {
-      const body = (await r.json()) as { awaitingAnswer?: string[] };
-      if (cancelled || !body.awaitingAnswer?.length) return;
-      const sheet = page.getByRole('dialog', { name: 'Two privacy updates' });
-      await sheet.getByRole('button', { name: 'Not now' }).click();
+      const body = (await r.json()) as { unanswered?: string[] };
+      if (cancelled || !body.unanswered?.length) return;
+      const sheet = page.getByRole('dialog', { name: 'Your data, your choice' });
+      await sheet.getByRole('button', { name: 'Essential only' }).click();
       await expect(sheet).toBeHidden();
     });
   return {
@@ -274,7 +274,7 @@ export function answerPrivacyUpdateWhenAsked(page: Page): { done: Promise<void>;
 export async function signIn(page: Page, who: 'Test person A' | 'A brand-new person') {
   await openHome(page);
   await page.getByRole('button', { name: 'Continue with Google' }).click();
-  const answered = answerPrivacyUpdateWhenAsked(page);
+  const answered = answerConsentWhenAsked(page);
   await page.getByRole('button', { name: who }).click();
   // The app finishes sign-in by moving to home or to setup; wait for either,
   // or a test's next page.goto collides with that move (seen in WebKit).
@@ -286,7 +286,7 @@ export async function signIn(page: Page, who: 'Test person A' | 'A brand-new per
 }
 
 /** Finishes setup if this person hasn't yet (a fixed test person only needs it once). */
-export async function setUpIfNeeded(page: Page, handle: string, options: { answerPrivacyUpdate?: boolean } = {}) {
+export async function setUpIfNeeded(page: Page, handle: string, options: { answerConsent?: boolean } = {}) {
   // Signing in lands on the home page, then the app sends a newcomer to
   // setup: wait until it has settled into one or the other.
   const setup = page.getByRole('heading', { name: 'Choose your name' });
@@ -299,7 +299,7 @@ export async function setUpIfNeeded(page: Page, handle: string, options: { answe
   await page.getByRole('button', { name: 'Continue' }).click();
   await page.getByRole('button', { name: 'Imports & Customs' }).click();
   await page.getByText('I’m 18 or older').click();
-  const answered = options.answerPrivacyUpdate === false ? null : answerPrivacyUpdateWhenAsked(page);
+  const answered = options.answerConsent === false ? null : answerConsentWhenAsked(page);
   await page.getByRole('button', { name: 'Create profile' }).click();
   // Setup ends by moving to the home page; let that finish before going on.
   await expect(page.getByRole('link', { name: 'Ask a question' })).toBeVisible();
