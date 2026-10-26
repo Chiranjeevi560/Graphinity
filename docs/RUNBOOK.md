@@ -171,7 +171,8 @@ Each needs `npm run db:start`, creates its own scratch database and drops it.
 ### Drift monitoring
 
 Daily, 30 minutes after start (logged as `drift monitor`, one line per model with its version, the
-features that drifted and the largest PSI). Drift starts training straight away; the usual gates
+features that drifted and the largest PSI). Watched: `routing`, `search-ranker` and
+`text-embedding` (word coverage and similarity to its training questions, ADR 0019). Drift starts training straight away; the usual gates
 still decide what serves (ADR 0018). The last measurements:
 
 ```sql

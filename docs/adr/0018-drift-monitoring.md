@@ -2,7 +2,7 @@
 
 - **Status:** Accepted and built 2026-10-26.
 - **Scope:** the tabular models that serve from logged inputs: routing (ADR 0013) and the search
-  ranking (ADR 0015 part 6). Embedding drift is its own decision.
+  ranking (ADR 0015 part 6). The text model's drift is ADR 0019, judged by the same rule.
 
 ## Problem
 
@@ -37,7 +37,8 @@ still look like its training data.
 
 **The rule** (`src/ml/drift.ts`): a feature drifts when all of these hold:
 
-- PSI ≥ 0.05 over the reference's deciles;
+- PSI ≥ 0.05 over the reference's deciles, plus a bin below its minimum and one above its maximum
+  (added by ADR 0019: without them, nothing below a constant reference could show);
 - two-sample KS against the profile is significant at 0.01 ÷ (features tested);
 - there are at least 200 current values.
 
@@ -87,8 +88,6 @@ What the table shows:
 
 ## Not built, and why
 
-- **Embedding drift:** the own text model (ADR 0010) learns its vocabulary from posts, so its drift
-  is new words it can't place. That is a different measure, left to its own decision.
 - **Concept drift** (the inputs stay the same but what helps changes): already watched where labels
   exist. Routing's monitor demotes a model whose calibrated predictions fall short (ADR 0014). The
   search judge rolls back a promotion its predecessor beats (ADR 0015).

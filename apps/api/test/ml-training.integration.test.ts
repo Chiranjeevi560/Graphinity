@@ -69,6 +69,7 @@ const fakeResult = (promote: boolean, artifact: Uint8Array | null): TrainingResu
   metrics: { mrr: 0.5, recallAt10: 0.5, queries: 30, trainMs: 1 },
   baseline: { kind: 'bm25', version: null, mrr: 0.4, recallAt10: 0.4 },
   artifact,
+  reference: { profile: {}, centroid: [] },
 });
 const smallModel = () =>
   new Uint8Array(

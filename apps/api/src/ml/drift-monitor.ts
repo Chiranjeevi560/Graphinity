@@ -1,18 +1,21 @@
 // The daily drift monitor (docs/adr/0018-drift-monitoring.md): for each
-// serving tabular model, compare the last WINDOW_DAYS of the inputs it was
-// served with the profile recorded when it was trained (src/ml/drift.ts),
+// serving model, compare the last WINDOW_DAYS of the inputs it was served
+// with the profile recorded when it was trained (src/ml/drift.ts),
 // store one row per feature in app.ml_drift, and say whether anything drifted
 // so the caller can retrain at once instead of waiting for the next daily
 // run. Run as the system. Reads the same populations training does: exploit
 // routes; searches that weren't interleaved, by people not under collusion
-// review.
+// review; for the text model (ADR 0019), new questions whose askers allow
+// learning from what they write.
 import { underCollusionReview } from '../collusion.ts';
 import type { Database, Queryable } from '../db.ts';
 import { FACTOR_ORDER, FACTORS_VERSION } from '../routing-score.ts';
 import { FEATURE_NAMES, rankingFeatures } from '../search/features.ts';
 import { SEARCH_RANKER } from '../search/rankers.ts';
 import { columnsOf, featureDrift, type FeatureDrift, type Profile } from './drift.ts';
-import { ROUTING } from './training.ts';
+import { embeddingSignals } from './embedding-drift.ts';
+import { deserializeModel } from './text-embedding.ts';
+import { ROUTING, TEXT_EMBEDDING } from './training.ts';
 
 export const WINDOW_DAYS = 7;
 /** At most this many recent rows are read per model: bounds a run's memory. */
@@ -28,17 +31,25 @@ export interface ModelDrift {
   drifted: boolean;
 }
 
+interface ServingRow {
+  version: number;
+  dataset: { profile?: Record<string, Profile>; centroid?: number[] };
+}
+
 interface Watched {
   name: string;
-  names: readonly string[];
-  recent: (q: Queryable) => Promise<number[][]>;
+  /** Recent inputs, one column per feature. */
+  recent: (q: Queryable, serving: ServingRow) => Promise<Record<string, number[]>>;
 }
+
+/** Row-major inputs as named columns. */
+const tabular = (names: readonly string[], rows: (q: Queryable) => Promise<number[][]>) => async (q: Queryable) =>
+  columnsOf(await rows(q), names);
 
 const WATCHED: readonly Watched[] = [
   {
     name: ROUTING,
-    names: FACTOR_ORDER,
-    recent: async q =>
+    recent: tabular(FACTOR_ORDER, async q =>
       (
         await q.query<{ factors: number[] }>(
           `SELECT factors FROM app.route_factors
@@ -47,11 +58,11 @@ const WATCHED: readonly Watched[] = [
           [FACTORS_VERSION, WINDOW_DAYS, MAX_ROWS],
         )
       ).rows.map(r => r.factors),
+    ),
   },
   {
     name: SEARCH_RANKER,
-    names: FEATURE_NAMES,
-    recent: async q =>
+    recent: tabular(FEATURE_NAMES, async q =>
       (
         await q.query<{
           word_rank: number | null;
@@ -78,18 +89,45 @@ const WATCHED: readonly Watched[] = [
           answerAgeDays: r.answer_age_days,
         }),
       ),
+    ),
+  },
+  {
+    name: TEXT_EMBEDDING,
+    recent: async (q, serving) => {
+      // The serving weights, checked against their stored hash before use.
+      const row = (
+        await q.query<{ artifact: Buffer; ok: boolean }>(
+          `SELECT artifact, encode(sha256(artifact), 'hex') = artifact_sha256 AS ok
+           FROM app.ml_models WHERE name = $1 AND version = $2`,
+          [TEXT_EMBEDDING, serving.version],
+        )
+      ).rows[0];
+      if (!row?.ok) throw new Error(`model ${TEXT_EMBEDDING} v${String(serving.version)} failed its integrity check`);
+      const texts = (
+        await q.query<{ title: string; body: string }>(
+          `SELECT q.title, q.body FROM app.questions q
+           JOIN app.user_consent_settings s ON s.user_id = q.asker_id AND s.category = 'model_training' AND s.enabled
+           WHERE q.created_at > now() - make_interval(days => $1) AND NOT app.is_question_hidden(q.id)
+           ORDER BY q.id DESC LIMIT $2`,
+          [WINDOW_DAYS, MAX_ROWS],
+        )
+      ).rows.map(r => (r.body ? `${r.title}\n${r.body}` : r.title));
+      return embeddingSignals(deserializeModel(row.artifact), texts, serving.dataset.centroid ?? []);
+    },
   },
 ];
 
 async function measure(q: Queryable, watched: Watched): Promise<ModelDrift> {
   const serving = (
-    await q.query<{ version: number; profile: Record<string, Profile> | null }>(
-      `SELECT version, dataset -> 'profile' AS profile FROM app.ml_models WHERE name = $1 AND status = 'production'`,
+    await q.query<ServingRow>(
+      `SELECT version, jsonb_build_object('profile', dataset -> 'profile', 'centroid', dataset -> 'centroid') AS dataset
+       FROM app.ml_models WHERE name = $1 AND status = 'production'`,
       [watched.name],
     )
   ).rows[0];
   if (!serving) return { model: watched.name, skipped: 'nothing serving', features: [], drifted: false };
-  if (!serving.profile)
+  const profile = serving.dataset.profile;
+  if (!profile)
     return {
       model: watched.name,
       skipped: 'no training profile',
@@ -97,7 +135,7 @@ async function measure(q: Queryable, watched: Watched): Promise<ModelDrift> {
       features: [],
       drifted: false,
     };
-  const features = featureDrift(serving.profile, columnsOf(await watched.recent(q), watched.names));
+  const features = featureDrift(profile, await watched.recent(q, serving));
   for (const f of features)
     await q.query(
       `INSERT INTO app.ml_drift (model, version, feature, psi, ks, p, n, drifted) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,

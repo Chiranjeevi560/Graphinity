@@ -11,6 +11,8 @@ import {
   trainTextEmbedding,
   type TrainingOptions,
 } from './text-embedding.ts';
+import { profilesOf, type Profile } from './drift.ts';
+import { centroidOf, EMBEDDING_SIGNALS, embeddingSignals } from './embedding-drift.ts';
 
 export interface WorkerInput {
   questions: Array<{ id: string; title: string; body: string }>;
@@ -28,6 +30,8 @@ export interface TrainingResult {
   baseline: { kind: 'model' | 'bm25'; version: number | null; mrr: number; recallAt10: number };
   /** Only when promoted: a rejected model's weights are never kept. */
   artifact: Uint8Array | null;
+  /** What drift monitoring compares new questions with (ADR 0019). */
+  reference: { profile: Record<string, Profile>; centroid: number[] };
 }
 
 export function trainAndEvaluate(input: WorkerInput): TrainingResult {
@@ -52,6 +56,17 @@ export function trainAndEvaluate(input: WorkerInput): TrainingResult {
     servingModel ? fusedScorer(servingModel, heldOut) : bm25Scorer(heldOut),
   );
   const decision = decide(candidate, baselineScores, params.seed);
+  // The centre from the training questions, the profile from held-out ones (never the same questions).
+  const textOf = (q: { title: string; body: string }) => (q.body ? `${q.title}\n${q.body}` : q.title);
+  const centroid = centroidOf(model, input.questions.filter(q => !heldOutIds.has(q.id)).map(textOf));
+  const signals = embeddingSignals(model, heldOut.map(textOf), centroid);
+  const reference = {
+    profile: profilesOf(
+      signals.coverage.map((_, i) => EMBEDDING_SIGNALS.map(name => signals[name][i] ?? 0)),
+      EMBEDDING_SIGNALS,
+    ),
+    centroid,
+  };
   return {
     decision,
     params,
@@ -64,6 +79,7 @@ export function trainAndEvaluate(input: WorkerInput): TrainingResult {
       recallAt10: baselineScores.recallAt10,
     },
     artifact: decision.promote ? new Uint8Array(serializeModel(model)) : null,
+    reference,
   };
 }
 
