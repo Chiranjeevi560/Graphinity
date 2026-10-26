@@ -297,9 +297,15 @@ export async function buildServer(deps: Deps) {
   const analyzer = deps.graphAnalyzer ?? createGraphAnalyzer();
   if (!deps.graphAnalyzer) app.addHook('onClose', () => analyzer.close());
   registerPersonalGraphRoutes(app, { db, analyzer, clock });
-  registerRecommendationRoutes(app, { db, enabled: deps.recommendationsEnabled ?? (() => true) });
+
   const events = deps.events ?? createEvents();
   const engine = createSearchEngine({ db, embedder: deps.embedder ?? null, speller: deps.speller ?? null });
+  registerRecommendationRoutes(app, {
+    db,
+    enabled: deps.recommendationsEnabled ?? (() => true),
+    engine,
+    meaningModel: () => deps.embedder?.model ?? null,
+  });
   registerQuestionRoutes(app, { db, events, embedder: deps.embedder ?? null, engine });
   registerSearchRoutes(app, {
     db,

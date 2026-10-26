@@ -274,6 +274,20 @@ whenever a user-linked table is added.
   the owner's switch. Known gap: there is no detection of coordinated click accounts yet (part of the
   fraud work).
 
+## Recommendations v3 (ADR 0016)
+
+- Each source runs as the person (row-level security), except `app.similar_questions`, which is
+  owner-run because vectors are job-only. It takes only a question id and returns only which public
+  questions are near it, leaving out the seed itself and hidden questions. Tested.
+- "Answered by the same people" reads public answers only, as row-level security shows them to the
+  person; it reveals nothing beyond what anyone can see on the questions themselves.
+- Consent: searches only while `search_history` is on, opened questions (for the answered-together
+  and similar sources) only while `reading_history` is on, and nothing without `feed_personalization`.
+  Each tested by breaking it.
+- Final filter, tested: never the person's own question, one they answered or opened, one older than
+  180 days. Hidden questions are already invisible to the person through row-level security; the
+  filter's own check is a second layer.
+
 ## Question vectors (ADR 0015 part 5)
 
 - `app.question_embeddings` has row-level security forced. A request may only add the vector of a

@@ -1,6 +1,7 @@
 # ADR 0006: Finite, consented knowledge discovery
 
-- **Status:** Accepted; baseline implemented, broader adaptive system remains incomplete
+- **Status:** Accepted. Its sources and fusion are superseded by ADR 0016 (`feed-rrf-v3`, measured);
+  its rules (finite, consented, no commerce, nothing stored, no hand-picked weights) stand.
 - **Date:** 2026-10-22
 
 ## Problem
