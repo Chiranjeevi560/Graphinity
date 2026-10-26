@@ -2,6 +2,7 @@ import { createTokenVerifier, supabaseKeys } from './auth.ts';
 import { createSupabaseAdmin } from './auth-admin.ts';
 import { loadConfig, ConfigError } from './config.ts';
 import { createDatabase } from './db.ts';
+import { detectCollusion } from './collusion.ts';
 import { completePendingDeletions } from './deletions.ts';
 import { createEvents } from './events.ts';
 import { embedMissing } from './backfill.ts';
@@ -472,6 +473,25 @@ trainingTimer.unref();
 app.addHook('onClose', (_instance, done) => {
   clearTimeout(firstTraining);
   clearInterval(trainingTimer);
+  done();
+});
+// Collusion review (ADR 0017), daily: groups giving each other points go to
+// moderators; nothing happens to anyone until one decides. Counts only in logs.
+const runCollusion = serial(async () => {
+  try {
+    const outcome = await detectCollusion(db);
+    app.log.info(outcome, 'collusion review');
+  } catch (err) {
+    app.log.warn({ kind: errorKind(err) }, 'collusion review failed');
+  }
+});
+const firstCollusion = setTimeout(runCollusion, 20 * 60_000);
+firstCollusion.unref();
+const collusionTimer = setInterval(runCollusion, 24 * 60 * 60_000);
+collusionTimer.unref();
+app.addHook('onClose', (_instance, done) => {
+  clearTimeout(firstCollusion);
+  clearInterval(collusionTimer);
   done();
 });
 app.addHook('onClose', (_instance, done) => {

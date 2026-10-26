@@ -18,6 +18,7 @@ import type { Database, Queryable } from '../db.ts';
 import type { PastRoute } from './routing-bandit.ts';
 import { FACTORS_VERSION } from '../routing-score.ts';
 import type { GateExample } from './routing-gate.ts';
+import { underCollusionReview } from '../collusion.ts';
 
 /** Most settled routes read per run: bounds memory and training time (9.5 s at 48,000 on an M2). */
 /** Picks and marks after this many days from asking don't count; routes are read only after it. */
@@ -70,7 +71,7 @@ export async function loadRoutingExamples(
              ORDER BY a.created_at LIMIT 1
            ) ans ON true
            WHERE f.factors_version = $1 AND NOT f.explore AND horizon.at < now()
-             AND NOT app.is_question_hidden(q.id)
+             AND NOT app.is_question_hidden(q.id) AND NOT ${underCollusionReview('q.asker_id')}
              AND NOT EXISTS (SELECT 1 FROM app.selections s WHERE s.question_id = q.id AND s.selected_at > horizon.at)
            ORDER BY f.question_id DESC, f.profile_id
            LIMIT $3`,
@@ -155,7 +156,7 @@ export async function loadHistories(q: Queryable, profileIds: readonly string[])
          ORDER BY a.created_at LIMIT 1
        ) ans ON true
        WHERE f.profile_id = ANY($1::uuid[]) AND f.factors_version = $3 AND horizon.at < now()
-         AND NOT app.is_question_hidden(qu.id)`,
+         AND NOT app.is_question_hidden(qu.id) AND NOT ${underCollusionReview('qu.asker_id')}`,
       [profileIds, LABEL_HORIZON_DAYS, FACTORS_VERSION],
     )
   ).rows;

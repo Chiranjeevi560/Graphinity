@@ -5,6 +5,7 @@ import {
   clearConsoleErrors,
   establishTestPersonA,
   expect,
+  readAsOwner,
   runWords,
   setUpIfNeeded,
   signIn,
@@ -68,4 +69,42 @@ test('a moderator removes a reported question', async ({ page, browserName }) =>
   await page.goto(questionUrl);
   await expect(page.getByRole('heading', { name: 'This question doesn’t exist' })).toBeVisible();
   await expect(page.getByText('It may have been deleted.')).toBeVisible();
+});
+
+test('a moderator reviews a group picking each other, and confirms it', async ({ page, browserName }) => {
+  const run = `${browserName}${String(Date.now() % 1_000_000)}`;
+  await signIn(page, 'Test person A');
+  await setUpIfNeeded(page, `moderator.${run}`);
+  await establishTestPersonA();
+  await asOwner('INSERT INTO app.moderators (profile_id) VALUES ($1) ON CONFLICT DO NOTHING', [TEST_PERSON_A]);
+  // Three other people, recorded as a group the way the daily job records one (ADR 0017).
+  const people = await readAsOwner<{ id: string; handle: string }>(
+    'SELECT id::text, handle FROM app.profiles WHERE id <> $1 ORDER BY created_at DESC LIMIT 3',
+    [TEST_PERSON_A],
+  );
+  expect(people).toHaveLength(3);
+  await asOwner(
+    `WITH g AS (
+       INSERT INTO app.collusion_groups (member_key, members, inside, expected, lift)
+       VALUES (md5(random()::text) || md5(random()::text), 3, 6, 0.2, 9999) RETURNING id)
+     INSERT INTO app.collusion_members (group_id, profile_id) SELECT g.id, unnest($1::uuid[]) FROM g`,
+    [people.map(p => p.id)],
+  );
+  await page.goto('/review');
+  await expect(page.getByRole('heading', { name: 'Groups picking each other' })).toBeVisible();
+  const handles = people.map(p => p.handle).sort();
+  const group = page
+    .getByRole('listitem')
+    .filter({ hasText: `@${handles[0] ?? ''}, @${handles[1] ?? ''}` })
+    .first();
+  await expect(group).toContainText('6 picks among them');
+  await audit(page, 'review with a group');
+  await group.getByRole('button', { name: 'Collusion…' }).click();
+  await expect(group.getByText('It can’t be undone.')).toBeVisible();
+  await audit(page, 'review confirming a group');
+  await group.getByRole('button', { name: 'Take back points' }).click();
+  await expect(group.getByText(/^Confirmed\./)).toBeVisible();
+  await expect(group.getByRole('button')).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole('listitem').filter({ hasText: '9999 times more' })).toHaveCount(0);
 });

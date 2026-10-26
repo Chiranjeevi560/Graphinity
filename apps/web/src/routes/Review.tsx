@@ -20,6 +20,14 @@ interface Item {
 interface Review {
   items: Item[];
   sharedNetworks: Array<{ giver: string; recipient: string; points: number }>;
+  collusion: Group[];
+}
+interface Group {
+  id: string;
+  members: Array<{ handle: string }>;
+  picks: number;
+  expected: number;
+  lift: number;
 }
 
 const reasonNames: Record<string, string> = {
@@ -30,7 +38,7 @@ const reasonNames: Record<string, string> = {
   other: 'Other',
 };
 
-/** For moderators: reported posts and points exchanged from shared networks. */
+/** For moderators: reported posts, groups picking each other, and points exchanged from shared networks. */
 export default function ReviewPage() {
   const { data: review, error, retry } = useLoad<Review>('/review', true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -60,6 +68,28 @@ export default function ReviewPage() {
         api('/review/decision', { method: 'POST', signedIn: true, body: { kind: item.kind, id: item.id, decision } }),
       () => {
         setDecided(d => ({ ...d, [key]: decision === 'keep' ? 'Kept. It’s visible again.' : 'Removed.' }));
+      },
+    );
+  // Confirming takes points back for good, so it asks once more first.
+  const [confirming, setConfirming] = useState<string | null>(null);
+  const judge = (group: Group, decision: 'dismiss' | 'confirm') =>
+    act(
+      `group:${group.id}`,
+      () =>
+        api<{ decision: { awardsTakenBack: number } }>('/review/collusion', {
+          method: 'POST',
+          signedIn: true,
+          body: { id: group.id, decision },
+        }),
+      () => {
+        setConfirming(null);
+        setDecided(d => ({
+          ...d,
+          [`group:${group.id}`]:
+            decision === 'dismiss'
+              ? 'Marked as genuine. Nothing changed for them.'
+              : 'Confirmed. The points they gave each other are taken back, and picks between them no longer move points.',
+        }));
       },
     );
   const block = (item: Item, key: string) =>
@@ -180,6 +210,108 @@ export default function ReviewPage() {
             );
           })}
         </ul>
+      </section>
+
+      <section className="review-section" aria-labelledby="groups-heading">
+        <h2 id="groups-heading" className="text-title3">
+          Groups picking each other
+        </h2>
+        <p className="text-subhead secondary">
+          Accounts that get most of their picks from each other, far more than how active they are explains. Often
+          collusion to earn points; sometimes a small group of friends who really help each other. Nothing happens to
+          them until you decide.
+        </p>
+        {review.collusion.length === 0 ? (
+          <p className="text-body secondary">None found.</p>
+        ) : (
+          <ul className="review-list">
+            {review.collusion.map(group => {
+              const key = `group:${group.id}`;
+              return (
+                <li key={group.id} className="review-item">
+                  <p className="text-body">
+                    {group.members.map((m, i) => (
+                      <span key={m.handle}>
+                        {i > 0 && ', '}
+                        <Link to={`/u/${encodeURIComponent(m.handle)}`}>@{m.handle}</Link>
+                      </span>
+                    ))}
+                  </p>
+                  <p className="text-footnote secondary">
+                    {group.picks === 1 ? '1 pick' : `${String(group.picks)} picks`} among them in 6 months, where their
+                    activity would explain {String(group.expected)} ({String(group.lift)} times more)
+                  </p>
+                  {decided[key] && (
+                    <p className="text-subhead" role="status">
+                      {decided[key]}
+                    </p>
+                  )}
+                  {failed[key] && (
+                    <p className="form-note tone-bad" role="alert">
+                      {failed[key]}
+                    </p>
+                  )}
+                  {!decided[key] && confirming === group.id && (
+                    <p className="text-subhead" role="status">
+                      This takes back every point they gave each other. It can’t be undone.
+                    </p>
+                  )}
+                  {!decided[key] && (
+                    <div className="review-actions">
+                      {confirming === group.id ? (
+                        <>
+                          <button
+                            type="button"
+                            className="btn btn-plain"
+                            disabled={busy !== null}
+                            onClick={() => {
+                              setConfirming(null);
+                            }}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-plain danger"
+                            disabled={busy !== null}
+                            onClick={() => {
+                              void judge(group, 'confirm');
+                            }}
+                          >
+                            Take back points
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            className="btn btn-plain"
+                            disabled={busy !== null}
+                            onClick={() => {
+                              void judge(group, 'dismiss');
+                            }}
+                          >
+                            Genuine
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-plain danger"
+                            disabled={busy !== null}
+                            onClick={() => {
+                              setConfirming(group.id);
+                            }}
+                          >
+                            Collusion…
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </section>
 
       <section className="review-section" aria-labelledby="networks-heading">

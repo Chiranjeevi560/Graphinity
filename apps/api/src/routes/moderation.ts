@@ -146,6 +146,26 @@ export function registerModerationRoutes(app: FastifyInstance, { db }: { db: Dat
         GROUP BY gp.handle, rp.handle
         ORDER BY points DESC LIMIT 50`)
       ).rows;
+      // Groups giving each other points (ADR 0017), waiting for a decision, the most extreme first.
+      const groups = (
+        await q.query<{
+          id: string;
+          members: string[];
+          inside: number;
+          expected: number;
+          lift: number;
+          found_at: Date;
+          seen_at: Date;
+        }>(`
+        SELECT g.public_id::text AS id, array_agg(p.handle ORDER BY p.handle) AS members,
+               g.inside, g.expected, g.lift, g.found_at, g.seen_at
+        FROM app.collusion_groups g
+        JOIN app.collusion_members m ON m.group_id = g.id
+        JOIN app.profiles p ON p.id = m.profile_id
+        WHERE g.status = 'open'
+        GROUP BY g.id
+        ORDER BY g.lift DESC, g.id LIMIT 50`)
+      ).rows;
       return {
         items: items.map(i => ({
           kind: i.kind,
@@ -160,6 +180,15 @@ export function registerModerationRoutes(app: FastifyInstance, { db }: { db: Dat
           lastReportAt: i.last.toISOString(),
         })),
         sharedNetworks: pairs,
+        collusion: groups.map(g => ({
+          id: g.id,
+          members: g.members.map(handle => ({ handle })),
+          picks: g.inside,
+          expected: Math.round(g.expected * 10) / 10,
+          lift: Math.round(g.lift),
+          foundAt: g.found_at.toISOString(),
+          seenAt: g.seen_at.toISOString(),
+        })),
       };
     });
   });
@@ -196,6 +225,63 @@ export function registerModerationRoutes(app: FastifyInstance, { db }: { db: Dat
       } catch (err) {
         // Deleted while the review page was open (with its author's account).
         if (pgCode(err) === '23503') return fail(reply, 404, 'not_found', 'This post doesn’t exist any more.');
+        throw err;
+      }
+    },
+  );
+
+  // A moderator's decision about a group: dismiss it as genuine, or confirm
+  // it, which takes back the points its members gave each other (in the
+  // database: app.take_back_collusion). One decision per group.
+  app.post(
+    '/review/collusion',
+    {
+      config: { auth: 'required', write: true },
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['id', 'decision'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            decision: { enum: ['dismiss', 'confirm'] },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      const user = signedIn(req);
+      const { id, decision } = req.body as { id: string; decision: 'dismiss' | 'confirm' };
+      try {
+        return await asModerator(user.id, reply, async q => {
+          const group = (
+            await q.query<{ id: string; status: string }>(
+              'SELECT id::text, status FROM app.collusion_groups WHERE public_id = $1',
+              [id],
+            )
+          ).rows[0];
+          if (!group) return fail(reply, 404, 'not_found', 'This group isn’t waiting for review any more.');
+          if (group.status !== 'open')
+            return fail(reply, 409, 'already_decided', 'Someone already decided about this group.');
+          await q.query('UPDATE app.collusion_groups SET status = $2 WHERE id = $1', [
+            group.id,
+            decision === 'confirm' ? 'confirmed' : 'dismissed',
+          ]);
+          const takenBack =
+            decision === 'confirm'
+              ? ((await q.query<{ n: number }>('SELECT app.take_back_collusion($1) AS n', [group.id])).rows[0]?.n ?? 0)
+              : 0;
+          return { decision: { id, decision, awardsTakenBack: takenBack } };
+        });
+      } catch (err) {
+        // Two moderators at once: the second finds it decided.
+        if (pgCode(err) === '23514')
+          return fail(reply, 409, 'already_decided', 'Someone already decided about this group.');
+        // Points were moving between the same people at that moment; nothing was changed.
+        if (pgCode(err) === '40P01')
+          return fail(reply, 503, 'busy', 'Points were moving for these people just then. Nothing changed; try again.');
+        if (pgCode(err) === '42501')
+          return fail(reply, 403, 'own_group', 'You’re in this group, so another moderator has to decide about it.');
         throw err;
       }
     },

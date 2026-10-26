@@ -364,7 +364,8 @@ moderators.
 
 ### Moderators only (403 `not_a_moderator` otherwise)
 
-- `GET /review` → `{ items: [{ kind, id, questionId, text, author, reports, reasons, notes, hidden, lastReportAt }], sharedNetworks: [{ giver, recipient, points }] }`
+- `GET /review` → `{ items: [{ kind, id, questionId, text, author, reports, reasons, notes, hidden, lastReportAt }], sharedNetworks: [{ giver, recipient, points }], collusion: [{ id, members: [{ handle }], picks, expected, lift, foundAt, seenAt }] }`. `collusion` lists open groups picking each other (ADR 0017), the most extreme first, at most 50
+- `POST /review/collusion` `{ id, decision: 'dismiss' | 'confirm' }` → `{ decision: { id, decision, awardsTakenBack } }`. Confirming takes back every award the members gave each other. 404 `not_found`, 409 `already_decided`, 403 `own_group` (the moderator is in it), 503 `busy` (points were moving for them; nothing changed, try again)
 - `POST /review/decision` `{ kind, id, decision: "keep" | "remove" }`
 - `POST /review/block` `{ handle, reason? }`, `DELETE /review/block` `{ handle }` (400 `invalid_reason` for a reason over 500 characters or with hidden characters)
 

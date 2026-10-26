@@ -5,6 +5,7 @@
 // transaction: only the training job reads everyone's.
 import { createHash } from 'node:crypto';
 import type { Database } from '../db.ts';
+import { underCollusionReview } from '../collusion.ts';
 import { rankingFeatures } from './features.ts';
 
 /** A read this long marks a clearly useful result (label 2); any other open, label 1. */
@@ -45,7 +46,8 @@ export async function loadSearchTraining(db: Pick<Database, 'asSystem'>): Promis
       dwell_ms: number | null;
     }>(
       `WITH recent AS (
-         SELECT id, user_id, swap FROM app.searches WHERE experiment IS NULL
+         SELECT id, user_id, swap FROM app.searches
+         WHERE experiment IS NULL AND NOT ${underCollusionReview('user_id')}
          ORDER BY id DESC LIMIT ${String(MAX_SEARCHES)}
        )
        SELECT s.id::text AS id, s.user_id::text AS user_id, s.swap, r.position, r.ranked_position, r.word_rank,

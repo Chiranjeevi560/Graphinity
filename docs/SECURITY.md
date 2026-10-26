@@ -86,6 +86,7 @@ Each line answers: *if a hostile researcher spent a day on this, what would they
 | T6 | Steal a sign-in token | Access token in memory, refresh token in sessionStorage; CSP with no inline or third-party scripts | In place |
 | T7 | Forge the OAuth return (login CSRF), or replay a Google ID token | Our own state checked in the tab that started it, plus an OIDC nonce whose raw value never leaves the tab | In place |
 | T8 | Farm points with a second account | Pair cap (3 awards per asker per person per 30 days), trust counted once per asker; shared-network flags in step 6 | Pair cap and trust in place; flags step 6 |
+| T8b | Farm points in a ring (several accounts picking each other, with camouflage) | Daily detection (ADR 0017: closure, strongly connected parts, lift ≥ 20), measured at precision 1 on planted rings; moderators decide; confirming takes back the members' awards to each other and later ones move no points; the job can't decide, a moderator can't change the numbers or decide twice or about their own group; members don't teach search or routing while under review | In place; `collusion.integration.test.ts`, every rule fails a test when removed |
 | T8a | Forge or replay points | Ledger rows only for a real pick or mark by the signed-in asker, amount fixed by reason, take-backs mirror their award, capped awards kept as 0 so they can't be paid later, one lock per question then per pair in a fixed order, READ COMMITTED required, real clock time; no UPDATE/DELETE granted | In place; `points.db.integration.test.ts` attacks each, three adversarial reviews |
 | T9 | Flood people with notifications | Daily per-person budget, waves | Step 5 |
 | T10 | Post abuse, spam or private info | Reports, auto-hide after 3, owner review, new-account limits | Step 6 |
@@ -334,7 +335,15 @@ whenever a user-linked table is added.
   every other table. A compromised API role could act as any person; the database stops it from
   inventing points that no pick or mark backs.
 - Several people (sock accounts) can each give one person points up to the pair cap. Step 6 adds
-  flags for shared networks; nothing slows sock accounts before that.
+  flags for shared networks; nothing slows sock accounts before that. Collusion review (ADR 0017)
+  can't tell sock stars from a niche expert's askers by picks alone, so it doesn't flag them.
+- Collusion review misses about half of rings whose members also earn as many genuine picks as they
+  give each other, and rings below 3 accounts or 6 picks. A dismissed group stays dismissed while
+  its members are the same. Confirming can deadlock with a pick moving between the same people at
+  that instant; nothing changes and the moderator is told to try again.
+- Membership in a collusion group is not in a person's data export, like block reasons: telling a
+  ring it is under review would tell it to change. It is deleted with the account.
+- Awards whose question was deleted can't be named by a guarded take-back row, so they stay.
 - The API role could hold the advisory-lock keys to stall picks for a question or pair (denial of
   service by our own server role, accepted).
 - Re-picking an answer whose award the cap stopped, after the 30-day window, is a new award (still
