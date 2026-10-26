@@ -100,6 +100,28 @@ export async function settle(page: Page) {
   );
 }
 
+/**
+ * Axe on final colours. Fades are finished first (the audit judges what a
+ * person sees once a screen has appeared, not its first frames), and a run
+ * during which any animation was playing is discarded and repeated: a
+ * screen re-mounted after settle() returned once started its entrance fade
+ * mid-audit, and every element measured at 1.05:1 (answers.spec, Chromium).
+ */
+async function measuredSettled(page: Page) {
+  for (let attempt = 1; ; attempt++) {
+    await page.evaluate(() => {
+      for (const a of document.getAnimations()) if (a.playState === 'running') a.finish();
+    });
+    const result = await new AxeBuilder({ page })
+      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
+      .analyze();
+    const moved = await page.evaluate(() => document.getAnimations().some(a => a.playState === 'running'));
+    if (!moved) return result;
+    if (attempt === 3) throw new Error('the screen kept animating through three accessibility checks');
+    await settle(page);
+  }
+}
+
 export async function audit(page: Page, screen: string) {
   const report: ScreenReport = { screen, axe: [], overflow: [], smallTargets: [] };
   // From the top, as the screen first appears: part-way down, anything near
@@ -110,9 +132,7 @@ export async function audit(page: Page, screen: string) {
   for (const scheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme: scheme });
     await settle(page);
-    const result = await new AxeBuilder({ page })
-      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
-      .analyze();
+    const result = await measuredSettled(page);
     for (const v of result.violations) {
       report.axe.push({
         scheme,
