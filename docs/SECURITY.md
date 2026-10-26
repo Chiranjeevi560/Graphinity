@@ -377,6 +377,14 @@ whenever a user-linked table is added.
   "not counted". Click ids reach advertisers only for people who allow measurement. Known limit:
   a person who withdraws measurement can't recall click ids already handed to an advertiser (they
   name nobody); conversions against them still count until the 30-day window closes.
+- Audiences (ADR 0022 part 7): members are ad identities, written and read by the system's build
+  job only; a business sees a status and a size rounded down to a hundred, nothing under 100
+  (`CHECK` in the database, `insufficient` audiences store no members). A trigger refuses members
+  who don't allow personalized ads now; turning it off removes someone from every audience at once
+  (identity rotation). Audiences and campaign targets are confined to their own business by
+  triggers. Known limit: intersecting an audience with narrow keyword or country targeting can
+  reach fewer than 100 people; what a business can learn from that is bounded by part 8's
+  private reporting, not by targeting.
 - Attribution reports (ADR 0022 part 6b): only a business's members read its campaigns' reports
   (checked in the query with `app.is_ad_member`, so moderators' wider campaign access doesn't
   extend to them). Impressions are read by the system role only; a person's impressions join into

@@ -420,6 +420,24 @@ and the platform is on. `DELETE /me/ad-interests/:field` (counts as a write) rem
   when unknown, older than an hour, or advertising is off. Both have their own rate limit (429).
 
 
+### Audiences (ADR 0022 part 7)
+
+Available while `ads` and `ads_audiences` are on (otherwise 404 `ads_off`, or 403 `not_allowed`).
+
+- `POST /ads/advertisers/:id/audiences` (a member of the business) with `{ name, kind }` and, by kind:
+  `segment` → `rule: { all: [condition…], any?: [condition…] }` (a condition is `{ interest, min? }`,
+  `{ country }` or `{ field }`); `retargeting` → `campaignId` (one of the business's campaigns);
+  `lookalike` → `seedAudienceId` (one of its audiences, not a look-alike) and `expansion` (0.01, 0.02 or 0.05).
+  → 201 `{ audience: { id, name, kind, status: 'building', size: null, builtAt: null } }`; 400 `invalid`
+  (wrong fields for the kind), 400 `not_own` (another business's campaign or audience), 400
+  `too_many_audiences` (50).
+- `GET /ads/advertisers/:id/audiences` → `{ audiences: [{ id, name, kind, status, size, builtAt }] }`.
+  `status` is `building`, `ready` or `insufficient` (under 100 people); `size` is rounded down to a
+  hundred, and `null` unless ready. Who is in an audience is never returned.
+- `DELETE /ads/audiences/:id` → `{ removed: true }`. Campaigns targeting it then match nobody.
+- Targeting (`PUT /ads/campaigns/:id/targeting`) accepts `{ kind: 'audience', value: <audience id> }`,
+  one of the business's own.
+
 ### Conversions (ADR 0022 part 6a)
 
 - `POST /ads/advertisers/:id/keys` (owner) → 201 `{ key: { value, prefix } }`, shown once; 400 `too_many_keys` (10),

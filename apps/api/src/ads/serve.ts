@@ -8,7 +8,10 @@
 //    allows personalized ads);
 // 2. paced: a campaign sits out while it is spending ahead of the day;
 // 3. capped: a reader who allows personalized ads sees one campaign at most
-//    its frequency cap a day; nobody else is tracked, so has no cap;
+//    its frequency cap a day; nobody else is tracked, so has no cap. An ad
+//    reminder (a campaign targeting a retargeting audience, part 7) is
+//    capped harder, 3 a day and 7 a week, and its click rate cools with time
+//    since the tap that put the reader in the audience;
 // 4. the auction (auction.ts), whose winners are recorded as impressions.
 // Ads never pass through knowledge ranking, and it never sees them.
 import type { Database, Queryable } from '../db.ts';
@@ -17,6 +20,7 @@ import { deserializeServing, predictServing, type FtrlServing } from '../ml/ftrl
 import { loadServing } from '../ml/registry.ts';
 import { paced, runAuction, shrunkCtr, type Candidate, type Win } from './auction.ts';
 import { AD_CTR, ctrFeatures } from './ctr-features.ts';
+import { cooling, RETARGET_PER_DAY, RETARGET_PER_WEEK } from './audiences.ts';
 
 export const REFRESH_MS = 30_000;
 /** A click rate to start from: the prior is worth this many impressions. */
@@ -46,6 +50,8 @@ export interface IndexedCampaign {
   creatives: Creative[];
   /** Targeting by kind; a kind absent means "anything". */
   targets: Map<string, Set<string>>;
+  /** The targeted audiences that are ad reminders (part 7): capped harder, cooling with time. */
+  reminders: ReadonlySet<string>;
 }
 
 export interface AdContext {
@@ -57,6 +63,11 @@ export interface AdContext {
   country: string | null;
   /** The reader's interest topics, only when they allow personalized ads; else null. */
   interests: ReadonlySet<string> | null;
+  /**
+   * The ready audiences the reader is in, with when they joined (ms), only when they allow
+   * personalized ads and audiences are on; else null.
+   */
+  audiences?: ReadonlyMap<string, number> | null;
 }
 
 /** Whether every targeting kind the campaign uses matches this context. */
@@ -66,8 +77,19 @@ export function matches(c: IndexedCampaign, ctx: AdContext): boolean {
     if (kind === 'keyword' && !ctx.words.some(w => values.has(w))) return false;
     if (kind === 'country' && (ctx.country === null || !values.has(ctx.country))) return false;
     if (kind === 'interest' && (ctx.interests === null || ![...values].some(v => ctx.interests?.has(v)))) return false;
+    if (kind === 'audience' && ![...values].some(v => ctx.audiences?.has(v) ?? false)) return false;
   }
   return true;
+}
+
+/**
+ * For an ad reminder the reader qualifies for, how long ago they joined its audience (ms);
+ * null when the campaign is no reminder for them.
+ */
+function reminderAge(c: IndexedCampaign, ctx: AdContext, now: number): number | null {
+  let latest = -Infinity;
+  for (const a of c.reminders) latest = Math.max(latest, ctx.audiences?.get(a) ?? -Infinity);
+  return latest === -Infinity ? null : now - latest;
 }
 
 /** Fraction of the UTC day gone, for pacing. */
@@ -129,16 +151,22 @@ export function choose(
   now: number,
   /** A learned click model (part 5): per campaign, ad and context. Without one, shrunk averages. */
   predictCtr?: (campaign: string, creative: string, ctx: AdContext) => number,
+  /** Impressions per campaign this reader saw in the last 7 days (reminders' weekly cap). */
+  seenThisWeek: ReadonlyMap<string, number> = new Map(),
 ): Selection {
   const candidates: Candidate[] = [];
   const creatives = new Map<string, Creative & { advertiser: string }>();
   for (const c of candidatesFor(index, ctx)) {
     if (!matches(c, ctx)) continue;
     if (!paced(c.spentMicros, c.dailyBudgetMicros, dayFraction(now))) continue;
-    if ((seenToday.get(c.id) ?? 0) >= c.frequencyCap) continue;
+    const age = reminderAge(c, ctx, now);
+    const dailyCap = age === null ? c.frequencyCap : Math.min(c.frequencyCap, RETARGET_PER_DAY);
+    if ((seenToday.get(c.id) ?? 0) >= dailyCap) continue;
+    if (age !== null && (seenThisWeek.get(c.id) ?? 0) >= RETARGET_PER_WEEK) continue;
     const shrunk = shrunkCtr(c.clicks, c.impressions, PRIOR_CTR, PRIOR_STRENGTH);
+    const cool = age === null ? 1 : cooling(age);
     for (const cr of c.creatives) {
-      const ctr = predictCtr ? predictCtr(c.id, cr.id, ctx) : shrunk;
+      const ctr = (predictCtr ? predictCtr(c.id, cr.id, ctx) : shrunk) * cool;
       candidates.push({ campaignId: c.id, creativeId: cr.id, maxCpcMicros: c.maxCpcMicros, ctr });
       creatives.set(cr.id, { ...cr, advertiser: c.advertiser });
     }
@@ -159,7 +187,7 @@ export async function loadIndex(q: Queryable): Promise<IndexedCampaign[]> {
     impressions: string;
     clicks: string;
     creatives: Array<{ id: string; headline: string; body: string; url: string }>;
-    targets: Array<{ kind: string; value: string }> | null;
+    targets: Array<{ kind: string; value: string; reminder: boolean }> | null;
   }>(
     `SELECT c.id::text, a.name AS advertiser, a.id::text AS advertiser_id, c.max_cpc_micros::text,
             c.daily_budget_micros::text, c.frequency_cap,
@@ -171,7 +199,9 @@ export async function loadIndex(q: Queryable): Promise<IndexedCampaign[]> {
             (SELECT json_agg(json_build_object('id', cr.id::text, 'headline', cr.headline, 'body', cr.body, 'url', cr.destination_url)
                              ORDER BY cr.id)
              FROM app.ad_creatives cr WHERE cr.campaign_id = c.id AND cr.status = 'approved') AS creatives,
-            (SELECT json_agg(json_build_object('kind', t.kind, 'value', t.value)) FROM app.ad_targeting t WHERE t.campaign_id = c.id) AS targets
+            (SELECT json_agg(json_build_object('kind', t.kind, 'value', t.value, 'reminder', t.kind = 'audience' AND EXISTS (
+                SELECT 1 FROM app.ad_audiences au WHERE au.public_id::text = t.value AND au.kind = 'retargeting')))
+             FROM app.ad_targeting t WHERE t.campaign_id = c.id) AS targets
      FROM app.ad_campaigns c JOIN app.ad_advertisers a ON a.id = c.advertiser_id
      WHERE c.status = 'active' AND a.status = 'active' AND c.starts_at <= now() AND (c.ends_at IS NULL OR c.ends_at > now())
        AND EXISTS (SELECT 1 FROM app.ad_creatives cr WHERE cr.campaign_id = c.id AND cr.status = 'approved')
@@ -180,10 +210,12 @@ export async function loadIndex(q: Queryable): Promise<IndexedCampaign[]> {
   );
   return rows.map(r => {
     const targets = new Map<string, Set<string>>();
+    const reminders = new Set<string>();
     for (const t of r.targets ?? []) {
       const set = targets.get(t.kind) ?? new Set<string>();
       set.add(t.value);
       targets.set(t.kind, set);
+      if (t.reminder) reminders.add(t.value);
     }
     return {
       id: r.id,
@@ -202,6 +234,7 @@ export async function loadIndex(q: Queryable): Promise<IndexedCampaign[]> {
         domain: new URL(c.url).hostname,
       })),
       targets,
+      reminders,
     };
   });
 }
@@ -258,7 +291,9 @@ export function createAdServer(db: Pick<Database, 'asSystem'>): AdServer {
           : undefined;
         let adId: string | null = null;
         let interests: Set<string> | null = null;
+        let audiences: Map<string, number> | null = null;
         const seenToday = new Map<string, number>();
+        const seenThisWeek = new Map<string, number>();
         if (viewer && person?.personalized) {
           await q.query('INSERT INTO app.ad_identities (profile_id) VALUES ($1) ON CONFLICT DO NOTHING', [viewer]);
           adId =
@@ -276,13 +311,28 @@ export function createAdServer(db: Pick<Database, 'asSystem'>): AdServer {
             ).rows.map(r => r.field),
           );
           for (const r of (
-            await q.query<{ campaign_id: string; n: number }>(
-              `SELECT campaign_id::text, count(*)::int AS n FROM app.ad_impressions
-               WHERE ad_id = $1 AND shown_at >= date_trunc('day', now(), 'UTC') GROUP BY campaign_id`,
+            await q.query<{ campaign_id: string; today: number; week: number }>(
+              `SELECT campaign_id::text,
+                      count(*) FILTER (WHERE shown_at >= date_trunc('day', now(), 'UTC'))::int AS today,
+                      count(*)::int AS week
+               FROM app.ad_impressions WHERE ad_id = $1 AND shown_at > now() - interval '7 days' GROUP BY campaign_id`,
               [adId],
             )
-          ).rows)
-            seenToday.set(r.campaign_id, r.n);
+          ).rows) {
+            seenToday.set(r.campaign_id, r.today);
+            seenThisWeek.set(r.campaign_id, r.week);
+          }
+          // The ready audiences they're in, only while audiences are on.
+          audiences = new Map(
+            (
+              await q.query<{ audience: string; at: Date }>(
+                `SELECT a.public_id::text AS audience, m.event_at AS at
+                 FROM app.ad_audience_members m JOIN app.ad_audiences a ON a.id = m.audience_id
+                 WHERE m.ad_id = $1 AND a.status = 'ready' AND app.flag_on('ads_audiences')`,
+                [adId],
+              )
+            ).rows.map(r => [r.audience, r.at.getTime()]),
+          );
         }
         const { wins, creatives } = choose(
           index,
@@ -292,6 +342,7 @@ export function createAdServer(db: Pick<Database, 'asSystem'>): AdServer {
             words: query ? tokenize(query) : [],
             country: person?.country ?? null,
             interests,
+            audiences,
           },
           seenToday,
           now,
@@ -308,6 +359,7 @@ export function createAdServer(db: Pick<Database, 'asSystem'>): AdServer {
                   }),
                 )
             : undefined,
+          seenThisWeek,
         );
         const served: ServedAd[] = [];
         for (const w of wins) {

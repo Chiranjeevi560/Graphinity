@@ -1,8 +1,8 @@
 # ADR 0022: The advertising platform, consent-gated and off by default
 
 - **Status:** Accepted 2026-10-26. Parts 1–5 built (privacy foundation, interest graph,
-  campaigns, serving and auction, click prediction) and part 6 (conversion measurement and
-  attribution); 7–9 follow in order, each in its own change.
+  campaigns, serving and auction, click prediction), part 6 (conversion measurement and
+  attribution) and part 7 (audiences); 8–9 follow in order, each in its own change.
 - **Owner decision (2026-10-26):** engineer a complete Google/Meta-class advertising platform.
   Implement only what is legal with the consent each jurisdiction requires. Build everything that
   needs legal approval, partners or infrastructure, but keep it switched off.
@@ -36,7 +36,7 @@ unless a jurisdiction-specific consent and a lawyer's approval allow more.
 | 4 | **Serving and auction** | Candidates by targeting from an in-memory index; generalized second-price auction on bid × predicted click rate with a reserve; pacing; frequency caps only for people tracked by their choice; clicks charged once, only when valid; ads asked for apart from knowledge results | **Built** |
 | 5 | **Click prediction** | FTRL-Proximal on hashed impression features, gated against what serves on the newest impressions, promoted through the registry | **Built** |
 | 6 | Measurement and attribution | Click ids only under `ads_measurement`, API keys, conversions reported server to server (6a); multi-touch attribution models, benchmarked, and a report per campaign (6b) | **Built** |
-| 7 | Audiences | Segments from interest rules, retargeting lists, lookalikes (nearest neighbours of a seed audience's interest vectors), every audience above a minimum size | Planned |
+| 7 | Audiences | Segments from interest rules, ad reminders (retargeting) capped 3 a day and 7 a week and cooling with time, look-alikes (spherical k-means over a seed's interests with a popularity correction, benchmarked), every audience at least 100 people, behind `ads_audiences` | **Built** |
 | 8 | Reporting | Advertiser reports from aggregates only: suppressed small groups, differential-privacy noise, a privacy budget per advertiser | Planned |
 | 9 | Partner interfaces | OpenRTB 2.6 bid request/response adapters (DSPs, SSPs, exchanges), a partner tag (pixel) and SDK, a server-to-server conversion API; all behind their own switches | Planned |
 
@@ -336,6 +336,52 @@ review every campaign, are refused too):
 - **Cost:** two indexed range reads (bounded at 10,000 conversions and the newest 200,000
   impressions), then O(impressions + conversions × path length + distinct sets × 2^k) in memory.
   At scale this is the batch job described below, not a request.
+
+## Part 7, as built (migration 0036)
+
+**What an audience is:** a business describes it; only the server's hourly build job decides who
+is in it, from people who allow personalized ads at that moment. Members are ad identities only
+(`app.ad_audience_members`, readable by the system alone). Three kinds:
+
+- **Segment:** a rule, every condition in `all` and one of `any`: an interest at a minimum decayed
+  score, a country, or a topic set on the profile. A stored rule is checked again on use; a
+  malformed one matches nobody.
+- **Ad reminder (retargeting):** people who tapped one of the business's own campaigns in the last
+  30 days, each with their latest tap. A campaign targeting a reminder audience shows it at most 3
+  times a day and 7 a week to one person (or its own cap, if lower), and its click estimate is
+  multiplied by e^(−Δt/7 days) since the tap, so reminders fade rather than follow someone.
+- **Look-alike:** people like a ready seed audience of the same business (never another
+  look-alike). K = min(8, ⌊seed/25⌋) spherical k-means centres over the seed's L2-normalized
+  interest vectors (k-means++ seeding, fixed per audience so a rebuild is reproducible); each other
+  person scores max_k⟨u, μ_k⟩ − 0.5⟨u, μ_global⟩; the top 1%, 2% or 5% with a positive score.
+
+**The floor, k ≥ 100:** an audience under 100 people is `insufficient`: it stores no members, has
+no size, and can't be matched. `CHECK (status <> 'ready' OR size >= 100)` holds it in the
+database. Sizes are shown rounded down to a hundred. Turning personalized ads off rotates the ad
+identity, which removes the person from every audience in the same transaction; a trigger refuses
+adding anyone who doesn't allow personalized ads. A campaign can target only its own business's
+audiences (trigger), and an audience it targets that isn't ready matches nobody.
+
+**Benchmark** (`node scripts/benchmark-lookalike.mjs`: 50,000 simulated people over the 20
+topics in 12 hidden kinds plus 20% generalists who like popular topics; a 400-person seed from two
+kinds; 5% picked; 5 worlds; base rate 12.5%):
+
+| Method | Precision (mean ± sd) | Time |
+|---|---|---|
+| One centroid of the seed | 0.629 ± 0.016 | 66 ms |
+| Nearest seed member (brute force, O(seed × people)) | 0.718 ± 0.026 | 849 ms per 10,000 people; ~2.4 hours at 100 million |
+| k-means centres, no popularity correction | 0.890 ± 0.032 | 290 ms |
+| **k-means centres with popularity correction (shipped)** | **0.949 ± 0.012** | 74 ms |
+
+With a 200-person seed (K = 8 still) the shipped method scores 0.936 against 0.642 for one
+centroid. One centroid averages two kinds of buyer into a direction neither has; nearest
+neighbours chase each seed member's noise; the popularity correction stops generalists who like
+everything from looking like everyone.
+
+**Why not an ANN index (HNSW):** choosing "the top 5%" needs every candidate's score, which an
+approximate nearest-neighbour query can't give. Scoring is O(people × K × topics), 74 ms at
+50,000; at 100 million it is a sharded batch job with a top-k heap per shard and a merge, which
+is also how the build would run there (`loadPeople` reads everyone into memory today).
 
 ## Scale (100 million people)
 
