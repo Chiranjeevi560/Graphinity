@@ -1,8 +1,8 @@
 # ADR 0022: The advertising platform, consent-gated and off by default
 
 - **Status:** Accepted 2026-10-26. Parts 1–5 built (privacy foundation, interest graph,
-  campaigns, serving and auction, click prediction) and part 6a (conversion measurement); 6b and
-  7–9 follow in order, each in its own change.
+  campaigns, serving and auction, click prediction) and part 6 (conversion measurement and
+  attribution); 7–9 follow in order, each in its own change.
 - **Owner decision (2026-10-26):** engineer a complete Google/Meta-class advertising platform.
   Implement only what is legal with the consent each jurisdiction requires. Build everything that
   needs legal approval, partners or infrastructure, but keep it switched off.
@@ -35,7 +35,7 @@ unless a jurisdiction-specific consent and a lawyer's approval allow more.
 | 3 | **Campaigns** | Advertisers and their staff, campaigns with budgets in micro-units and frequency caps, plain-text ads reviewed by moderators outside the business, contextual and interest targeting | **Built** |
 | 4 | **Serving and auction** | Candidates by targeting from an in-memory index; generalized second-price auction on bid × predicted click rate with a reserve; pacing; frequency caps only for people tracked by their choice; clicks charged once, only when valid; ads asked for apart from knowledge results | **Built** |
 | 5 | **Click prediction** | FTRL-Proximal on hashed impression features, gated against what serves on the newest impressions, promoted through the registry | **Built** |
-| 6 | Measurement and attribution | **6a built:** click ids only under `ads_measurement`, API keys, conversions reported server to server and attributed to their click. 6b: multi-touch attribution models, benchmarked | **6a built** |
+| 6 | Measurement and attribution | Click ids only under `ads_measurement`, API keys, conversions reported server to server (6a); multi-touch attribution models, benchmarked, and a report per campaign (6b) | **Built** |
 | 7 | Audiences | Segments from interest rules, retargeting lists, lookalikes (nearest neighbours of a seed audience's interest vectors), every audience above a minimum size | Planned |
 | 8 | Reporting | Advertiser reports from aggregates only: suppressed small groups, differential-privacy noise, a privacy budget per advertiser | Planned |
 | 9 | Partner interfaces | OpenRTB 2.6 bid request/response adapters (DSPs, SSPs, exchanges), a partner tag (pixel) and SDK, a server-to-server conversion API; all behind their own switches | Planned |
@@ -270,6 +270,72 @@ Nothing about the person.
 - It counts once per order id, and every refusal answers the same "not counted", so keys and click
   ids can't be probed.
 - A business reads only its own conversions.
+
+## Part 6b, as built (no migration)
+
+**The question:** when a sale follows several ads, which ad earned it? Every model answers
+differently, and an advertiser who believes the wrong one moves money to ads that change nothing.
+
+**Models** (`src/ads/attribution.ts`, pure and deterministic):
+
+- **Rule-based:** last click, first touch, linear, time decay (a touch's weight halves every week
+  before the sale), and position (40% first, 40% last, 20% shared by the middle).
+- **Data-driven:** learns from every path, bought or not, the conversion rate of each exact set of
+  campaigns seen, then splits each sale by Shapley value (each campaign's average gain over every
+  order its campaigns could have joined in; Shapley 1953, Dalessandro et al. 2012).
+  - A set seen fewer than 5 times borrows the best rate among its one-smaller subsets, so one lucky
+    path can't invent credit.
+  - Exact for up to 12 campaigns on a path (2^12 subsets); beyond that, linear.
+  - Negative credit is clipped to 0; each sale's credit sums to 1.
+- **Lift** (`src/ads/lift.ts`): the difference in conversion rate between people shown a campaign
+  and a randomly held-out group, with a 95% interval, and whether it is real (at least 100 people a
+  side). Holdout membership is a stable hash.
+
+**Benchmark** (`node scripts/benchmark-attribution.mjs`, 50,000 simulated people, 8 campaigns whose
+true effect is known; two "retargeting" campaigns are shown late to people already likely to buy and
+add almost nothing). Error is total distance from each campaign's true share (0 perfect, 2 worst):
+
+| Model | Error | Credit to retargeting (truth 2.2%) |
+|---|---|---|
+| Last click | 1.149 | 59.7% |
+| Time decay | 0.669 | 32.0% |
+| Position | 0.608 | 28.0% |
+| Linear | 0.540 | 23.5% |
+| Data-driven (Shapley) | 0.475 | 26.0% |
+| First touch | 0.299 | 2.9% |
+| **Holdout experiment** | **0.110** | **2.0%** (found not significant) |
+
+**What it showed:**
+
+- Every model that only watches paths over-credits retargeting, because the people it reaches were
+  going to buy anyway. Last click, the industry default, gives it 27 times its true share.
+- The data-driven model beats the other observational models except first touch, which wins here
+  only because the simulation puts retargeting last; it isn't right in general.
+- Only a holdout experiment measures what an ad adds, and it correctly finds retargeting's effect
+  indistinguishable from nothing.
+
+**Decision:**
+
+- The models ship as descriptive reports, labelled as such. Holdout experiments are the measure of
+  incrementality.
+- Holdout serving needs conversions matched to people who never clicked (a held-out person has no
+  click). That comes with the partner tag in part 9, so holdout serving is built and tested there,
+  end to end; `lift()` and `heldOut()` are ready for it.
+
+**The report:** `GET /ads/campaigns/:id/report`, for the business's members only (moderators, who
+review every campaign, are refused too):
+
+- 30 days of impressions, clicks and spend for the campaign; the business's conversions; and the
+  campaign's share of them, and of their value, under every model.
+- A sale joins into a path only when the person allows measurement *now*: their impressions of the
+  business's campaigns in the 30 days before it. Every other sale credits its one click.
+  `joinedPaths` says how many did.
+- People seen in the last 30 days who didn't buy are what the data-driven model compares against.
+- Only aggregates leave: no identity, impression or time of any person. (Small-number protection,
+  k-anonymity and noise come in part 8.)
+- **Cost:** two indexed range reads (bounded at 10,000 conversions and the newest 200,000
+  impressions), then O(impressions + conversions × path length + distinct sets × 2^k) in memory.
+  At scale this is the batch job described below, not a request.
 
 ## Scale (100 million people)
 

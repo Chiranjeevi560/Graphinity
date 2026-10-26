@@ -424,6 +424,10 @@ and the platform is on. `DELETE /me/ad-interests/:field` (counts as a write) rem
 - `POST /ads/conversions` with `authorization: Bearer grk_…` and `{ clickId, externalId, valueMicros?, currency?, convertedAt? }`
   → 201 `{ conversion: { counted: true } }`, or 200 with `duplicate: true` for an order id already reported;
   401 `bad_key` for a malformed key; 404 `not_counted` for any other refusal, all alike.
+- `GET /ads/campaigns/:id/report` (a member of the business) → 200 `{ report: { days: 30, impressions, clicks,
+  spentMicros, businessConversions, joinedPaths, credited: { last_click, first_touch, linear, time_decay, position,
+  data_driven } } }`; each model gives `{ conversions, valueMicros }`, the campaign's share of the business's
+  conversions and their value (ADR 0022 part 6b). 404 `not_found` for anyone else, moderators included.
 
 ### Advertising: advertisers, campaigns, ads, targeting (ADR 0022 part 3)
 
