@@ -25,6 +25,7 @@ import { registerPersonalGraphRoutes } from './routes/personal-graph.ts';
 import { registerRecommendationRoutes } from './routes/recommendations.ts';
 import { registerOpsRoutes } from './routes/ops.ts';
 import { registerAdRoutes } from './routes/ads.ts';
+import { createAdServer, type AdServer } from './ads/serve.ts';
 import { registerAdvertiserRoutes } from './routes/advertisers.ts';
 import type { MetricsRecorder } from './ops/metrics.ts';
 
@@ -55,6 +56,8 @@ export interface Limits {
   search: BucketOptions;
   /** Opens and reading times recorded per person (PUT /searches/:id/opens/:position). */
   searchEvents: BucketOptions;
+  /** Ad requests and clicks per person or visitor address (ADR 0022): each writes a row. */
+  ads: BucketOptions;
 }
 
 export const defaultLimits: Limits = {
@@ -71,6 +74,8 @@ export const defaultLimits: Limits = {
   search: { capacity: 30, refillPerSecond: 0.5, maxKeys: 50_000 },
   // An open and a reading time per result read: twice the search allowance.
   searchEvents: { capacity: 60, refillPerSecond: 1, maxKeys: 50_000 },
+  // Two ad slots per search at most: the search allowance's pace, twice over.
+  ads: { capacity: 60, refillPerSecond: 1, maxKeys: 50_000 },
 };
 
 /** Everything the server needs from outside, so tests can swap any of it. */
@@ -105,6 +110,8 @@ export interface Deps {
   metrics?: MetricsRecorder;
   /** The advertising platform's master switch (ADR 0022). Off by default. */
   adsEnabled?: () => boolean;
+  /** Chooses ads (ADR 0022 part 4); built from the database when not given. */
+  adServer?: AdServer;
 }
 
 // Copy for errors: what happened, and what to do.
@@ -334,7 +341,14 @@ export async function buildServer(deps: Deps) {
   registerPointRoutes(app, { db });
   registerGraphRoutes(app, { db, clock });
   registerOpsRoutes(app, { db });
-  registerAdRoutes(app, { db });
+  registerAdRoutes(app, {
+    db,
+    enabled: deps.adsEnabled ?? (() => false),
+    server: deps.adServer ?? createAdServer(db),
+    clock,
+    limit: limits.ads,
+    keySecret: config.ipHashKey,
+  });
   registerAdvertiserRoutes(app, { db, enabled: deps.adsEnabled ?? (() => false) });
 
   return app;

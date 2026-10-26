@@ -13,6 +13,7 @@ import { createTestDatabase } from './database.ts';
 import { fakeAuthAdmin, TEST_ISSUER, testIssuer } from './tokens.ts';
 
 import type { MetricsRecorder } from '../../src/ops/metrics.ts';
+import type { AdServer } from '../../src/ads/serve.ts';
 
 export const IP_HASH_KEY = Buffer.alloc(32, 9);
 
@@ -31,6 +32,7 @@ export async function startApp(
     graphAnalyzer?: GraphAnalyzer;
     metrics?: MetricsRecorder;
     adsEnabled?: () => boolean;
+    adServer?: AdServer;
   } = {},
 ) {
   const t = await createTestDatabase();
@@ -57,6 +59,7 @@ export async function startApp(
     ...(opts.graphAnalyzer ? { graphAnalyzer: opts.graphAnalyzer } : {}),
     ...(opts.metrics ? { metrics: opts.metrics } : {}),
     ...(opts.adsEnabled ? { adsEnabled: opts.adsEnabled } : {}),
+    ...(opts.adServer ? { adServer: opts.adServer } : {}),
     ...(opts.recommendationsEnabled ? { recommendationsEnabled: opts.recommendationsEnabled } : {}),
     ...(opts.searchEnabled ? { searchEnabled: opts.searchEnabled } : {}),
     searchRandom: opts.searchRandom ?? (() => 0.999),

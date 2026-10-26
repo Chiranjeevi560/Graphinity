@@ -355,6 +355,12 @@ whenever a user-linked table is added.
   reviews their own business's ads, enforced by a trigger, with the review policy and a table
   constraint each proven as separate layers. Known limit: a destination is checked for form, not
   for what the site is; moderators review where it goes.
+- Serving (ADR 0022 part 4): ads come from their own endpoint and never pass through knowledge
+  responses, proven by comparing responses with ads on and off and by an import check. Clicks are
+  charged once, never for a business's own staff, and never past the day's budget, under a lock
+  proven by a two-connection race. Known limits: invalid traffic beyond these rules and the rate
+  limit (bots varying addresses) is part 6's work; an impression shown before midnight UTC but
+  clicked after counts against the day it was shown.
 - Alerts (ADR 0020) say what is wrong in plain words and name an objective or a job, never a
   person. The server's own jobs may now read who is blocked (to leave blocked moderators out); no
   request can. The service worker opens only `/q/<id>` and `/ops`, whatever a push says.
