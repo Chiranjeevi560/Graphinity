@@ -55,6 +55,7 @@ const jobWords: Record<string, string> = {
   'search-judge': 'Comparing search rankings',
   'drift-monitor': 'Checking models still fit',
   'collusion-review': 'Looking for groups picking each other',
+  alerts: 'Sending alerts to moderators',
 };
 
 /** For moderators: whether Graphinity is working as it should, in plain words. */

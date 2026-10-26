@@ -1,7 +1,7 @@
 // Web push: subscribing devices, and what the server actually sends.
 import { createDecipheriv, createECDH, hkdfSync, randomBytes } from 'node:crypto';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { createPushSender } from '../src/push-sender.ts';
+import { createAlertSender, createPushSender } from '../src/push-sender.ts';
 import { startApp, type TestApp } from './helpers/app.ts';
 import { must, type Body } from './helpers/must.ts';
 import { privateKeyText } from '../src/push.ts';
@@ -184,6 +184,38 @@ describe('sending', () => {
     );
     expect(left.rows.map(r => r.endpoint)).toEqual([phone.endpoint]);
     expect(warnings).toEqual([]);
+  });
+});
+
+describe('alerts', () => {
+  it('reach a moderator’s device urgently, saying what is wrong and nothing about anyone', async () => {
+    const mod = await member();
+    const phone = device();
+    await h.call('PUT', '/me/push', mod.token, phone.body);
+    const sent: Array<{ headers: Record<string, string>; body: Buffer }> = [];
+    const alert = createAlertSender({
+      db: h.t.database,
+      vapid,
+      now: () => Date.now(),
+      log: { warn: () => undefined },
+      fetch: ((_url: string, init: RequestInit) => {
+        sent.push({ headers: init.headers as Record<string, string>, body: Buffer.from(init.body as Uint8Array) });
+        return Promise.resolve(new Response(null, { status: 201 }));
+      }) as unknown as typeof fetch,
+    });
+    await alert(mod.id, {
+      key: 'job:routing',
+      title: 'Sending questions to people isn’t working',
+      body: 'Its last run failed.',
+    });
+    expect(sent).toHaveLength(1);
+    expect(must(sent[0]).headers.urgency).toBe('high');
+    expect(JSON.parse(decrypt(must(sent[0]).body, phone))).toEqual({
+      kind: 'ops',
+      key: 'job:routing',
+      title: 'Sending questions to people isn’t working',
+      body: 'Its last run failed.',
+    });
   });
 });
 

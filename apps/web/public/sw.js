@@ -1,5 +1,6 @@
-// Shows Graphinity's notifications and opens the question when one is
-// tapped. Nothing else: no caching, no offline copies of pages.
+// Shows Graphinity's notifications and opens the question (or, for a
+// moderator's alert, the operations screen) when one is tapped. Nothing
+// else: no caching, no offline copies of pages.
 
 self.addEventListener('push', event => {
   let message;
@@ -8,7 +9,22 @@ self.addEventListener('push', event => {
   } catch {
     return;
   }
-  if (typeof message !== 'object' || !/^[1-9][0-9]{0,15}$/.test(String(message.questionId))) return;
+  if (typeof message !== 'object' || message === null) return;
+  // A problem with Graphinity itself, for moderators: opens the operations screen.
+  if (message.kind === 'ops') {
+    if (!/^(slo|job):[a-z0-9:-]{1,60}$/.test(String(message.key))) return;
+    event.waitUntil(
+      self.registration.showNotification(String(message.title), {
+        body: String(message.body),
+        icon: '/icon-192.png',
+        // One notification per problem: a repeat replaces it.
+        tag: `ops:${message.key}`,
+        data: { path: '/ops' },
+      }),
+    );
+    return;
+  }
+  if (!/^[1-9][0-9]{0,15}$/.test(String(message.questionId))) return;
   event.waitUntil(
     self.registration.showNotification(String(message.title), {
       body: String(message.body),
@@ -23,7 +39,7 @@ self.addEventListener('push', event => {
 self.addEventListener('notificationclick', event => {
   event.notification.close();
   const path = event.notification.data && event.notification.data.path;
-  if (typeof path !== 'string' || !/^\/q\/[1-9][0-9]{0,15}$/.test(path)) return;
+  if (typeof path !== 'string' || !/^(\/q\/[1-9][0-9]{0,15}|\/ops)$/.test(path)) return;
   const url = new URL(path, self.location.origin).href;
   event.waitUntil(
     (async () => {

@@ -187,6 +187,11 @@ FROM (SELECT *, coalesce(last_success_at, last_started_at) > now() - make_interv
       FROM app.ops_jobs) j ORDER BY job;
 ```
 
+**Alerts:** every 5 minutes, new problems are pushed to every moderator's devices: a page-level SLO
+alert, or a job that isn't working. To receive them, turn on notifications on your profile. They
+need the VAPID keys and the `push` switch, like every notification. The same problem repeats at
+most every 6 hours while it lasts. The `alerts` job shows on Operations like any other.
+
 **What to do:**
 
 - **An unhealthy job:** read its log lines (`<job> failed`, with the error's kind).

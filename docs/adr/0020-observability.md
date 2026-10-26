@@ -1,7 +1,7 @@
 # ADR 0020: Request metrics, SLOs and job health, at no cost
 
-- **Status:** Accepted and built 2026-10-26. The operations screen is built; alert delivery follows
-  in its own change.
+- **Status:** Accepted and built 2026-10-26: recording, SLOs, job health, the operations screen and
+  alert delivery.
 
 ## Problem
 
@@ -88,6 +88,22 @@ budget:
 - the slowest requests today.
 
 Every row stacks the name over its figures, so nothing wraps raggedly at phone widths.
+
+**Alert delivery** (`src/ops/alerts.ts`, migration 0028), every 5 minutes:
+
+- **What is sent:** page-level SLO alerts and unhealthy jobs. Tickets wait for the screen.
+- **To whom:** web push to every moderator who isn't blocked, at high urgency, so a phone saving
+  battery still shows it. Tapping opens Operations.
+- **How often:** the same problem isn't sent again for 6 hours while it lasts. Once it clears it is
+  marked resolved, and if it returns it is news at once.
+- **Concurrency:** one advisory lock, so two servers can't both send.
+- **Content:** what is wrong and what to do ("Sending questions to people isn't working. Its last
+  run failed (TimeoutError)"). Never a person, URL or error message.
+- **A bug caught by a test:** the server couldn't see `app.blocks` (only the person and moderators
+  could), so a blocked moderator would still have been alerted. Migration 0028 lets the server's own
+  jobs read it.
+- **The service worker** accepts the alert only with a well-formed key. It opens only `/q/<id>` or
+  `/ops`, never another address, and tests feed it hostile payloads.
 
 ## Performance and scale
 
