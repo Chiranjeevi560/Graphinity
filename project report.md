@@ -354,3 +354,9 @@ Found, not yet fixed: at 100k questions the meaning stage (unchanged, already us
 ## Search, part 7: load tests (2026-10-26, Claude)
 
 - `scripts/load-search.mjs` drives the real server over HTTP at 100,000 questions: 190 searches a second at 8 concurrent (p95 57 ms), 23 ms p50 one at a time, no errors, flat memory. Throughput is set by the 5-connection database pool. Not yet measured on the deployed services (after merge and deploy).
+
+## Recommendations v3 (2026-10-26, Claude)
+
+- The finite, consented discovery list (ADR 0006's rules kept) now uses the search engine for a person's own searches (both screens), "answered by the same people" from public answers, and similar-by-meaning questions, in tiers chosen by measurement (ADR 0016).
+- Benchmark with known interests (20,000 questions, 300 people, held-out opens): Recall@20 0.173 against 0.007 for v2, at 33 ms instead of 247 ms. Fusing all sources equally scored only 0.088; the measurement showed the broad sources outvoting personal ones, so they now only fill what is left.
+- Not built, as the owner's call: learning a recommendation ranking from everyone's behaviour (a new purpose, and ADR 0006 rejects optimising clicks).

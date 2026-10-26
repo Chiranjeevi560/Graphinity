@@ -175,6 +175,36 @@ describe('meaning at the model’s own size', () => {
   });
 });
 
+describe('similar to a question someone opened (recommendations)', () => {
+  const similar = (seed: string, model = own.model) =>
+    h.t.database.withUser(null, async q =>
+      (
+        await q.query<{ id: string }>('SELECT id::text AS id FROM app.similar_questions($1, $2, 10)', [seed, model])
+      ).rows.map(r => r.id),
+    );
+
+  it('finds the nearest by the seed’s own vector, never the seed, a hidden one or another model’s', async () => {
+    const seed = (await ask('How long does customs take for a harmonium at Kolkata?')).id;
+    const near = (await ask('How long does customs take for a sitar at Kolkata?')).id;
+    const hidden = (await ask('How long does customs take for a tabla at Kolkata?')).id;
+    const otherModel = (await ask('How long does customs take for a flute at Kolkata?')).id;
+    await place(seed, towards(128, 110));
+    await place(near, towards(128, 110, 0.2));
+    await place(hidden, towards(128, 110, 0.1));
+    await h.t.owner.query('DELETE FROM app.question_embeddings WHERE question_id = $1', [otherModel]);
+    await place(otherModel, towards(128, 110), 'graphinity:other:v2');
+    await h.t.owner.query("INSERT INTO app.decisions (question_id, decision) VALUES ($1, 'remove')", [hidden]);
+    const ids = await similar(seed);
+    expect(ids[0]).toBe(near);
+    expect(ids).not.toContain(seed);
+    expect(ids).not.toContain(hidden);
+    expect(ids).not.toContain(otherModel);
+    // A hidden seed, or one with no vector, gives nothing.
+    expect(await similar(hidden)).toEqual([]);
+    expect(await similar('999999999')).toEqual([]);
+  });
+});
+
 describe('routing’s closeness in meaning (φ1)', () => {
   it('compares a new question with what someone answered only under the same model', async () => {
     const target = (await ask('How much duty on a laptop through Hyderabad customs?')).id;

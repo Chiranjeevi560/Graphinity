@@ -441,13 +441,27 @@ transfer.
 
 ### `GET /me/recommendations` (signed in)
 
-Returns a maximum of 20 public questions with their field, answer count, ranking score, algorithm
-version, and a human-readable reason. `feed_personalization` is independently opt-in and defaults
-off. When enabled, `feed-rrf-v2` uses reciprocal-rank fusion across selected-field membership,
-lexical search matches, related questions from reading history, and recency. Each active source
-contributes `1 / (60 + rank)`; search-history signals are read only when `search_history` is enabled,
-and reading-history signals only when `reading_history` is enabled. It excludes the caller's own questions, hidden questions, questions
-the caller has answered, and questions already opened. It stores no recommendation history and does
-not use affiliate/commercial signals or optimize clicks. Search and reading revocation take effect
-on the next request. The result is a finite discovery list, not an endless feed.
+Returns at most 20 public questions with their field, answer count, ranking score, algorithm version
+and a reason in words. `feed_personalization` is independently opt-in and defaults off. When it is on,
+`feed-rrf-v3` (ADR 0016) builds the list in tiers, each filling only what the one before left:
+
+1. **The person's own recent searches,** from the Search screen and the Ask check, run through the
+   search engine, only while `search_history` is on. **Questions answered by the same people** as
+   ones they opened (public answers), only while `reading_history` is on.
+2. **Questions similar to ones they opened,** by meaning (by words while no meaning model serves),
+   only while `reading_history` is on.
+3. **Their profile fields, and recent questions.**
+
+Within a tier, each source contributes `1 / (60 + rank)`. The reason names the strongest contribution:
+
+- "Related to your recent Graphinity searches"
+- "Answered by people who answered one you opened"
+- "Similar to a question you opened"
+- "In one of your selected topics"
+- "Recently asked in Graphinity"
+
+It excludes the caller's own questions, hidden questions, questions they answered or already opened,
+and questions older than 180 days. It stores no recommendation history, uses no affiliate or
+commercial signal, and doesn't optimize clicks. Revoking search or reading history takes effect on the
+next request. The result is a finite discovery list, not an endless feed.
 
