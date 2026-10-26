@@ -406,6 +406,27 @@ strongest first; `strength` is 0–100 relative to the strongest. Empty unless t
 and the platform is on. `DELETE /me/ad-interests/:field` (counts as a write) removes one topic
 (`{ removed: { field } }`, 404 `not_found` if absent). The data export includes `adInterests`.
 
+
+### Advertising: advertisers, campaigns, ads, targeting (ADR 0022 part 3)
+
+Everything here answers 404 `ads_off` while the `ads` switch is off. Money is in micro-units of the
+campaign's currency (1 rupee = 1,000,000), as whole numbers.
+
+- `POST /ads/advertisers` `{ name, country }` → 201 `{ advertiser: { id, name, country, status: 'pending' } }`;
+  the caller becomes its owner. 400 `too_many_advertisers` (3 per person), 403 for blocked accounts.
+- `GET /ads/advertisers` → `{ advertisers: [{ id, name, country, status, role }] }`, the caller's own.
+- `POST /ads/advertisers/:id/campaigns` `{ name, objective, dailyBudgetMicros, maxCpcMicros, currency?, totalBudgetMicros?, frequencyCap?, startsAt?, endsAt? }`
+  → 201 `{ campaign }`; `GET /ads/advertisers/:id/campaigns` → `{ campaigns }`.
+- `PATCH /ads/campaigns/:id` `{ name?, status?: 'active' | 'paused' | 'ended', dailyBudgetMicros?, maxCpcMicros?, frequencyCap? }`;
+  409 `not_allowed_now` for a move backwards (an ended campaign stays ended).
+- `POST /ads/campaigns/:id/creatives` `{ headline, body, destinationUrl }` → 201 `{ creative: { id, status: 'pending' } }`;
+  400 `invalid` for lengths, hidden characters or a destination that isn't plain `https`.
+- `PUT /ads/campaigns/:id/targeting` `{ targets: [{ kind: 'field' | 'keyword' | 'country' | 'interest', value }] }`
+  replaces the set; a refused set leaves the old one.
+- Moderators: `GET /ads/review` → `{ advertisers, creatives }` waiting; `POST /ads/review/advertiser` `{ id, status: 'active' | 'suspended' }`;
+  `POST /ads/review/creative` `{ id, decision: 'approve' | 'reject', reason? }` (a rejection needs a reason).
+  403 `own_advertiser` for one's own business.
+
 ### Personal graph
 
 - `GET /me/graph` returns the caller's nodes, edges, signal events, and collections for inspection.

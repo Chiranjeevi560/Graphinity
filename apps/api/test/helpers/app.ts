@@ -30,6 +30,7 @@ export async function startApp(
     limits?: Partial<typeof defaultLimits>;
     graphAnalyzer?: GraphAnalyzer;
     metrics?: MetricsRecorder;
+    adsEnabled?: () => boolean;
   } = {},
 ) {
   const t = await createTestDatabase();
@@ -55,6 +56,7 @@ export async function startApp(
     speller: opts.speller ?? null,
     ...(opts.graphAnalyzer ? { graphAnalyzer: opts.graphAnalyzer } : {}),
     ...(opts.metrics ? { metrics: opts.metrics } : {}),
+    ...(opts.adsEnabled ? { adsEnabled: opts.adsEnabled } : {}),
     ...(opts.recommendationsEnabled ? { recommendationsEnabled: opts.recommendationsEnabled } : {}),
     ...(opts.searchEnabled ? { searchEnabled: opts.searchEnabled } : {}),
     searchRandom: opts.searchRandom ?? (() => 0.999),

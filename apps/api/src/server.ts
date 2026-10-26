@@ -25,6 +25,7 @@ import { registerPersonalGraphRoutes } from './routes/personal-graph.ts';
 import { registerRecommendationRoutes } from './routes/recommendations.ts';
 import { registerOpsRoutes } from './routes/ops.ts';
 import { registerAdRoutes } from './routes/ads.ts';
+import { registerAdvertiserRoutes } from './routes/advertisers.ts';
 import type { MetricsRecorder } from './ops/metrics.ts';
 
 declare module 'fastify' {
@@ -102,6 +103,8 @@ export interface Deps {
   logStream?: { write(line: string): void };
   /** Counts every response by route pattern (ADR 0020). */
   metrics?: MetricsRecorder;
+  /** The advertising platform's master switch (ADR 0022). Off by default. */
+  adsEnabled?: () => boolean;
 }
 
 // Copy for errors: what happened, and what to do.
@@ -332,6 +335,7 @@ export async function buildServer(deps: Deps) {
   registerGraphRoutes(app, { db, clock });
   registerOpsRoutes(app, { db });
   registerAdRoutes(app, { db });
+  registerAdvertiserRoutes(app, { db, enabled: deps.adsEnabled ?? (() => false) });
 
   return app;
 }

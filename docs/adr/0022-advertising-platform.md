@@ -1,7 +1,7 @@
 # ADR 0022: The advertising platform, consent-gated and off by default
 
-- **Status:** Accepted 2026-10-26. Parts 1 (privacy foundation) and 2 (interest graph) built;
-  parts 3–9 follow in order, each in its own change.
+- **Status:** Accepted 2026-10-26. Parts 1–3 built (privacy foundation, interest graph,
+  campaigns); parts 4–9 follow in order, each in its own change.
 - **Owner decision (2026-10-26):** engineer a complete Google/Meta-class advertising platform.
   Implement only what is legal with the consent each jurisdiction requires. Build everything that
   needs legal approval, partners or infrastructure, but keep it switched off.
@@ -31,7 +31,7 @@ unless a jurisdiction-specific consent and a lawyer's approval allow more.
 |---|---|---|---|
 | 1 | **Privacy foundation** | Ad consent purposes; the law per country; pseudonymous ad identities; switches; one permission function | **Built (this change)** |
 | 2 | **Interest graph** | Topic scores per ad identity from searches and reads while `ads_personalization` is permitted; halve every 30 days; never the words | **Built** |
-| 3 | Campaigns | Advertisers and their members, campaigns, ad groups, plain-text creatives, contextual and interest targeting, budgets, schedules, frequency caps | Planned |
+| 3 | **Campaigns** | Advertisers and their staff, campaigns with budgets in micro-units and frequency caps, plain-text ads reviewed by moderators outside the business, contextual and interest targeting | **Built** |
 | 4 | Serving and auction | Candidate selection by targeting; eCPM = bid × predicted click rate × quality; generalized second-price auction with reserve; budget pacing; frequency capping; sponsored units returned apart from results and labelled | Planned |
 | 5 | Click prediction | Logistic regression on hashed features, learned online (FTRL-Proximal, McMahan et al. 2013), calibrated, benchmarked against simpler baselines; through the model registry with gates and drift monitoring | Planned |
 | 6 | Measurement and attribution | Impressions, clicks, conversions under `ads_measurement`; last-click, linear, time-decay, position-based and data-driven (Shapley) attribution, benchmarked | Planned |
@@ -114,6 +114,44 @@ strongest; `DELETE /me/ad-interests/:field` removes one; the data export include
 **Scale:** about 20 topics per person is about 2 billion rows at 100 million people (about 200 GB).
 The primary key leads with `ad_id`, so the table partitions by its hash. Serving reads one
 identity's handful of rows.
+
+## Part 3, as built (migration 0031)
+
+**Advertisers:**
+
+- A signed-in person who can post creates one with `app.create_advertiser`, which makes them its
+  owner in the same step, at most 3 per person.
+- It stays pending until a moderator approves it.
+- Owners add managers; nobody adds themselves.
+- The business's members are the one more table allowed to name a person, and they are staff, not
+  people ads are shown to (the invariant test names it).
+
+**Campaigns:**
+
+- An objective (awareness, clicks, conversions).
+- Money in micro-units of their currency: a daily budget of at least 1 unit, an optional total, and
+  a maximum price per click no higher than the day's budget.
+- A daily frequency cap per ad identity (1–20), and start and end times.
+- They only move forward: draft, then active or paused, then ended for good.
+
+**Ads:**
+
+- Plain text: a 5–60 character headline and a 10–150 character body, with no control or
+  direction-changing characters.
+- An `https` destination with no credentials in it.
+- Only an approved one can serve. A moderator approves or rejects with a reason, and the reviewer
+  and time come from the session and the clock.
+- Nobody reviews their own business's ads or approves their own business. A trigger enforces it;
+  the review policy and a table constraint are proven separately as further layers.
+
+**Targeting:**
+
+- Each campaign holds a set of (kind, value), replaced as a whole.
+- Contextual kinds: `field` (topic), `keyword` (a lowercase word in the query) and `country`.
+- `interest` is behavioural, matched only under `ads_behavioral` and the person's permission
+  (part 4).
+
+**Switch:** nothing can be created while `ads` is off, in the API (404 `ads_off`) and the database.
 
 ## Scale (100 million people)
 
