@@ -80,6 +80,13 @@ export const PROCESSING: Record<string, Processing> = {
   olap_daily_commerce_cube: row('Aggregates above 25 people, with noise', 'none_no_personal_data', 'Kept'),
   olap_daily_platform_cube: row('Aggregates and sketches', 'none_no_personal_data', 'Kept'),
   olap_watermarks: system('Rollup progress'),
+  olap_cohort_retention: row('Weekly counts of who comes back', 'none_no_personal_data', 'Kept'),
+  olap_daily_answering: row('Time to first answer, as sketches', 'none_no_personal_data', 'Kept'),
+  olap_commerce_rules: row(
+    'Products asked about together, above 25 people',
+    'none_no_personal_data',
+    'Replaced hourly',
+  ),
   ops_alerts: system('Alerts sent'),
   ops_jobs: system('Background job health'),
   ops_minutes: system('Request counts per route per minute'),

@@ -177,12 +177,27 @@ interface Summary {
   models: Array<{ name: string; version: number; stage: string; algorithm: string }>;
   experiments: Array<{ name: string; status: string; p: number }>;
   commerce: Array<{ label: string; count: number; forecast: number | null }>;
+  together: Array<{ from: string; to: string; people: number; lift: number }>;
+  answering: {
+    questions: number;
+    resolvedRate: number | null;
+    answeredRate: number | null;
+    medianMinutes: number | null;
+    p95Minutes: number | null;
+  };
+  retention: Array<{ week: string; size: number; weeks: Array<number | null> }>;
+  health: {
+    objectives: Array<{ name: string; budgetRemaining: number; burn: { hour: number; day: number } }>;
+  };
   audit: { entries: number; brokenAt: number | null };
 }
 
 type Row = [name: string, figures: string, problem?: boolean];
 
 const n = (x: number) => count.format(Math.round(x));
+const share = (x: number | null) => (x === null ? '—' : `${String(Math.round(x * 100))}%`);
+const minutes = (x: number | null) =>
+  x === null ? '—' : x < 90 ? `${String(Math.round(x))} minutes` : `${(x / 60).toFixed(1)} hours`;
 const period = (name: string, p: Period): Row => [name, `${n(p.questions)} questions · ${n(p.answers)} answers`];
 
 function Section({ title, rows, empty }: { title: string; rows: Row[]; empty: string }) {
@@ -224,11 +239,52 @@ export function OwnerPage() {
         ]}
       />
       <Section
+        title="Getting answers"
+        empty="Shown once questions are 4 days old."
+        rows={
+          data.answering.questions === 0
+            ? []
+            : [
+                ['Resolved within 4 days', share(data.answering.resolvedRate)],
+                ['Got an answer', share(data.answering.answeredRate)],
+                [
+                  'Time to first answer',
+                  `${minutes(data.answering.medianMinutes)} typical · ${minutes(data.answering.p95Minutes)} at the slow end`,
+                ],
+              ]
+        }
+      />
+      <Section
+        title="Who comes back"
+        empty="Shown for weeks when at least 25 people joined."
+        rows={data.retention.map(c => [
+          `Joined ${c.week} (${n(c.size)})`,
+          c.weeks.map((w, i) => `week ${String(i)}: ${share(w)}`).join(' · '),
+        ])}
+      />
+      <Section
+        title="Error budget"
+        empty=""
+        rows={data.health.objectives.map(o => [
+          o.name === 'availability' ? 'Requests succeeding' : 'Requests fast enough',
+          `${share(o.budgetRemaining)} of the month’s allowance left · using it ${o.burn.hour.toFixed(1)}× too fast this hour`,
+          o.budgetRemaining < 0.1,
+        ])}
+      />
+      <Section
         title="Products people ask about"
         empty="Shown from 25 people."
         rows={data.commerce.map(p => [
           p.label,
           `About ${n(p.count)} this week${p.forecast === null ? '' : ` · ${n(p.forecast)} in 30 days`}`,
+        ])}
+      />
+      <Section
+        title="Asked about together"
+        empty="Shown from 25 people."
+        rows={data.together.map(t => [
+          `${t.from} and ${t.to}`,
+          `${n(t.people)} people · ${t.lift.toFixed(1)}× more than chance`,
         ])}
       />
       <Section
