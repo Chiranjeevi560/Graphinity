@@ -39,6 +39,10 @@ export const FLAG_DEFAULTS = {
   ads_rtb: false,
   /** Audiences, ad reminders and look-alikes (part 7). */
   ads_audiences: false,
+  /** Randomized holdouts with ghost impressions (part 9b). */
+  ads_holdout: false,
+  /** Primal-dual budget pacing instead of the on/off rule. */
+  ads_pacing: false,
 } as const;
 
 export type FlagName = keyof typeof FLAG_DEFAULTS;

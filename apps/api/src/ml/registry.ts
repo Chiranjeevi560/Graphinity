@@ -14,6 +14,9 @@ export interface ModelRecord {
   metrics: Record<string, unknown>;
   baseline: Record<string, unknown>;
   reason: string;
+  /** Where it came from: the commit trained at. */
+  gitCommit?: string;
+  calibration?: { x: number[]; y: number[] };
 }
 
 export interface Serving {
@@ -21,6 +24,8 @@ export interface Serving {
   version: number;
   artifact: Buffer;
   dataset: { fingerprint?: string };
+  /** The isotonic curve learned with this version, if it has one. */
+  calibration: { x: number[]; y: number[] } | null;
 }
 
 const lockFor = (q: Queryable, name: string) => q.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`ml:${name}`]);
@@ -42,8 +47,9 @@ export async function loadServing(db: Pick<Database, 'asSystem'>, name: string):
       artifact: Buffer;
       artifact_sha256: string;
       dataset: Serving['dataset'];
+      calibration: Serving['calibration'];
     }>(
-      `SELECT id::text AS id, version, artifact, artifact_sha256, dataset FROM app.ml_models
+      `SELECT id::text AS id, version, artifact, artifact_sha256, dataset, calibration FROM app.ml_models
        WHERE name = $1 AND status = 'production'`,
       [name],
     );
@@ -52,7 +58,13 @@ export async function loadServing(db: Pick<Database, 'asSystem'>, name: string):
     // A damaged artifact must never serve: check it against the hash stored with it.
     if (createHash('sha256').update(row.artifact).digest('hex') !== row.artifact_sha256)
       throw new Error(`model ${name} v${String(row.version)} failed its integrity check`);
-    return { id: row.id, version: row.version, artifact: row.artifact, dataset: row.dataset };
+    return {
+      id: row.id,
+      version: row.version,
+      artifact: row.artifact,
+      dataset: row.dataset,
+      calibration: row.calibration,
+    };
   });
 }
 
@@ -136,8 +148,8 @@ export async function recordPromoted(
     );
     await q.query(
       `INSERT INTO app.ml_models
-         (name, version, algorithm, params, dataset, metrics, baseline, status, reason, artifact, artifact_sha256, promoted_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'production', $8, $9, $10, now())`,
+         (name, version, algorithm, params, dataset, metrics, baseline, status, reason, artifact, artifact_sha256, promoted_at, stage, git_commit_sha, calibration)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'production', $8, $9, $10, now(), 'PRODUCTION', $11, $12)`,
       [
         record.name,
         version,
@@ -149,9 +161,44 @@ export async function recordPromoted(
         record.reason,
         artifact,
         sha,
+        record.gitCommit ?? null,
+        record.calibration ?? null,
       ],
     );
     return version;
+  });
+}
+
+const STAGES = ['CANDIDATE', 'SHADOW', 'CANARY', 'PRODUCTION'] as const;
+
+/**
+ * The lifecycle ladder: one rung at a time, and each step needs evidence the 95% interval of the
+ * difference favours the new version. Serving still follows status; this records how far it got.
+ */
+export async function advanceStage(
+  db: Pick<Database, 'asSystem'>,
+  name: string,
+  version: number,
+  evidence: { low: number; high: number; lowerIsBetter: boolean },
+): Promise<'advanced' | 'held' | 'missing'> {
+  return db.asSystem(async q => {
+    await lockFor(q, name);
+    const row = (
+      await q.query<{ stage: (typeof STAGES)[number] }>(
+        'SELECT stage FROM app.ml_models WHERE name = $1 AND version = $2',
+        [name, version],
+      )
+    ).rows[0];
+    if (!row) return 'missing';
+    const wins = evidence.lowerIsBetter ? evidence.high < 0 : evidence.low > 0;
+    const at = STAGES.indexOf(row.stage);
+    if (!wins || at < 0 || at >= STAGES.length - 2) return 'held';
+    await q.query('UPDATE app.ml_models SET stage = $3 WHERE name = $1 AND version = $2', [
+      name,
+      version,
+      STAGES[at + 1],
+    ]);
+    return 'advanced';
   });
 }
 

@@ -7,6 +7,8 @@ import type { FastifyInstance } from 'fastify';
 import type { AdServer } from '../ads/serve.ts';
 import type { Database } from '../db.ts';
 import { TokenBuckets, visitorAddress, visitorKey, type BucketOptions, type Clock } from '../rate-limit.ts';
+import { fieldsOfTopics } from '../ads/inbound.ts';
+import { tokenize } from '../ml/text-embedding.ts';
 import { cleanLine } from '../text.ts';
 import { fail, signedIn } from './common.ts';
 
@@ -85,6 +87,9 @@ export function registerAdRoutes(
             questionId: { type: 'string', pattern: '^[1-9][0-9]{0,15}$' },
             query: { type: 'string', maxLength: 600 },
             field: { type: 'string', pattern: '^[a-z]+(-[a-z]+)*$', maxLength: 40 },
+            // Seen on arrival from outside: never stored, used only with partner-sites permission.
+            landingQuery: { type: 'string', maxLength: 200 },
+            browserTopics: { type: 'array', maxItems: 16, items: { type: 'integer', minimum: 1, maximum: 2000 } },
           },
         },
       },
@@ -102,6 +107,8 @@ export function registerAdRoutes(
         questionId?: string;
         query?: string;
         field?: string;
+        landingQuery?: string;
+        browserTopics?: number[];
       };
       let fields = body.field ? [body.field] : [];
       if (body.placement === 'question') {
@@ -131,6 +138,14 @@ export function registerAdRoutes(
         ip: req.ip,
         userAgent: req.headers['user-agent'] ?? null,
         gpc: req.headers['sec-gpc'] === '1',
+        ...(body.landingQuery || body.browserTopics
+          ? {
+              inbound: {
+                words: body.landingQuery ? tokenize(cleanLine(body.landingQuery)).slice(0, 12) : [],
+                fields: fieldsOfTopics(body.browserTopics ?? []),
+              },
+            }
+          : {}),
       });
       return { ads: ads.map(a => ({ ...a, label: 'Sponsored' })) };
     },
@@ -173,9 +188,14 @@ export function registerAdRoutes(
         return fail(reply, 404, 'not_found', 'This ad isn’t available any more.');
       }
       // A click id the advertiser can report a sale back with, only for people who allow measurement.
-      if (!row.click_id) return { destination: row.destination };
+      const eid =
+        viewer && req.headers['sec-gpc'] !== '1'
+          ? await deps.server.tapEid?.(viewer, deps.clock.now(), req.headers['user-agent'] ?? null)
+          : null;
+      if (!row.click_id && !eid) return { destination: row.destination };
       const url = new URL(row.destination);
-      url.searchParams.set('gr_click', row.click_id);
+      if (row.click_id) url.searchParams.set('gr_click', row.click_id);
+      if (eid) url.searchParams.set('gr_eid', eid);
       return { destination: url.toString() };
     },
   );

@@ -1,0 +1,669 @@
+// The platform's addresses (API specification v2): the owner's dashboard and tools, which only
+// people in app.platform_owners may reach, and the handful anyone may use. The database repeats
+// every rule (migrations 0040-0044). Owner answers are aggregates: nothing here names a person.
+import { createHmac } from 'node:crypto';
+import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { Database, Queryable } from '../db.ts';
+import { assign } from '../experiments/assign.ts';
+import { evaluate } from '../experiments/stats.ts';
+import { GRIEVANCE_KINDS } from '../governance/legal.ts';
+import { extractClaims } from '../intelligence/claims.ts';
+import { verifyFaithfulness } from '../intelligence/faithfulness.ts';
+import { runPlan, type Tool } from '../intelligence/orchestrator.ts';
+import { validPreference } from '../intelligence/memory.ts';
+import { HyperLogLog } from '../olap/sketches.ts';
+import { asOfJoin, audit, loadExperimentArms, verifyAudit } from '../platform/jobs.ts';
+import { TokenBuckets, visitorAddress, visitorKey, type BucketOptions, type Clock } from '../rate-limit.ts';
+import { loadStatus } from '../ops/store.ts';
+import { isModerator } from './moderation.ts';
+import { fail, signedIn } from './common.ts';
+
+const slug = { type: 'string', pattern: '^[a-z0-9]+(-[a-z0-9]+)*$', maxLength: 80 };
+const digits = { type: 'string', pattern: '^[1-9][0-9]{0,15}$' };
+
+async function isOwner(q: Queryable): Promise<boolean> {
+  return (await q.query<{ ok: boolean }>('SELECT app.is_owner() AS ok')).rows[0]?.ok === true;
+}
+
+export function registerPlatformRoutes(
+  app: FastifyInstance,
+  deps: { db: Database; clock: Clock; limit: BucketOptions; keySecret: Buffer },
+) {
+  const { db } = deps;
+  const buckets = new TokenBuckets(deps.limit, deps.clock);
+
+  async function asOwner<T>(userId: string, reply: FastifyReply, work: (q: Queryable) => Promise<T>) {
+    const result = await db.withUser(userId, async q =>
+      (await isOwner(q)) ? { ok: true as const, value: await work(q) } : { ok: false as const },
+    );
+    return result.ok ? result.value : fail(reply, 403, 'not_owner', 'This page is for Graphinity’s owner.');
+  }
+
+  app.get('/owner/dashboard/summary', { config: { auth: 'required' } }, async (req, reply) =>
+    asOwner(signedIn(req).id, reply, async q => {
+      const rows = (
+        await q.query<{ day: Date; events: string; questions: string; answers: string; hll: Buffer }>(
+          `SELECT day, events::text, questions::text, answers::text, hll_unique_users AS hll
+           FROM app.olap_daily_platform_cube WHERE day > now()::date - 56`,
+        )
+      ).rows;
+      const today = deps.clock.now();
+      // Daily-rotated hashes: a union over days would count one person once a day, so "monthly"
+      // here reads as a sum of daily visitors' reach, only comparable with itself.
+      const within = (days: number) => {
+        const u = new HyperLogLog();
+        let questions = 0;
+        let answers = 0;
+        for (const r of rows)
+          if (today - r.day.getTime() < days * 86_400_000) {
+            u.merge(HyperLogLog.fromBytes(r.hll));
+            questions += Number(r.questions);
+            answers += Number(r.answers);
+          }
+        return { activeDailyHashes: u.count(), questions, answers };
+      };
+      const series = new Map<string, number>();
+      for (const r of rows) {
+        const k = r.day.toISOString().slice(0, 10);
+        series.set(k, (series.get(k) ?? 0) + Number(r.events));
+      }
+      const models = (
+        await db.asSystem(
+          async s =>
+            (
+              await s.query<{
+                name: string;
+                version: number;
+                status: string;
+                stage: string;
+                algorithm: string;
+                created_at: Date;
+                metrics: unknown;
+              }>(
+                `SELECT DISTINCT ON (name) name, version, status, stage, algorithm, created_at, metrics FROM app.ml_models
+               ORDER BY name, (status = 'production') DESC, version DESC`,
+              )
+            ).rows,
+        )
+      ).map(m => ({
+        name: m.name,
+        version: m.version,
+        status: m.status,
+        stage: m.stage,
+        algorithm: m.algorithm,
+        metrics: m.metrics,
+        createdAt: m.created_at.toISOString(),
+      }));
+      const experiments = (
+        await q.query<{ id: string; name: string; status: string; srm: number | null; p: number }>(
+          `SELECT exp_id::text AS id, name, status, srm_p_value AS srm, always_valid_p AS p FROM app.exp_definitions ORDER BY exp_id DESC LIMIT 20`,
+        )
+      ).rows;
+      const commerce = (
+        await q.query<{
+          label: string;
+          field: string;
+          count: number;
+          forecast: number | null;
+          interval: number | null;
+        }>(
+          `SELECT p.label, c.field_id AS field, c.dp_noisy_intent_count AS count, c.holt_winters_forecast_30d AS forecast, c.conformal_interval_90 AS interval
+           FROM app.olap_daily_commerce_cube c JOIN app.products p ON p.id = c.product_entity_id
+           WHERE c.day > now()::date - 7 ORDER BY c.dp_noisy_intent_count DESC LIMIT 20`,
+        )
+      ).rows;
+      return {
+        totals: { day: within(1), week: within(7), month: within(28) },
+        daily: [...series].sort().map(([day, events]) => ({ day, events })),
+        health: await loadStatus(q),
+        models,
+        experiments,
+        commerce,
+        audit: await verifyAudit(q),
+      };
+    }),
+  );
+
+  app.post(
+    '/knowledge-graph/bitemporal/query',
+    {
+      config: { auth: 'required' },
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['entityKey', 'validAt', 'transactionAt'],
+          properties: {
+            entityKey: slug,
+            validAt: { type: 'string', format: 'date-time' },
+            transactionAt: { type: 'string', format: 'date-time' },
+            maxHops: { type: 'integer', minimum: 1, maximum: 3 },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      const b = req.body as { entityKey: string; validAt: string; transactionAt: string; maxHops?: number };
+      return asOwner(signedIn(req).id, reply, () =>
+        db.asSystem(async s => {
+          const { rows } = await s.query<{
+            source: string;
+            target: string;
+            relation: string;
+            weight: number;
+            hops: number;
+          }>(
+            `WITH RECURSIVE walk AS (
+               SELECT n.id, 0 AS hops FROM app.kg_nodes n WHERE n.key = $1
+               UNION
+               SELECT e.target_node_id, w.hops + 1 FROM walk w JOIN app.kg_bitemporal_edges e ON e.source_node_id = w.id
+               WHERE w.hops < $4 AND e.valid_from <= $2 AND $2 < e.valid_to AND e.tx_from <= $3 AND $3 < e.tx_to)
+             SELECT a.key AS source, b.key AS target, e.relation_type AS relation, e.weight, min(w.hops) AS hops
+             FROM walk w JOIN app.kg_bitemporal_edges e ON e.source_node_id = w.id
+             JOIN app.kg_nodes a ON a.id = e.source_node_id JOIN app.kg_nodes b ON b.id = e.target_node_id
+             WHERE w.hops < $4 AND e.valid_from <= $2 AND $2 < e.valid_to AND e.tx_from <= $3 AND $3 < e.tx_to
+             GROUP BY 1, 2, 3, 4 LIMIT 500`,
+            [b.entityKey, b.validAt, b.transactionAt, b.maxHops ?? 2],
+          );
+          return { edges: rows };
+        }),
+      );
+    },
+  );
+
+  // A step within one visit, pooled: no person, no session id, nothing to follow anyone by.
+  app.post(
+    '/knowledge-graph/transitions',
+    {
+      config: { auth: 'optional' },
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['from', 'to'],
+          properties: { from: slug, to: slug, previous: slug },
+        },
+      },
+    },
+    async (req, reply) => {
+      const take = buckets.take(req.user ? `u:${req.user.id}` : visitorKey(visitorAddress(req.ip), deps.keySecret));
+      if (!take.ok) {
+        reply.header('retry-after', String(take.retryAfterSeconds));
+        return fail(reply, 429, 'rate_limited', 'Too many requests. Wait a minute, then try again.');
+      }
+      const b = req.body as { from: string; to: string; previous?: string };
+      if (b.from === b.to) return reply.code(204).send();
+      await db.asSystem(async q => {
+        // Only topics we know: an open address must not fill the table with made-up keys.
+        const known = await q.query('SELECT 1 FROM app.fields WHERE slug = ANY($1)', [[b.from, b.to]]);
+        if (known.rowCount !== 2) return;
+        for (const prior of b.previous ? ['', b.previous] : [''])
+          await q.query(
+            `INSERT INTO app.kg_session_transitions (from_key, to_key, prior_key) VALUES ($1, $2, $3)
+             ON CONFLICT (from_key, to_key, prior_key) DO UPDATE SET
+               decayed_transition_count = app.kg_session_transitions.decayed_transition_count
+                 * exp(-extract(epoch FROM now() - app.kg_session_transitions.updated_at) / (30 * 86400)) + 1,
+               updated_at = now()`,
+            [b.from, b.to, prior],
+          );
+      });
+      return reply.code(204).send();
+    },
+  );
+
+  app.get(
+    '/knowledge-graph/next',
+    {
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['current'],
+          properties: { current: slug, previous: slug },
+        },
+      },
+    },
+    async req => {
+      const { current, previous } = req.query as { current: string; previous?: string };
+      const rows = await db.asSystem(
+        async q =>
+          (
+            await q.query<{ item: string; c: number; prior_key: string }>(
+              `SELECT to_key AS item, decayed_transition_count AS c, prior_key FROM app.kg_session_transitions
+               WHERE from_key = $1 AND prior_key IN ('', $2)`,
+              [current, previous ?? ''],
+            )
+          ).rows,
+      );
+      const second = rows.filter(r => r.prior_key !== '');
+      // Pooled counts, shown only once several people have made the step, so one step isn't visible.
+      const base = second.reduce((a, r) => a + r.c, 0) >= 5 ? second : rows.filter(r => r.prior_key === '');
+      const total = base.reduce((a, r) => a + r.c, 0);
+      return {
+        next:
+          total < 5
+            ? []
+            : base
+                .filter(r => r.item !== previous)
+                .map(r => ({ field: r.item, probability: r.c / total }))
+                .sort((a, b) => b.probability - a.probability)
+                .slice(0, 5),
+      };
+    },
+  );
+
+  app.post(
+    '/feature-store/as-of-join',
+    {
+      config: { auth: 'required' },
+      bodyLimit: 256 * 1024,
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['entityType', 'featureGroups', 'observationTimestamps'],
+          properties: {
+            entityType: { enum: ['field', 'product', 'campaign'] },
+            featureGroups: {
+              type: 'array',
+              minItems: 1,
+              maxItems: 10,
+              items: { type: 'string', pattern: '^[a-z_]{1,64}$' },
+            },
+            observationTimestamps: {
+              type: 'array',
+              minItems: 1,
+              maxItems: 5000,
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['entityId', 'observedAt'],
+                properties: {
+                  entityId: { type: 'string', maxLength: 100, minLength: 1 },
+                  observedAt: { type: 'string', format: 'date-time' },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      const b = req.body as {
+        entityType: string;
+        featureGroups: string[];
+        observationTimestamps: Array<{ entityId: string; observedAt: string }>;
+      };
+      return asOwner(signedIn(req).id, reply, () =>
+        db.asSystem(async q => ({ rows: await asOfJoin(q, b.entityType, b.featureGroups, b.observationTimestamps) })),
+      );
+    },
+  );
+
+  app.get(
+    '/experiments/evaluate',
+    {
+      config: { auth: 'required' },
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['experimentId'],
+          properties: { experimentId: digits },
+        },
+      },
+    },
+    async (req, reply) => {
+      const { experimentId } = req.query as { experimentId: string };
+      return asOwner(signedIn(req).id, reply, () =>
+        db.asSystem(async q => {
+          const e = (
+            await q.query<{ share: number; p: number; status: string }>(
+              'SELECT control_share AS share, always_valid_p AS p, status FROM app.exp_definitions WHERE exp_id = $1',
+              [experimentId],
+            )
+          ).rows[0];
+          if (!e) return { found: false };
+          const { control, treatment } = await loadExperimentArms(q, experimentId);
+          return {
+            found: true,
+            status: e.status,
+            units: { control: control.y.length, treatment: treatment.y.length },
+            ...evaluate(control, treatment, [e.share, 1 - e.share], e.p),
+          };
+        }),
+      );
+    },
+  );
+
+  // A signed-in person's experiment arms. The unit is a keyed hash, per layer.
+  app.get('/me/experiments', { config: { auth: 'required' } }, async req => {
+    const user = signedIn(req);
+    return db.asSystem(async q => {
+      const layers = (
+        await q.query<{ id: string; salt: Buffer }>(
+          'SELECT layer_id::text AS id, salt_secret AS salt FROM app.exp_layers',
+        )
+      ).rows;
+      const out: Array<{ experiment: string; arm: string }> = [];
+      for (const layer of layers) {
+        const running = (
+          await q.query<{ id: string; name: string; bucket_start: number; bucket_end: number; share: number }>(
+            `SELECT exp_id::text AS id, name, bucket_start, bucket_end, control_share AS share
+             FROM app.exp_definitions WHERE layer_id = $1 AND status = 'running'`,
+            [layer.id],
+          )
+        ).rows;
+        const salt = layer.salt.toString('base64url');
+        const unit = createHmac('sha256', layer.salt).update(user.id).digest('base64url');
+        const a = assign(
+          unit,
+          salt,
+          running.map(e => ({
+            id: e.id,
+            bucketStart: e.bucket_start,
+            bucketEnd: e.bucket_end,
+            arms: [
+              { name: 'control', weight: e.share },
+              { name: 'treatment', weight: 1 - e.share },
+            ],
+          })),
+        );
+        if (!a) continue;
+        const entered = running.find(e => e.id === a.experiment);
+        // The metric: answers given since entering, and in the 14 days before (CUPED's covariate).
+        await q.query(
+          `INSERT INTO app.exp_unit_metrics (exp_id, unit_id, arm, pre_experiment_covariate_x)
+           VALUES ($1, $2, $3, (SELECT count(*) FROM app.answers WHERE answerer_id = $4 AND created_at > now() - interval '14 days' AND created_at <= now()))
+           ON CONFLICT (exp_id, unit_id) DO NOTHING`,
+          [a.experiment, unit, a.arm, user.id],
+        );
+        await q.query(
+          `UPDATE app.exp_unit_metrics m SET post_metric_y = (SELECT count(*) FROM app.answers a WHERE a.answerer_id = $3
+             AND a.created_at > (SELECT created_at FROM app.exp_definitions WHERE exp_id = $1)), updated_at = now()
+           WHERE m.exp_id = $1 AND m.unit_id = $2`,
+          [a.experiment, unit, user.id],
+        );
+        if (entered) out.push({ experiment: entered.name, arm: a.arm });
+      }
+      return { experiments: out };
+    });
+  });
+
+  app.get(
+    '/commerce/intelligence/forecast',
+    {
+      config: { auth: 'required' },
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['fieldSlug'],
+          properties: { fieldSlug: slug },
+        },
+      },
+    },
+    async (req, reply) => {
+      const { fieldSlug } = req.query as { fieldSlug: string };
+      return asOwner(signedIn(req).id, reply, async q => ({
+        products: (
+          await q.query(
+            `SELECT p.label, c.day::text AS day, c.dp_noisy_intent_count AS "noisyCount", c.holt_winters_forecast_30d AS "forecast30d",
+                    c.conformal_interval_90 AS "interval90"
+             FROM app.olap_daily_commerce_cube c JOIN app.products p ON p.id = c.product_entity_id
+             WHERE c.field_id = $1 AND c.day > now()::date - 7 ORDER BY c.dp_noisy_intent_count DESC LIMIT 50`,
+            [fieldSlug],
+          )
+        ).rows,
+      }));
+    },
+  );
+
+  // What people reported in a question's answers: only their numbers and sentences, each cited.
+  // A DAG of read-only tools; nothing here writes an answer, and every sentence passes the verifier.
+  app.get(
+    '/questions/:id/evidence',
+    {
+      config: { auth: 'optional' },
+      schema: { params: { type: 'object', properties: { id: digits }, required: ['id'] } },
+    },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const viewer = req.user?.id ?? null;
+      type Answers = Array<{ id: string; body: string }>;
+      const tools = new Map<string, Tool<null>>([
+        [
+          'answers',
+          {
+            name: 'answers',
+            readOnly: true,
+            timeoutMs: 1_000,
+            run: () =>
+              db.withUser(
+                viewer,
+                async q =>
+                  (
+                    await q.query<{ id: string; body: string }>(
+                      `SELECT a.id::text, a.body FROM app.answers a
+                       WHERE a.question_id = $1 AND NOT app.is_answer_hidden(a.id) ORDER BY a.id LIMIT 200`,
+                      [id],
+                    )
+                  ).rows,
+              ),
+          },
+        ],
+        [
+          'claims',
+          {
+            name: 'claims',
+            readOnly: true,
+            timeoutMs: 200,
+            run: i =>
+              Promise.resolve(
+                ((i.answers ?? []) as Answers).flatMap(a => extractClaims(a.body).map(c => ({ ...c, answer: a.id }))),
+              ),
+          },
+        ],
+      ]);
+      const results = await runPlan(
+        [
+          { id: 'a', tool: 'answers', input: {} },
+          { id: 'c', tool: 'claims', input: { answers: { $from: 'a' } }, after: ['a'] },
+        ],
+        tools,
+        null,
+      );
+      const a = results.get('a');
+      const c = results.get('c');
+      if (!a?.ok || !c?.ok)
+        return fail(reply, 503, 'unavailable', 'This can’t be worked out right now. Try again in a minute.');
+      const answers = a.value as Answers;
+      const claims = c.value as Array<ReturnType<typeof extractClaims>[number] & { answer: string }>;
+      const sources = answers.map(x => ({ id: x.id, text: x.body }));
+      const verified = verifyFaithfulness(claims.map(x => x.sentence).join('\n'), sources);
+      const faithful = new Set(verified.kept.map(k => k.sentence));
+      return {
+        claims: claims
+          .filter(x => faithful.has(x.sentence))
+          .slice(0, 100)
+          .map(x => ({
+            metric: x.metric,
+            value: x.value,
+            currency: x.currency ?? null,
+            outcome: x.outcome,
+            quote: x.sentence,
+            answerId: x.answer,
+          })),
+      };
+    },
+  );
+
+  // Memory (charter §10.3): the person's to see, set and clear, only with their consent.
+  app.get('/me/memory', { config: { auth: 'required' } }, async req => {
+    const user = signedIn(req);
+    return db.withUser(user.id, async q => ({
+      entries: (
+        await q.query(
+          `SELECT tier, key, value, strength, reviews, seen_at AS "seenAt" FROM app.memory_entries WHERE user_id = $1 ORDER BY tier, key`,
+          [user.id],
+        )
+      ).rows,
+    }));
+  });
+  app.put(
+    '/me/memory/preferences/:name',
+    {
+      config: { auth: 'required', write: true },
+      schema: {
+        params: {
+          type: 'object',
+          properties: { name: { type: 'string', pattern: '^[a-z]{1,20}$' } },
+          required: ['name'],
+        },
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['value'],
+          properties: { value: { type: 'string', maxLength: 40 } },
+        },
+      },
+    },
+    async (req, reply) => {
+      const user = signedIn(req);
+      const { name } = req.params as { name: string };
+      const { value } = req.body as { value: string };
+      if (!validPreference(name, value))
+        return fail(reply, 400, 'invalid_preference', 'That isn’t one of the choices.');
+      try {
+        await db.withUser(user.id, q =>
+          q.query(
+            `INSERT INTO app.memory_entries (user_id, tier, key, value) VALUES ($1, 'procedural', $2, $3)
+             ON CONFLICT (user_id, tier, key) DO UPDATE SET value = excluded.value, seen_at = now()`,
+            [user.id, name, value],
+          ),
+        );
+      } catch (err) {
+        if ((err as { code?: string }).code === '42501')
+          return fail(reply, 403, 'consent_required', 'Turn on remembering in Privacy settings first.');
+        throw err;
+      }
+      return { saved: { name, value } };
+    },
+  );
+  app.delete('/me/memory', { config: { auth: 'required', write: true } }, async req => {
+    const user = signedIn(req);
+    const n = await db.withUser(
+      user.id,
+      async q => (await q.query('DELETE FROM app.memory_entries WHERE user_id = $1', [user.id])).rowCount,
+    );
+    return { deleted: n ?? 0 };
+  });
+
+  // Complaints (India IT Rules 2021; for a lawyer to confirm): clocks come from the database.
+  app.post(
+    '/grievances',
+    {
+      config: { auth: 'required', write: true },
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['kind', 'body'],
+          properties: {
+            kind: { enum: [...GRIEVANCE_KINDS] },
+            body: { type: 'string', minLength: 10, maxLength: 4000 },
+            questionId: digits,
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      const user = signedIn(req);
+      const b = req.body as { kind: string; body: string; questionId?: string };
+      const row = await db.withUser(user.id, async q => {
+        const r = (
+          await q.query<{ public_id: string; acknowledge_by: Date; resolve_by: Date }>(
+            `INSERT INTO app.grievances (user_id, kind, body, question_id, acknowledge_by, resolve_by)
+             VALUES ($1, $2, $3, $4, now(), now()) RETURNING public_id::text, acknowledge_by, resolve_by`,
+            [user.id, b.kind, b.body.trim(), b.questionId ?? null],
+          )
+        ).rows[0];
+        return r;
+      });
+      await db.asSystem(q =>
+        audit(q, {
+          action: 'grievance.received',
+          actor: 'person',
+          subject: row?.public_id ?? '',
+          detail: { kind: b.kind },
+        }),
+      );
+      return reply.code(201).send({
+        grievance: {
+          id: row?.public_id,
+          acknowledgeBy: row?.acknowledge_by.toISOString(),
+          resolveBy: row?.resolve_by.toISOString(),
+        },
+      });
+    },
+  );
+  app.get('/ops/grievances', { config: { auth: 'required' } }, async (req, reply) => {
+    const user = signedIn(req);
+    const result = await db.withUser(user.id, async q =>
+      (await isModerator(q))
+        ? {
+            rows: (
+              await q.query(
+                `SELECT public_id AS id, kind, body, received_at AS "receivedAt", acknowledge_by AS "acknowledgeBy",
+                        resolve_by AS "resolveBy", acknowledged_at AS "acknowledgedAt"
+                 FROM app.grievances WHERE resolved_at IS NULL ORDER BY resolve_by LIMIT 100`,
+              )
+            ).rows,
+          }
+        : null,
+    );
+    return result ?? fail(reply, 403, 'not_a_moderator', 'This page is for moderators.');
+  });
+  app.patch(
+    '/ops/grievances/:id',
+    {
+      config: { auth: 'required', write: true },
+      schema: {
+        params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } }, required: ['id'] },
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['action'],
+          properties: {
+            action: { enum: ['acknowledge', 'resolve'] },
+            outcome: { type: 'string', minLength: 5, maxLength: 2000 },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      const user = signedIn(req);
+      const { id } = req.params as { id: string };
+      const b = req.body as { action: 'acknowledge' | 'resolve'; outcome?: string };
+      if (b.action === 'resolve' && !b.outcome) return fail(reply, 400, 'outcome_required', 'Say what was decided.');
+      const changed = await db.withUser(user.id, async q => {
+        if (!(await isModerator(q))) return null;
+        return (
+          await q.query(
+            b.action === 'acknowledge'
+              ? `UPDATE app.grievances SET acknowledged_at = coalesce(acknowledged_at, clock_timestamp()) WHERE public_id = $1 AND resolved_at IS NULL`
+              : `UPDATE app.grievances SET resolved_at = clock_timestamp(), outcome = $2,
+                   acknowledged_at = coalesce(acknowledged_at, clock_timestamp()) WHERE public_id = $1 AND resolved_at IS NULL`,
+            b.action === 'acknowledge' ? [id] : [id, b.outcome],
+          )
+        ).rowCount;
+      });
+      if (changed === null) return fail(reply, 403, 'not_a_moderator', 'This page is for moderators.');
+      if (!changed) return fail(reply, 404, 'not_found', 'There’s no open complaint with that id.');
+      await db.asSystem(q =>
+        audit(q, { action: `grievance.${b.action}`, actor: 'moderator', subject: id, detail: {} }),
+      );
+      return { ok: true };
+    },
+  );
+}

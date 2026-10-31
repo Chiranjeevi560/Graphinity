@@ -5,6 +5,7 @@
 // one under test wins its auction against those earlier tests left running.
 import { randomUUID } from 'node:crypto';
 import { expect } from 'vitest';
+import { createExchange } from '../../src/ads/exchange.ts';
 import { createAdServer } from '../../src/ads/serve.ts';
 import { startApp, type TestApp } from './app.ts';
 import { must } from './must.ts';
@@ -20,9 +21,18 @@ export async function startAdWorld(prefix: string, flags: readonly string[] = ['
     adServer: {
       serve: (input: Parameters<ReturnType<typeof createAdServer>['serve']>[0]) => must(holder.server).serve(input),
       refresh: () => must(holder.server).refresh(),
+      tapEid: (viewer: string, now: number, ua: string | null) =>
+        must(holder.server).tapEid?.(viewer, now, ua) ?? Promise.resolve(null),
     },
   });
-  holder.server = createAdServer(h.t.database);
+  // Bidders never asked in these worlds; the secret is for rotating ids on taps.
+  holder.server = createAdServer(h.t.database, {
+    enabled: () => false,
+    exchange: createExchange(() => Promise.reject(new Error('no bidders here'))),
+    secret: Buffer.alloc(32, 4),
+    site: 'graphinity.example',
+    currency: 'INR',
+  });
   await h.t.owner.query('UPDATE app.feature_flags SET enabled = true WHERE name = ANY($1)', [[...flags]]);
   await h.t.owner.query('UPDATE app.ad_jurisdiction_rules SET legal_approved = true');
   const server = () => must(holder.server);

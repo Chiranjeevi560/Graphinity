@@ -35,6 +35,13 @@ export const JOB_LABELS: Readonly<Record<string, string>> = {
   'ad-impression-expiry': 'Forgetting old ad impressions',
   'ad-partner-impression-expiry': 'Forgetting old outside-bidder impressions',
   'ad-audiences': 'Building advertising audiences',
+  'olap-rollup': 'Adding up activity for the owner’s page',
+  'commerce-rollup': 'Counting products people ask about',
+  'knowledge-graph': 'Updating the knowledge graph',
+  'feature-store': 'Recording model features',
+  experiments: 'Checking running experiments',
+  'ad-signal-expiry': 'Forgetting old partner signals',
+  'ad-pacing': 'Pacing advertising budgets',
 };
 
 export const RETENTION_DAYS = 35;

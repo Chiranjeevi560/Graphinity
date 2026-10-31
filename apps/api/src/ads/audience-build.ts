@@ -98,7 +98,7 @@ export async function buildAudiences(db: Pick<Database, 'asSystem'>, now = new D
       await q.query<AudienceRow>(
         // Look-alikes last: they read their seed's fresh members.
         `SELECT id::text, kind, rule, source_campaign_id::text, seed_audience_id::text, expansion
-         FROM app.ad_audiences ORDER BY kind = 'lookalike', id`,
+         FROM app.ad_audiences WHERE kind <> 'partner_match' ORDER BY kind = 'lookalike', id`,
       )
     ).rows;
     const topics = (await q.query<{ slug: string }>('SELECT slug FROM app.fields ORDER BY slug')).rows.map(r => r.slug);

@@ -30,6 +30,7 @@ import { registerAdvertiserRoutes } from './routes/advertisers.ts';
 import { registerAdMeasurementRoutes } from './routes/ad-measurement.ts';
 import { registerAdAudienceRoutes } from './routes/ad-audiences.ts';
 import { registerAdReportRoutes } from './routes/ad-reports.ts';
+import { registerPlatformRoutes } from './routes/platform.ts';
 import type { MetricsRecorder } from './ops/metrics.ts';
 
 declare module 'fastify' {
@@ -356,6 +357,7 @@ export async function buildServer(deps: Deps) {
   registerAdMeasurementRoutes(app, { db, enabled: deps.adsEnabled ?? (() => false), clock, limit: limits.ads });
   registerAdAudienceRoutes(app, { db, enabled: deps.adsEnabled ?? (() => false) });
   registerAdReportRoutes(app, { db, enabled: deps.adsEnabled ?? (() => false), clock });
+  registerPlatformRoutes(app, { db, clock, limit: limits.ads, keySecret: config.ipHashKey });
 
   return app;
 }
