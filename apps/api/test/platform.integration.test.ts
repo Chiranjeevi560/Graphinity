@@ -409,10 +409,6 @@ describe('partner signals, under the switches', () => {
         .rows[0],
     ).ad_id;
     const eid = 'abcdefghijklmnopqrstuv';
-    await o.query("INSERT INTO app.ad_eids (eid, ad_id, expires_at) VALUES ($1, $2, now() + interval '1 day')", [
-      eid,
-      adId,
-    ]);
     const biz = must(
       (
         await o.query<{ id: string }>(
@@ -420,6 +416,10 @@ describe('partner signals, under the switches', () => {
         )
       ).rows[0],
     ).id;
+    await o.query(
+      "INSERT INTO app.ad_eids (eid, ad_id, expires_at, scope) VALUES ($1, $2, now() + interval '1 day', 'advertiser:' || $3)",
+      [eid, adId, biz],
+    );
     const key = `grk_${'k'.repeat(43)}`;
     await o.query("INSERT INTO app.ad_api_keys (advertiser_id, key_hash, prefix) VALUES ($1, $2, 'grk_kkkkkk')", [
       biz,
@@ -432,10 +432,14 @@ describe('partner signals, under the switches', () => {
         headers: { authorization: `Bearer ${token}` },
         payload: { eidToken, event: 'PRODUCT_VIEW', eventId },
       });
-    expect((await send(key, eid, 'e1')).json()).toEqual({ counted: true });
-    expect((await send(key, eid, 'e1')).json()).toEqual({ counted: true });
-    expect((await send(`grk_${'x'.repeat(43)}`, eid, 'e2')).json()).toEqual({ counted: false });
-    expect((await send(key, 'z'.repeat(22), 'e3')).json()).toEqual({ counted: false });
+    // Every answer reads the same; only the table knows.
+    for (const r of [
+      await send(key, eid, 'e1'),
+      await send(key, eid, 'e1'),
+      await send(`grk_${'x'.repeat(43)}`, eid, 'e2'),
+      await send(key, 'z'.repeat(22), 'e3'),
+    ])
+      expect(r.json()).toEqual({ accepted: true });
     expect(
       must(
         (await o.query<{ c: number }>('SELECT count(*)::int AS c FROM app.ad_partner_events WHERE ad_id = $1', [adId]))
@@ -454,7 +458,8 @@ describe('partner signals, under the switches', () => {
     // Turning personalized ads off rotates the identity: id and events go with it.
     await h.call('PUT', '/me/consents', p.token, { choices: [{ category: 'ads_personalization', enabled: false }] });
     expect((await o.query('SELECT 1 FROM app.ad_partner_events WHERE ad_id = $1', [adId])).rows).toEqual([]);
-    expect((await send(key, eid, 'e4')).json()).toEqual({ counted: false });
+    expect((await send(key, eid, 'e4')).json()).toEqual({ accepted: true });
+    expect((await o.query("SELECT 1 FROM app.ad_partner_events WHERE external_id = 'e4'")).rows).toEqual([]);
     expect(await stepPacers(db(), Date.now())).toBeGreaterThanOrEqual(0);
   });
 });

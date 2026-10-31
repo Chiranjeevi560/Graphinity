@@ -11,6 +11,7 @@ let h: TestApp;
 let rtbOn = true;
 const sent: Array<Record<string, unknown>> = [];
 let price = 500;
+const holderRef: { server?: ReturnType<typeof createAdServer> } = {};
 
 const fetcher: Fetcher = (_url, init) => {
   const request = JSON.parse(init.body) as Record<string, unknown>;
@@ -47,7 +48,7 @@ const fetcher: Fetcher = (_url, init) => {
 };
 
 beforeAll(async () => {
-  const holder: { server?: ReturnType<typeof createAdServer> } = {};
+  const holder = holderRef;
   h = await startApp(() => Date.now(), {
     adsEnabled: () => true,
     adServer: {
@@ -140,6 +141,17 @@ describe('what leaves Graphinity', () => {
     const allowed = must(sent[0]);
     expect((allowed.user as { eids: unknown[] }).eids).toHaveLength(1);
     expect(JSON.stringify(allowed)).not.toContain(p.id);
+    // Two bidders can't join what they see: each gets its own id for the same person.
+    const second = await h.t.owner.query<{ id: string }>(
+      "INSERT INTO app.ad_partners (name, endpoint, enabled) VALUES ('q', 'https://bid.other.example/rtb', true) RETURNING id::text",
+    );
+    await must(holderRef.server).refresh();
+    sent.length = 0;
+    await select(p.token);
+    const ids = sent.map(r => (r.user as { eids: Array<{ uids: Array<{ id: string }> }> }).eids[0]?.uids[0]?.id);
+    expect(new Set(ids).size).toBe(2);
+    await h.t.owner.query('DELETE FROM app.ad_partners WHERE id = $1', [second.rows[0]?.id]);
+    await must(holderRef.server).refresh();
     sent.length = 0;
     await select(p.token, { 'sec-gpc': '1' });
     expect(must(sent[0]).user).toBeUndefined();

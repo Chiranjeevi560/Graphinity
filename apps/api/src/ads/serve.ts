@@ -306,7 +306,7 @@ export interface AdServer {
   /** Re-reads the campaigns now (also every REFRESH_MS). */
   refresh(): Promise<void>;
   /** A rotating id for a tap's destination, only for one who allows partner sites. */
-  tapEid?(viewer: string, now: number, userAgent: string | null): Promise<string | null>;
+  tapEid?(viewer: string, now: number, userAgent: string | null, token: string): Promise<string | null>;
 }
 
 export function createAdServer(db: Pick<Database, 'asSystem'>, rtb?: RtbOptions): AdServer {
@@ -321,7 +321,7 @@ export function createAdServer(db: Pick<Database, 'asSystem'>, rtb?: RtbOptions)
     db.asSystem(
       async q => (await q.query<{ on: boolean }>("SELECT app.flag_on('ads_holdout') AS on")).rows[0]?.on === true,
     );
-  const eidOf = (secret: Buffer, adId: string, now: number, crossDevice: boolean, ua: string | null) =>
+  const eidOf = (secret: Buffer, adId: string, now: number, crossDevice: boolean, ua: string | null, scope: string) =>
     eid(
       secret,
       adId,
@@ -331,13 +331,13 @@ export function createAdServer(db: Pick<Database, 'asSystem'>, rtb?: RtbOptions)
         : createHmac('sha256', secret)
             .update(ua ?? '')
             .digest('base64url'),
+      scope,
     );
-  const rememberEid = (q: Queryable, id: string, adId: string, now: number) =>
-    q.query(`INSERT INTO app.ad_eids (eid, ad_id, expires_at) VALUES ($1, $2, $3) ON CONFLICT (eid) DO NOTHING`, [
-      id,
-      adId,
-      new Date(now + 62 * 86_400_000),
-    ]);
+  const rememberEid = (q: Queryable, id: string, adId: string, now: number, scope: string) =>
+    q.query(
+      `INSERT INTO app.ad_eids (eid, ad_id, expires_at, scope) VALUES ($1, $2, $3, $4) ON CONFLICT (eid) DO NOTHING`,
+      [id, adId, new Date(now + 62 * 86_400_000), scope],
+    );
   const refresh = async () => {
     const campaigns = await db.asSystem(loadIndex);
     index = indexCampaigns(campaigns);
@@ -359,20 +359,24 @@ export function createAdServer(db: Pick<Database, 'asSystem'>, rtb?: RtbOptions)
   };
   return {
     refresh,
-    async tapEid(viewer, now, userAgent) {
+    async tapEid(viewer, now, userAgent, token) {
       if (!rtb) return null;
       const { secret } = rtb;
       return db.asSystem(async q => {
         const r = (
-          await q.query<{ ad_id: string; cross: boolean }>(
-            `SELECT i.ad_id::text, app.ads_permitted(i.profile_id, 'ads_cross_device') AS cross FROM app.ad_identities i
+          await q.query<{ ad_id: string; cross: boolean; advertiser: string }>(
+            `SELECT i.ad_id::text, app.ads_permitted(i.profile_id, 'ads_cross_device') AS cross, c.advertiser_id::text AS advertiser
+             FROM app.ad_identities i
+             JOIN app.ad_impressions imp ON imp.token = $2
+             JOIN app.ad_campaigns c ON c.id = imp.campaign_id
              WHERE i.profile_id = $1 AND app.ads_permitted(i.profile_id, 'ads_partner_sites')`,
-            [viewer],
+            [viewer, token],
           )
         ).rows[0];
         if (!r) return null;
-        const id = eidOf(secret, r.ad_id, now, r.cross, userAgent);
-        await rememberEid(q, id, r.ad_id, now);
+        const scope = `advertiser:${r.advertiser}`;
+        const id = eidOf(secret, r.ad_id, now, r.cross, userAgent, scope);
+        await rememberEid(q, id, r.ad_id, now, scope);
         return id;
       });
     },
@@ -495,37 +499,33 @@ export function createAdServer(db: Pick<Database, 'asSystem'>, rtb?: RtbOptions)
         const slotFloors = floors(visible, slots, reserveCpm);
         const shares = adId !== null && person?.partnerSites === true;
         const crossDevice = person?.crossDevice === true;
-        const request = buildBidRequest({
-          placement,
-          slots,
-          floorCpm: Math.min(...slotFloors),
-          currency: rtb.currency,
-          fields,
-          path: input.path ?? '/',
-          country: person?.country ?? null,
-          ip: input.ip ?? null,
-          userAgent: input.userAgent ?? null,
-          partner:
-            shares && adId
-              ? {
-                  eid: eidOf(rtb.secret, adId, now, crossDevice, input.userAgent ?? null),
-                  crossDevice,
-                  interests: [...(interests ?? [])],
-                }
-              : null,
-          test: false,
-          site: rtb.site,
-        });
-        if (shares && adId)
-          await db.asSystem(q =>
-            rememberEid(
-              q,
-              (request.user as { eids: Array<{ uids: Array<{ id: string }> }> }).eids[0]?.uids[0]?.id ?? '',
-              adId,
-              now,
-            ),
-          );
-        outcomes = merge(visible, await rtb.exchange.ask(partners, request), slotFloors);
+        const offerTo = (scope: string) =>
+          buildBidRequest({
+            placement,
+            slots,
+            floorCpm: Math.min(...slotFloors),
+            currency: rtb.currency,
+            fields,
+            path: input.path ?? '/',
+            country: person?.country ?? null,
+            ip: input.ip ?? null,
+            userAgent: input.userAgent ?? null,
+            partner:
+              shares && adId
+                ? {
+                    eid: eidOf(rtb.secret, adId, now, crossDevice, input.userAgent ?? null, scope),
+                    crossDevice,
+                    interests: [...(interests ?? [])],
+                  }
+                : null,
+            test: false,
+            site: rtb.site,
+          });
+        // With an id in it, each bidder gets its own; without, one request serves them all.
+        const bids = shares
+          ? (await Promise.all(partners.map(p => rtb.exchange.ask([p], offerTo(`partner:${p.id}`))))).flat()
+          : await rtb.exchange.ask(partners, offerTo(''));
+        outcomes = merge(visible, bids, slotFloors);
       }
       const currency = rtb?.currency ?? 'INR';
       return db.asSystem(async q => {

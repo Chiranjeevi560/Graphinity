@@ -20,17 +20,20 @@ export function SponsoredSlot({
   placement,
   questionId,
   query,
+  signals = false,
 }: {
   placement: 'search' | 'question';
   questionId?: string;
   query?: string;
+  /** Only true for someone who allowed partner sites, without Global Privacy Control. */
+  signals?: boolean;
 }) {
   const [ads, setAds] = useState<Ad[]>([]);
   useEffect(() => {
     let live = true;
     const load = async () => {
-      const landing = landingQuery(location.search);
-      const topics = await browserTopics();
+      const landing = signals ? landingQuery(location.search) : null;
+      const topics = signals ? await browserTopics() : [];
       return api<{ ads: Ad[] }>('/ads/select', {
         method: 'POST',
         signedIn: 'if-possible',
@@ -55,7 +58,7 @@ export function SponsoredSlot({
     return () => {
       live = false;
     };
-  }, [placement, questionId, query]);
+  }, [placement, questionId, query, signals]);
   if (ads.length === 0) return null;
   const open = async (ad: Ad) => {
     const { destination } = await api<{ destination: string }>(`/ads/click/${ad.token}`, {

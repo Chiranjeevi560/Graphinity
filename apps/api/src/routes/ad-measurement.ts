@@ -8,11 +8,16 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Database } from '../db.ts';
 import { RULE_MODELS, ruleCredit, shapleyModel, type Path, type Touch } from '../ads/attribution.ts';
 import { lift } from '../ads/lift.ts';
-import { MIN_PEOPLE } from '../ads/privacy.ts';
+import { cellUniform, laplace, MIN_PEOPLE } from '../ads/privacy.ts';
+import { reportSecret } from './ad-reports.ts';
 import { TokenBuckets, type BucketOptions, type Clock } from '../rate-limit.ts';
 import { fail, pgCode, signedIn } from './common.ts';
 
 const keyPattern = /^grk_[A-Za-z0-9_-]{43}$/;
+/** ε for one lift release: four noised numbers. One person's sales count up to this much. */
+const LIFT_EPSILON = 0.8;
+const SALE_CLIP_MICROS = 10_000_000_000;
+
 export const hashKey = (key: string) => createHash('sha256').update(key).digest('hex');
 
 export function registerAdMeasurementRoutes(
@@ -59,24 +64,23 @@ export function registerAdMeasurementRoutes(
         category?: string;
         valueMicros?: number;
       };
-      const outcome = key
-        ? await db.asSystem(
-            async q =>
-              (
-                await q.query<{ r: string }>('SELECT app.record_partner_event($1, $2, $3, $4, $5, $6, $7) AS r', [
-                  hashKey(key),
-                  b.eidToken,
-                  b.event,
-                  b.productSku ?? null,
-                  b.category ?? null,
-                  b.eventId,
-                  b.valueMicros ?? 0,
-                ])
-              ).rows[0]?.r,
-          )
-        : 'unknown';
-      // The same for every refusal, so neither keys nor ids can be probed.
-      return reply.code(202).send({ counted: outcome === 'recorded' || outcome === 'already' });
+      if (key)
+        await db.asSystem(
+          async q =>
+            (
+              await q.query<{ r: string }>('SELECT app.record_partner_event($1, $2, $3, $4, $5, $6, $7) AS r', [
+                hashKey(key),
+                b.eidToken,
+                b.event,
+                b.productSku ?? null,
+                b.category ?? null,
+                b.eventId,
+                b.valueMicros ?? 0,
+              ])
+            ).rows[0]?.r,
+        );
+      // The same whatever happened, so neither keys nor ids can be probed.
+      return reply.code(202).send({ accepted: true });
     },
   );
 
@@ -85,6 +89,10 @@ export function registerAdMeasurementRoutes(
     '/ads/audiences/partner-match',
     {
       bodyLimit: 2 * 1024 * 1024,
+      // No key, no reading a two-megabyte body.
+      onRequest: async (req, reply) => {
+        if (!bearerKey(req.headers.authorization)) return reply.code(202).send({ status: 'insufficient' });
+      },
       schema: {
         body: {
           type: 'object',
@@ -133,46 +141,80 @@ export function registerAdMeasurementRoutes(
         async q =>
           (
             await q.query<{ id: string; advertiser: string }>(
-              'SELECT id::text, advertiser_id::text AS advertiser FROM app.ad_campaigns WHERE public_id = $1',
+              `SELECT id::text, advertiser_id::text AS advertiser FROM app.ad_campaigns
+             WHERE public_id = $1 AND app.is_ad_member(advertiser_id)`,
               [id],
             )
           ).rows[0],
       );
       if (!campaign) return fail(reply, 404, 'not_found', 'There’s no such campaign you run.');
-      const counts = await db.asSystem(
-        async q =>
-          (
-            await q.query<{ ep: number; ec: number; hp: number; hc: number; ev: string; hv: string; spend: string }>(
-              `WITH exposed AS (SELECT DISTINCT ad_id FROM app.ad_impressions WHERE campaign_id = $1 AND ad_id IS NOT NULL AND shown_at > now() - interval '30 days'),
-                    held AS (SELECT DISTINCT ad_id FROM app.ad_ghost_impressions WHERE campaign_id = $1 AND shown_at > now() - interval '30 days'),
-                    sales AS (SELECT ad_id, sum(value_micros) AS v FROM app.ad_partner_events WHERE advertiser_id = $2 AND kind = 'PURCHASE' AND occurred_at > now() - interval '30 days' GROUP BY 1)
+      // Complete days only, sale values clipped per person, noise fixed per campaign and day, and a
+      // charge to the business's budget: otherwise reporting a sale for one id and re-reading shows
+      // whether that person saw the ad. Only people who allow measurement now are joined.
+      const today = new Date(deps.clock.now()).toISOString().slice(0, 10);
+      const yesterday = new Date(deps.clock.now() - 86_400_000).toISOString().slice(0, 10);
+      const outcome = await db.asSystem(async q => {
+        const release = (
+          await q.query<{ outcome: string }>('SELECT outcome FROM app.release_ad_report($1, $2::date[], $3, $4)', [
+            campaign.id,
+            [yesterday],
+            'lift',
+            LIFT_EPSILON,
+          ])
+        ).rows[0];
+        if (release?.outcome === 'exhausted') return null;
+        return {
+          secret: await reportSecret(q),
+          counts: (
+            await q.query<{ ep: number; ec: number; hp: number; hc: number; ev: number; hv: number; spend: string }>(
+              `WITH window_ AS (SELECT ($3::date - 30)::timestamptz AS a, $3::date::timestamptz AS b),
+                    allowed AS (SELECT ad_id FROM app.ad_identities WHERE app.ads_permitted(profile_id, 'ads_measurement')),
+                    exposed AS (SELECT DISTINCT i.ad_id FROM app.ad_impressions i, window_ w JOIN allowed ON true
+                                WHERE i.campaign_id = $1 AND i.ad_id = allowed.ad_id AND i.shown_at >= w.a AND i.shown_at < w.b),
+                    held AS (SELECT DISTINCT g.ad_id FROM app.ad_ghost_impressions g, window_ w JOIN allowed ON true
+                             WHERE g.campaign_id = $1 AND g.ad_id = allowed.ad_id AND g.shown_at >= w.a AND g.shown_at < w.b),
+                    sales AS (SELECT e.ad_id, least(sum(e.value_micros), $4::bigint)::float8 AS v
+                              FROM app.ad_partner_events e, window_ w
+                              WHERE e.advertiser_id = $2 AND e.kind = 'PURCHASE' AND e.occurred_at >= w.a AND e.occurred_at < w.b GROUP BY 1)
                SELECT (SELECT count(*) FROM exposed)::int AS ep, (SELECT count(*) FROM exposed JOIN sales USING (ad_id))::int AS ec,
                       (SELECT count(*) FROM held)::int AS hp, (SELECT count(*) FROM held JOIN sales USING (ad_id))::int AS hc,
-                      (SELECT coalesce(sum(v), 0) FROM exposed JOIN sales USING (ad_id))::text AS ev,
-                      (SELECT coalesce(sum(v), 0) FROM held JOIN sales USING (ad_id))::text AS hv,
-                      (SELECT coalesce(sum(charged_micros), 0) FROM app.ad_impressions WHERE campaign_id = $1 AND shown_at > now() - interval '30 days')::text AS spend`,
-              [campaign.id, campaign.advertiser],
+                      (SELECT coalesce(sum(v), 0) FROM exposed JOIN sales USING (ad_id))::float8 AS ev,
+                      (SELECT coalesce(sum(v), 0) FROM held JOIN sales USING (ad_id))::float8 AS hv,
+                      (SELECT coalesce(sum(i.charged_micros), 0) FROM app.ad_impressions i, window_ w
+                       WHERE i.campaign_id = $1 AND i.shown_at >= w.a AND i.shown_at < w.b)::text AS spend`,
+              [campaign.id, campaign.advertiser, today, SALE_CLIP_MICROS],
             )
           ).rows[0],
-      );
-      const result = counts
-        ? lift({
-            exposedPeople: counts.ep,
-            exposedConversions: counts.ec,
-            holdoutPeople: counts.hp,
-            holdoutConversions: counts.hc,
-          })
-        : null;
+        };
+      });
+      if (!outcome)
+        return fail(reply, 429, 'privacy_budget', 'This business’s reports for today are used up. Try tomorrow.');
+      const { secret, counts } = outcome;
+      if (!counts) return { ready: false };
+      const noisy = (name: string, value: number, sensitivity: number) =>
+        Math.max(
+          0,
+          value +
+            laplace(sensitivity / (LIFT_EPSILON / 4), cellUniform(secret, `lift|${campaign.id}|${yesterday}|${name}`)),
+        );
+      const exposedConversions = Math.round(noisy('ec', counts.ec, 1));
+      const holdoutConversions = Math.round(noisy('hc', counts.hc, 1));
+      const result = lift({
+        exposedPeople: counts.ep,
+        exposedConversions: Math.min(counts.ep, exposedConversions),
+        holdoutPeople: counts.hp,
+        holdoutConversions: Math.min(counts.hp, holdoutConversions),
+      });
       // Under 100 a side, or under 25 who bought, the answer is "not yet": no number to compare.
-      if (!counts || !result || counts.ec + counts.hc < MIN_PEOPLE) return { ready: false };
-      const perExposed = Number(counts.ev) / Math.max(1, counts.ep);
-      const perHeld = Number(counts.hv) / Math.max(1, counts.hp);
+      if (!result || counts.ec + counts.hc < MIN_PEOPLE) return { ready: false };
+      const perExposed = noisy('ev', counts.ev, SALE_CLIP_MICROS) / Math.max(1, counts.ep);
+      const perHeld = noisy('hv', counts.hv, SALE_CLIP_MICROS) / Math.max(1, counts.hp);
       const spend = Number(counts.spend);
       return {
         ready: true,
         lift: result,
         // Only sales a partner could report with a rotating id: a held-out person with no prior tap
-        // has none, so this understates both arms and is a lower bound on what can be joined.
+        // has none, so this covers joinable sales only.
         iRoas: spend > 0 ? ((perExposed - perHeld) * counts.ep) / spend : null,
       };
     },

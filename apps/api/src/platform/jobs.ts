@@ -126,6 +126,7 @@ export async function commerceRollup(db: Pick<Database, 'asSystem'>, secret: Buf
         );
         const contributors = hll.count();
         if (contributors < MIN_CONTRIBUTORS) continue;
+        await q.query('UPDATE app.products SET k_reached = true WHERE id = $1', [product]);
         const history = (
           await q.query<{ mentions: number }>(
             `SELECT mentions FROM app.product_mentions_daily WHERE product_id = $1 AND field_id = $2 AND day > $3::date - 180 AND day <= $3 ORDER BY day`,
@@ -146,7 +147,8 @@ export async function commerceRollup(db: Pick<Database, 'asSystem'>, secret: Buf
             field,
             product,
             contributors,
-            Math.max(0, Math.round((counts.get(`${key}|${field}`) ?? 1) + noise)),
+            // Distinct people, so one person's many questions move it by one, as the noise assumes.
+            Math.max(0, Math.round(contributors + noise)),
             forecast.length ? total : null,
             forecast[0] ? (forecast[0].high - forecast[0].low) / 2 : null,
           ],
@@ -154,6 +156,12 @@ export async function commerceRollup(db: Pick<Database, 'asSystem'>, secret: Buf
         written += 1;
       }
     }
+    // Words nobody else used, unread for 30 days: gone (with their daily rows, by cascade).
+    await q.query(
+      `DELETE FROM app.products p WHERE NOT p.k_reached AND NOT EXISTS (
+         SELECT 1 FROM app.product_mentions_daily d WHERE d.product_id = p.id AND d.day > $1::date - 30)`,
+      [day],
+    );
     return written;
   });
 }
@@ -164,13 +172,13 @@ export async function refreshKnowledgeGraph(db: Pick<Database, 'asSystem'>, now:
     await q.query("SELECT pg_advisory_xact_lock(hashtext('kg-refresh'))");
     await q.query(`INSERT INTO app.kg_nodes (kind, key) SELECT 'field', slug FROM app.fields ON CONFLICT DO NOTHING`);
     await q.query(
-      `INSERT INTO app.kg_nodes (kind, key) SELECT 'product', key FROM app.products ON CONFLICT DO NOTHING`,
+      `INSERT INTO app.kg_nodes (kind, key) SELECT 'product', key FROM app.products WHERE k_reached ON CONFLICT DO NOTHING`,
     );
     const { rows } = await q.query<{ product: string; field: string; share: number }>(
       `WITH m AS (
          SELECT p.key AS product, d.field_id AS field, sum(d.mentions)::float8 AS n
          FROM app.product_mentions_daily d JOIN app.products p ON p.id = d.product_id
-         WHERE d.day > now()::date - 90 GROUP BY 1, 2)
+         WHERE d.day > now()::date - 90 AND p.k_reached GROUP BY 1, 2)
        SELECT product, field, (n / sum(n) OVER (PARTITION BY product))::float8 AS share FROM m`,
     );
     const validFrom = new Date(now);

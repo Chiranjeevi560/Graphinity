@@ -43,10 +43,10 @@ const windowWords = (minutes: number) =>
       ? `${String(minutes / 60)} hours`
       : `${String(minutes / 1440)} days`;
 
-const Loading = () => (
+const Note = ({ text }: { text: string }) => (
   <main className="page stack-message">
     <p className="text-body status" role="status">
-      Loading…
+      {text}
     </p>
   </main>
 );
@@ -57,7 +57,7 @@ export default function OpsPage() {
   // Times are "5 minutes ago" as of loading; reloading the page brings them up to date.
   const [now] = useState(Date.now);
   if (error) return <LoadFailed error={error} onRetry={retry} />;
-  if (!status) return <Loading />;
+  if (!status) return <Note text="Loading…" />;
   const pages = status.alerts.filter(a => a.severity === 'page');
   const unhealthy = status.jobs.filter(j => !j.healthy);
   const calm = pages.length === 0 && unhealthy.length === 0;
@@ -154,7 +154,7 @@ interface Summary {
   totals: { day: Period; week: Period; month: Period };
   models: Array<{ name: string; version: number; stage: string; algorithm: string }>;
   experiments: Array<{ name: string; status: string; p: number }>;
-  commerce: Array<{ label: string; field: string; count: number; forecast: number | null }>;
+  commerce: Array<{ label: string; count: number; forecast: number | null }>;
   audit: { entries: number; brokenAt: number | null };
 }
 
@@ -185,9 +185,9 @@ function Section({ title, rows, empty }: { title: string; rows: Row[]; empty: st
 
 /** For Graphinity's owner: how the whole thing is doing. Totals only; nothing here names anyone. */
 export function OwnerPage() {
-  const { data, error, retry } = useLoad<Summary>('/owner/dashboard/summary', true);
-  if (error) return <LoadFailed error={error} onRetry={retry} />;
-  if (!data) return <Loading />;
+  const { data, error } = useLoad<Summary>('/owner/dashboard/summary', true);
+  if (error) return <Note text={error.message} />;
+  if (!data) return <Note text="Loading…" />;
   const { brokenAt, entries } = data.audit;
   return (
     <main className="page review">
@@ -203,10 +203,10 @@ export function OwnerPage() {
       />
       <Section
         title="Products people ask about"
-        empty="A product shows once 25 people have asked."
+        empty="Shown from 25 people."
         rows={data.commerce.map(p => [
-          `${p.label} (${p.field})`,
-          `About ${n(p.count)} this week${p.forecast === null ? '' : ` · ${n(p.forecast)} expected in 30 days`}`,
+          p.label,
+          `About ${n(p.count)} this week${p.forecast === null ? '' : ` · ${n(p.forecast)} in 30 days`}`,
         ])}
       />
       <Section
@@ -214,8 +214,8 @@ export function OwnerPage() {
         empty="None running."
         rows={data.experiments.map(e =>
           e.status === 'halted_srm'
-            ? [e.name, 'Stopped: its groups are the wrong sizes', true]
-            : [e.name, `${e.status} · noise chance at most ${e.p.toFixed(3)}`],
+            ? [e.name, 'Stopped: uneven groups', true]
+            : [e.name, `${e.status} · p ≤ ${e.p.toFixed(3)}`],
         )}
       />
       <Section
@@ -232,7 +232,7 @@ export function OwnerPage() {
         rows={[
           brokenAt === null
             ? ['Unchanged', `${n(entries)} entries`]
-            : [`Entry ${String(brokenAt)} was changed`, 'Treat everything after it as untrusted', true],
+            : [`Entry ${String(brokenAt)} was changed`, 'Untrusted from here', true],
         ]}
       />
     </main>
