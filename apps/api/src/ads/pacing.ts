@@ -3,7 +3,9 @@
 // controller instead lowers the bid smoothly, b̃ = b / (1 + λ), where λ follows
 // the error between the share of budget spent and the share of the day's traffic
 // gone (Agarwal et al. 2014; Balseiro & Gur 2019). O(1) per auction; λ updates
-// every 5 minutes. Compared with on/off and no pacing in benchmark-platform.mjs.
+// every 5 minutes. λ is positional, set from the error each step: the charter's velocity form
+// (adding to the last λ) spent as little as 56% of budget, since it recovers slowly after a burst.
+// Measured over 18 worlds (benchmark-platform.mjs): error 0.023 and 99% spent, on/off 0.138.
 import { at } from '../ml/num.ts';
 
 export interface PacerState {
@@ -18,7 +20,7 @@ export interface PacerGains {
   kd: number;
 }
 
-export const DEFAULT_GAINS: PacerGains = { kp: 2, ki: 0.5, kd: 0.2 };
+export const DEFAULT_GAINS: PacerGains = { kp: 80, ki: 1, kd: 0 };
 export const INITIAL_PACER: PacerState = { lambda: 0, integral: 0, lastError: 0 };
 const INTEGRAL_LIMIT = 4;
 const LAMBDA_LIMIT = 50;
@@ -47,10 +49,7 @@ export function targetShare(curve: Float64Array, dayFraction: number): number {
 export function stepPacer(s: PacerState, spentShare: number, target: number, g = DEFAULT_GAINS): PacerState {
   const error = spentShare - target;
   const integral = Math.max(-INTEGRAL_LIMIT, Math.min(INTEGRAL_LIMIT, s.integral + error));
-  const lambda = Math.min(
-    LAMBDA_LIMIT,
-    Math.max(0, s.lambda + g.kp * error + g.ki * integral + g.kd * (error - s.lastError)),
-  );
+  const lambda = Math.min(LAMBDA_LIMIT, Math.max(0, g.kp * error + g.ki * integral + g.kd * (error - s.lastError)));
   return { lambda, integral, lastError: error };
 }
 

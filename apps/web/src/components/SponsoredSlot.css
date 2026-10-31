@@ -1,0 +1,12 @@
+/* Ads: apart from results, always labelled. */
+.sponsored-ad {
+  display: grid;
+  gap: var(--space-1);
+  width: 100%;
+  padding: var(--space-3);
+  text-align: start;
+  color: var(--label);
+  background: none;
+  border: var(--hairline) solid var(--separator);
+  border-radius: var(--radius-control);
+}

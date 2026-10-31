@@ -9,6 +9,7 @@ import { site } from './site-settings.ts';
 
 // Each screen is its own chunk, so a phone downloads only what it shows.
 const Home = lazy(() => import('./routes/Home.tsx'));
+const OwnerPage = lazy(() => import('./routes/Ops.tsx').then(m => ({ default: m.OwnerPage })));
 const AuthCallback = lazy(() => import('./routes/AuthCallback.tsx'));
 const Welcome = lazy(() => import('./routes/Welcome.tsx'));
 const Me = lazy(() => import('./routes/Me.tsx'));
@@ -77,6 +78,9 @@ function route(path: string, state: SessionState): ReactNode {
       return state.status === 'ready' && state.profile.moderator ? <ReviewPage /> : <Redirect to="/" />;
     case '/ops':
       return state.status === 'ready' && state.profile.moderator ? <OpsPage /> : <Redirect to="/" />;
+    case '/owner':
+      // Whether this person is the owner is the server's to say: the page shows its refusal.
+      return state.status === 'ready' ? <OwnerPage /> : <Redirect to="/" />;
     case '/ask':
       return state.status === 'ready' ? <Ask profile={state.profile} /> : <Redirect to="/" />;
     case '/me/edit':

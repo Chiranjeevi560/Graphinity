@@ -7,7 +7,7 @@
 import { cpSync, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { pagesHeadersFile } from './headers.ts';
-import { llmsTxt, robotsTxt, sitemapXml } from './seo.ts';
+import { llmsTxt, robotsTxt, securityTxt, sitemapXml } from './seo.ts';
 import type { SiteSettings } from './src/lib/settings.ts';
 
 /** The files a stamp writes; everything else is the build, byte for byte. */
@@ -73,4 +73,11 @@ export function stampDist(
   writeFileSync(join(out, 'robots.txt'), robotsTxt(settings.siteOrigin));
   writeFileSync(join(out, 'sitemap.xml'), sitemapXml(settings.siteOrigin));
   writeFileSync(join(out, 'llms.txt'), llmsTxt(settings.siteOrigin));
+  // RFC 9116 needs a real way to reach someone: no address set, no file, rather than a made-up one.
+  const contact = process.env.SECURITY_CONTACT;
+  if (contact)
+    writeFileSync(
+      join(out, '.well-known', 'security.txt'),
+      securityTxt(contact, settings.siteOrigin, new Date(Date.now() + 365 * 86_400_000)),
+    );
 }

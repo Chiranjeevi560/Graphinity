@@ -95,3 +95,14 @@ export function sitemapXml(origin: string, extra: Array<{ path: string; lastmod:
 function escapeXml(s: string): string {
   return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[c] ?? c);
 }
+
+/** /.well-known/security.txt (RFC 9116). */
+export function securityTxt(contact: string, origin: string, expires: Date): string {
+  return [
+    `Contact: ${contact}`,
+    `Expires: ${expires.toISOString()}`,
+    `Canonical: ${new URL('/.well-known/security.txt', origin).toString()}`,
+    'Preferred-Languages: en',
+    '',
+  ].join('\n');
+}

@@ -67,6 +67,11 @@ export function pagesHeadersFile(options: HeaderOptions): string {
     // The notification worker: browsers must pick up a new version promptly.
     '/sw.js',
     '  Cache-Control: no-cache',
+    // Apple and Android read these as JSON; Apple's has no file extension.
+    '/.well-known/apple-app-site-association',
+    '  Content-Type: application/json',
+    '/.well-known/assetlinks.json',
+    '  Content-Type: application/json',
     '',
   ].join('\n');
 }
