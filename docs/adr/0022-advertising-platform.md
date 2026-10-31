@@ -38,7 +38,7 @@ unless a jurisdiction-specific consent and a lawyer's approval allow more.
 | 6 | Measurement and attribution | Click ids only under `ads_measurement`, API keys, conversions reported server to server (6a); multi-touch attribution models, benchmarked, and a report per campaign (6b) | **Built** |
 | 7 | Audiences | Segments from interest rules, ad reminders (retargeting) capped 3 a day and 7 a week and cooling with time, look-alikes (spherical k-means over a seed's interests with a popularity correction, benchmarked), every audience at least 100 people, behind `ads_audiences` | **Built** |
 | 8 | Reporting | Advertiser reports by day, country, placement or audience over complete days: per-person clipping, fixed Laplace noise per cell (HMAC-seeded), cells under 25 people or 50 impressions suppressed, 2.0 ε per business per day; the 30-day report shows nothing under 25 people | **Built** |
-| 9 | Partner interfaces | OpenRTB 2.6 bid request/response adapters behind `ads_rtb` (9a, built); partner tag, signed conversions, holdout and inbound signals (9b onward) | **9a built** |
+| 9 | Partner interfaces | OpenRTB 2.6 behind `ads_rtb`; partner events and k≥100 match with per-business rotating ids; ghost holdouts behind `ads_holdout`; inbound signals (ADR 0024) | **Built**; the website slot isn't on a page yet |
 
 Fraud (invalid clicks and impressions) reuses the rate limits, the shared-network marks and
 collusion review (ADR 0017), and adds click-pattern checks with part 6.
@@ -445,7 +445,7 @@ for the charter's hard floor.
 **What a bidder gets:** see `src/ads/openrtb.ts`. Without the reader's `ads_partner_sites` permission:
 page categories, placement, a coarse device type, the floor. With it: audience segments, a monthly
 rotating EID and an address cut to /24 or /48. Pages about health, immigration or law are never
-offered at all. A page's path carries its id only, never its title or a query. `Sec-GPC: 1` makes
+offered at all. The page is never named, only its categories. `Sec-GPC: 1` makes
 the reader untracked and unshared for that request, whatever they chose.
 
 **Keeping pages fast:** bidders are asked between two database transactions, holding no connection,

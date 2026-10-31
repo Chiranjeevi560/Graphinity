@@ -277,3 +277,13 @@ does it for you (a later phase), you run it from your computer when a release ne
 0001_baseline.sql` (your database adopts the record; nothing in it changes) and `schema version
 16`. After that it lists any new files it applied, or says `already up to date`.
 
+## Part J: See the owner's page (after the database is updated)
+
+1. In Supabase, open **SQL Editor** and run, with your own profile id from `app.profiles`:
+   `INSERT INTO app.platform_owners (profile_id) VALUES ('your-id');`
+2. Open `/owner` on the site. Nobody else can see it, moderators included.
+
+## Part K: A security contact (optional)
+
+In Cloudflare Pages, add the variable `SECURITY_CONTACT` with a real address, such as `mailto:you@example.com`. Until
+then no `security.txt` is published, because a made-up contact would be worse than none.

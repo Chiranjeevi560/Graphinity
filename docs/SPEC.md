@@ -1254,3 +1254,9 @@ The table below codifies the exact architectural implementation for the 29 hidde
 11. [Vite — Next Generation Frontend Tooling](https://vite.dev/guide/)  
 12. [Supabase — PostgreSQL Row Level Security (RLS) Guide](https://supabase.com/docs/guides/database/postgres/row-level-security)  
 13. [Google web.dev — Core Web Vitals (LCP, INP, CLS) Specification](https://web.dev/articles/vitals)
+
+## Addendum (2026-11-01): Master AI Platform Charter
+
+The owner's charter, the bidirectional ad exchange specification, the data schema catalog and the API specification
+extend this document. Implementation status and every deviation measured against them: `docs/adr/0024-platform-engines.md`.
+Anti-goals here still hold: no AI-written answers (extraction quotes people, and a sentence no person wrote is dropped).
