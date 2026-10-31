@@ -10,6 +10,11 @@ interface Recommendation {
   answerCount: number;
   score: number;
   reason: string;
+  trace: {
+    signals: readonly string[];
+    consent: string | null;
+    commercialInputs: number;
+  };
 }
 
 interface Page {
@@ -18,6 +23,8 @@ interface Page {
   algorithmVersion: string;
   recommendations: Recommendation[];
 }
+
+const words = (name: string) => name.replaceAll('_', ' ');
 
 /** A short, consent-gated list of useful questions; no infinite scroll or engagement ranking. */
 export function RecommendedQuestions() {
@@ -50,6 +57,17 @@ export function RecommendedQuestions() {
                   <span>{item.reason}</span>
                 </span>
               </Link>
+              <details className="why-this text-footnote secondary">
+                <summary>Why this?</summary>
+                <p>
+                  {item.reason}.{' '}
+                  {item.trace.signals.length > 0
+                    ? `Based on: ${item.trace.signals.map(words).join(', ')}.`
+                    : 'Nothing about you was used.'}{' '}
+                  {item.trace.consent ? `Allowed by your choice: ${words(item.trace.consent)}.` : ''} Nothing commercial
+                  affects this list. <Link to="/me/privacy">Change this</Link>
+                </p>
+              </details>
             </li>
           ))}
         </ul>

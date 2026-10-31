@@ -195,3 +195,10 @@
     transform: translateY(0.75rem);
   }
 }
+
+.why-this > summary {
+  min-height: 2.75rem;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}

@@ -6,6 +6,37 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
+// The ranking firewall (ADR 0025): what decides knowledge, trust, reputation and
+// personalization can't even import advertising or commerce, so money can't
+// reach them by accident. test/invariants proves the same thing by perturbing bids.
+const firewalled = {
+  files: [
+    'apps/api/src/search/**',
+    'apps/api/src/recommendations/**',
+    'apps/api/src/personalization/**',
+    'apps/api/src/kg/**',
+    'apps/api/src/routing*.ts',
+    'apps/api/src/reputation.ts',
+    'apps/api/src/consensus.ts',
+    'apps/api/src/collusion.ts',
+    'apps/api/src/ml/collusion.ts',
+    'apps/api/src/precheck.ts',
+  ],
+  rules: {
+    'no-restricted-imports': [
+      'error',
+      {
+        patterns: [
+          {
+            group: ['**/ads/**', '**/commerce/**', '**/commercial-intent.ts', '**/routes/ad*'],
+            message: 'The ranking firewall: knowledge, trust, reputation and personalization take no commercial input.',
+          },
+        ],
+      },
+    ],
+  },
+};
+
 export default tseslint.config(
   {
     ignores: [
@@ -61,4 +92,5 @@ export default tseslint.config(
     files: ['apps/api/**/*.ts', 'apps/web/test/**', 'apps/web/e2e/**', 'apps/web/*.ts'],
     languageOptions: { globals: globals.node },
   },
+  firewalled,
 );
