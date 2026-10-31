@@ -486,6 +486,10 @@ campaign's currency (1 rupee = 1,000,000), as whole numbers.
 
 ### Personal graph
 
+- `GET /me/signals` → `{ signals: [{ name, label, basis, count, lastAt, evidence, confidence }] }`: the 31 signals
+  (ADR 0025), summarised from the record the person's own actions left, with decay and a Bayesian confidence.
+- `DELETE /me/graph/categories/:category` (counts as a write) → `{ deleted }`: forgets one kind of data and leaves the
+  choice unchanged. 404 `unknown_category`. `GET /me/recommendations` items now carry `trace`, the `ExplanationTrace`.
 - `GET /me/graph` returns the caller's nodes, edges, signal events, and collections for inspection.
   Generated temporal edges include `evidenceSignalId`, linking the edge to its source event.
 - `POST /me/graph/nodes` accepts `{ category, entityType, label, attributes?, source? }`. It requires

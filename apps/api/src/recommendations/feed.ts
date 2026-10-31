@@ -51,6 +51,44 @@ export const REASONS: Record<Source, string> = {
   recent: 'Recently asked in Graphinity',
 };
 
+/**
+ * Why a recommendation is here, complete enough to check: which signals fed
+ * its source, which choice allows them, and that nothing commercial did.
+ */
+export interface ExplanationTrace {
+  source: Source;
+  /** The tier that placed it, 1 being the strongest. */
+  tier: number;
+  /** Names from personalization/signals.ts. */
+  signals: readonly string[];
+  /** The consent category that allows those signals; null when none is needed. */
+  consent: string | null;
+  /** Reciprocal-rank score within the tier. */
+  score: number;
+  algorithm: string;
+  /** Always 0: the feed has no commercial input, by import rule and by test. */
+  commercialInputs: 0;
+}
+
+const TRACE: Record<Source, { signals: readonly string[]; consent: string | null }> = {
+  search: { signals: ['search', 'question_precheck'], consent: 'search_history' },
+  reading: { signals: ['question_viewed'], consent: 'reading_history' },
+  co_answer: { signals: ['question_viewed'], consent: 'reading_history' },
+  field: { signals: ['field_selected'], consent: null },
+  recent: { signals: [], consent: null },
+};
+
+export function explain(source: Source, score: number): ExplanationTrace {
+  return {
+    source,
+    tier: TIERS.findIndex(t => t.includes(source)) + 1,
+    ...TRACE[source],
+    score: Number(score.toFixed(6)),
+    algorithm: FEED_VERSION,
+    commercialInputs: 0,
+  };
+}
+
 export interface Recommendation {
   id: string;
   title: string;
@@ -60,6 +98,7 @@ export interface Recommendation {
   createdAt: Date;
   score: number;
   reason: string;
+  trace: ExplanationTrace;
 }
 
 /** Round-robin merge of several best-first lists into one, first occurrence wins. */
@@ -218,6 +257,7 @@ export async function recommend(
             createdAt: r.created_at,
             score: Number(f.score.toFixed(6)),
             reason: REASONS[f.source],
+            trace: explain(f.source, f.score),
           },
         ]
       : [];

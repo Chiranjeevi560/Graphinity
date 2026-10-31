@@ -53,6 +53,13 @@ const personalTypeByCategory: Record<string, string> = {
   notification_preferences: 'notification_preference',
 };
 
+interface GraphSignal {
+  name: string;
+  label: string;
+  count: number;
+  confidence: number;
+}
+
 export default function PrivacySettings() {
   const [categories, setCategories] = useState<ConsentCategory[]>([]);
   const [history, setHistory] = useState<ConsentEvent[]>([]);
@@ -64,8 +71,11 @@ export default function PrivacySettings() {
   const [saving, setSaving] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [confirmGraphDelete, setConfirmGraphDelete] = useState(false);
+  const [forgetting, setForgetting] = useState<string | null>(null);
+  const [knows, setKnows] = useState<GraphSignal[]>([]);
   const [error, setError] = useState<string | null>(null);
   const itemType = personalTypeByCategory[itemCategory] ?? '';
+  const storedCategories = [...new Set([...nodes.map(n => n.category), ...signals.map(x => x.category)])].sort();
 
   useEffect(() => {
     let active = true;
@@ -73,9 +83,11 @@ export default function PrivacySettings() {
       api<{ categories: ConsentCategory[] }>('/me/consents', { signedIn: true }),
       api<{ history: ConsentEvent[] }>('/me/consents/audit', { signedIn: true }),
       api<{ graph: { nodes: PersonalGraphNode[]; signals: PersonalSignal[] } }>('/me/graph', { signedIn: true }),
+      api<{ signals: GraphSignal[] }>('/me/signals', { signedIn: true }),
     ])
-      .then(([consents, audit, graph]) => {
+      .then(([consents, audit, graph, summary]) => {
         if (!active) return;
+        setKnows(summary.signals);
         setCategories(consents.categories);
         setHistory(audit.history);
         setNodes(graph.graph.nodes);
@@ -106,6 +118,23 @@ export default function PrivacySettings() {
       setHistory(refreshed.history);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Your choice could not be saved. Try again.');
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  async function forgetCategory(category: string) {
+    setError(null);
+    setSaving(`forget:${category}`);
+    try {
+      await api(`/me/graph/categories/${encodeURIComponent(category)}`, { method: 'DELETE', signedIn: true });
+      setNodes(current => current.filter(n => n.category !== category));
+      setSignals(current => current.filter(s => s.category !== category));
+      const summary = await api<{ signals: GraphSignal[] }>('/me/signals', { signedIn: true });
+      setKnows(summary.signals);
+      setForgetting(null);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'This could not be forgotten. Try again.');
     } finally {
       setSaving(null);
     }
@@ -345,6 +374,36 @@ export default function PrivacySettings() {
             ))}
           </ul>
         )}
+        <h3 className="text-headline">What Graphinity can tell from your activity</h3>
+        {knows.every(s => s.count === 0) ? (
+          <p className="text-body secondary">Nothing yet.</p>
+        ) : (
+          <ul className="standing-list">
+            {knows
+              .filter(s => s.count > 0)
+              .map(s => (
+                <li key={s.name} className="standing-row">
+                  <span className="text-body">{s.label}</span>
+                  <span className="text-subhead secondary">
+                    {s.count} · {Math.round(s.confidence * 100)}% sure
+                  </span>
+                </li>
+              ))}
+          </ul>
+        )}
+        {storedCategories.length > 0 && <h3 className="text-headline">Forget one kind of data</h3>}
+        {storedCategories.map(category => (
+          <Button
+            key={category}
+            variant="secondary"
+            disabled={saving !== null}
+            onClick={() => {
+              setForgetting(category);
+            }}
+          >
+            Forget {category.replaceAll('_', ' ')}…
+          </Button>
+        ))}
         <h3 className="text-headline">First-party activity</h3>
         {signals.length === 0 ? (
           <p className="text-body secondary">No optional activity has been recorded.</p>
@@ -384,6 +443,36 @@ export default function PrivacySettings() {
           Delete all personal graph data…
         </button>
       </section>
+      <Dialog
+        open={forgetting !== null}
+        onClose={() => {
+          if (saving === null) setForgetting(null);
+        }}
+        title={`Forget ${(forgetting ?? '').replaceAll('_', ' ')}?`}
+        actions={
+          <>
+            <Button
+              variant="secondary"
+              disabled={saving !== null}
+              onClick={() => {
+                setForgetting(null);
+              }}
+            >
+              Keep it
+            </Button>
+            <Button
+              className="btn-destructive"
+              disabled={saving !== null}
+              onClick={() => void forgetCategory(forgetting ?? '')}
+            >
+              {saving?.startsWith('forget:') ? 'Forgetting…' : 'Forget it'}
+            </Button>
+          </>
+        }
+      >
+        <p>This permanently removes what is stored of this kind. It can’t be undone.</p>
+        <p>Your choice stays as it is: turn it off above to stop new data of this kind.</p>
+      </Dialog>
       <Dialog
         open={confirmGraphDelete}
         onClose={() => {

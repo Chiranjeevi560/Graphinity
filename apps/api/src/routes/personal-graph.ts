@@ -1,3 +1,4 @@
+import { loadSignals, purgeCategory } from '../personalization/signals.ts';
 import type { FastifyInstance } from 'fastify';
 import type { Database } from '../db.ts';
 import { GraphBusyError, type GraphAnalyzer } from '../graph-analyzer.ts';
@@ -233,6 +234,38 @@ export function registerPersonalGraphRoutes(app: FastifyInstance, deps: Personal
       return { deleted: (signals.rowCount ?? 0) + (collections.rowCount ?? 0) + (nodes.rowCount ?? 0) };
     });
   });
+
+  // What the graph knows, summarised, signal by signal (ADR 0025).
+  app.get('/me/signals', { config: { auth: 'required' } }, async req => {
+    const user = signedIn(req);
+    return { signals: await deps.db.withUser(user.id, q => loadSignals(q, user.id)) };
+  });
+
+  // Forget one kind of thing, keeping the rest. The choice itself is unchanged:
+  // that lives in the consent settings, and has its own history.
+  app.delete(
+    '/me/graph/categories/:category',
+    {
+      config: { auth: 'required', write: true },
+      schema: {
+        params: {
+          type: 'object',
+          required: ['category'],
+          properties: { category: { type: 'string', pattern: '^[a-z][a-z0-9_]{0,39}$' } },
+        },
+      },
+    },
+    async (req, reply) => {
+      const user = signedIn(req);
+      const { category } = req.params as { category: string };
+      const removed = await deps.db.withUser(user.id, async q => {
+        const known = await q.query('SELECT 1 FROM app.consent_categories WHERE name = $1', [category]);
+        return known.rowCount ? purgeCategory(q, user.id, category) : null;
+      });
+      if (removed === null) return fail(reply, 404, 'unknown_category', 'There is no such kind of data.');
+      return { deleted: removed };
+    },
+  );
 
   app.get('/me/data-export', { config: { auth: 'required' } }, async req => {
     const user = signedIn(req);
