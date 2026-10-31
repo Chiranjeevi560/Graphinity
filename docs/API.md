@@ -88,6 +88,11 @@ month joined. 404 `not_found` with "There’s no one with that name."
 `POST /review/collusion` and `POST /review/block` refuse with 403 `reauth_required` unless the person really signed in
 within the last 5 minutes.
 
+**Browser signals and pixel (ADR 0030):** `GET /ads/status` → `{ on, partnerSignals }`. `POST /ads/select` also returns
+`intentProducts` for someone who allowed partner sites. `PUT /ads/advertisers/:id/pixel` `{ domains }` (member) → `{ pixel: { id, domains } }`.
+`POST /ads/pixel` (`text/plain` JSON `{ pixel, eidToken, event, eventId, productSku?, category? }`) → always 202; counts only from a listed
+host, without Sec-GPC, and never carries money.
+
 **Rollouts (ADR 0028):** `POST /owner/rollouts` `{ flag, ring: 0..3 }` (owner) puts a switch on for 1%, 5%, 25% or 100% of people,
 hashed per person. `GET /ops/status` carries `rollouts`. 404 `not_found` for an unknown switch.
 

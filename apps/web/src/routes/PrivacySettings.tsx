@@ -1,3 +1,4 @@
+import { leaveAllGroups } from '../lib/ad-signals.ts';
 import { useEffect, useState } from 'react';
 import { Button } from '../components/Button.tsx';
 import { Dialog } from '../components/Dialog.tsx';
@@ -114,6 +115,8 @@ export default function PrivacySettings() {
         body: { choices: [{ category: category.name, enabled }] },
       });
       setCategories(current => current.map(item => (item.name === category.name ? { ...item, enabled } : item)));
+      // Withdrawn: nothing stays in this browser either.
+      if (category.name === 'ads_partner_sites' && !enabled) void leaveAllGroups(location.origin);
       const refreshed = await api<{ history: ConsentEvent[] }>('/me/consents/audit', { signedIn: true });
       setHistory(refreshed.history);
     } catch (err) {
