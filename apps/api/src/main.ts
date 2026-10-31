@@ -43,6 +43,7 @@ import { expireNetworkMarks } from './networks.ts';
 import { createAlertSender, createLimiter, createPushSender } from './push-sender.ts';
 import { dueProblems, moderatorIds, problemsOf } from './ops/alerts.ts';
 import { announceRouting, routeDueQuestions, type Explorer, type Ranker } from './routing.ts';
+import { answeringRollup, basketRollup, retentionRollup } from './olap/rollups.ts';
 import { systemClock } from './rate-limit.ts';
 import { buildServer } from './server.ts';
 import {
@@ -628,6 +629,9 @@ const runRollups = serial(async () => {
   const steps: Array<[string, number, () => Promise<number>]> = [
     ['olap-rollup', 3600, () => drainJournal(db, rollupSecret)],
     ['commerce-rollup', 3600, () => commerceRollup(db, rollupSecret, Date.now())],
+    ['basket-rollup', 3600, () => basketRollup(db)],
+    ['retention-rollup', 3600, () => retentionRollup(db)],
+    ['answering-rollup', 3600, () => answeringRollup(db)],
     ['knowledge-graph', 3600, () => refreshKnowledgeGraph(db, Date.now())],
     ['feature-store', 3600, () => materializeFeatures(db, Date.now())],
     ['experiments', 3600, () => evaluateExperiments(db)],

@@ -8,6 +8,8 @@ import { assign } from '../experiments/assign.ts';
 import { evaluate } from '../experiments/stats.ts';
 import { GRIEVANCE_KINDS } from '../governance/legal.ts';
 import { RINGS } from '../governance/rollback.ts';
+import { retentionRates } from '../olap/rollups.ts';
+import { TDigest } from '../olap/sketches.ts';
 import { PROCESSING } from '../governance/ropa.ts';
 import { extractClaims } from '../intelligence/claims.ts';
 import { verifyFaithfulness } from '../intelligence/faithfulness.ts';
@@ -147,7 +149,39 @@ export function registerPlatformRoutes(
            WHERE c.day > now()::date - 7 ORDER BY c.dp_noisy_intent_count DESC LIMIT 20`,
         )
       ).rows;
+      const answering = (
+        await q.query<{ questions: number; resolved_4d: number; answered: number; tdigest_minutes: Buffer }>(
+          `SELECT questions, resolved_4d, answered, tdigest_minutes FROM app.olap_daily_answering`,
+        )
+      ).rows;
+      const minutes = new TDigest();
+      for (const a of answering) minutes.merge(TDigest.fromBytes(a.tdigest_minutes));
+      const asked = answering.reduce((sum, a) => sum + a.questions, 0);
+      const retention = retentionRates(
+        (
+          await q.query<{ cohort_week: string; week_offset: number; cohort_size: number; active: number }>(
+            `SELECT cohort_week::text AS cohort_week, week_offset, cohort_size, active FROM app.olap_cohort_retention
+             WHERE cohort_week > now()::date - 91 AND cohort_size >= 25`,
+          )
+        ).rows,
+      );
+      const together = (
+        await q.query<{ from: string; to: string; people: number; lift: number }>(
+          `SELECT a.label AS from, b.label AS to, r.people, r.lift FROM app.olap_commerce_rules r
+           JOIN app.products a ON a.id = r.from_product JOIN app.products b ON b.id = r.to_product
+           ORDER BY r.lift DESC LIMIT 20`,
+        )
+      ).rows;
       return {
+        answering: {
+          questions: asked,
+          resolvedRate: asked ? answering.reduce((sum, a) => sum + a.resolved_4d, 0) / asked : null,
+          answeredRate: asked ? answering.reduce((sum, a) => sum + a.answered, 0) / asked : null,
+          medianMinutes: minutes.total ? minutes.quantile(0.5) : null,
+          p95Minutes: minutes.total ? minutes.quantile(0.95) : null,
+        },
+        retention,
+        together,
         totals: { day: within(1), week: within(7), month: within(28) },
         daily: [...series].sort().map(([day, events]) => ({ day, events })),
         health: await loadStatus(q),
@@ -451,6 +485,14 @@ export function registerPlatformRoutes(
              FROM app.olap_daily_commerce_cube c JOIN app.products p ON p.id = c.product_entity_id
              WHERE c.field_id = $1 AND c.day > now()::date - 7 ORDER BY c.dp_noisy_intent_count DESC LIMIT 50`,
             [fieldSlug],
+          )
+        ).rows,
+        // Rules aren't per field: people ask about things across fields, which is the point of them.
+        together: (
+          await q.query(
+            `SELECT a.label AS from, b.label AS to, r.people, r.confidence, r.lift FROM app.olap_commerce_rules r
+             JOIN app.products a ON a.id = r.from_product JOIN app.products b ON b.id = r.to_product
+             ORDER BY r.lift DESC LIMIT 50`,
           )
         ).rows,
       }));
