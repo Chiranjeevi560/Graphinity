@@ -9,6 +9,8 @@ export interface SignedInUser {
   id: string;
   /** When the token stops being valid, in seconds since the epoch. */
   expiresAt: number;
+  /** When the person last really signed in, in seconds since the epoch; null if the token doesn't say. */
+  signedInAt: number | null;
 }
 
 export interface TokenVerifier {
@@ -92,9 +94,23 @@ export function createTokenVerifier({ issuer, keys }: VerifierOptions): TokenVer
       if (payload.role !== 'authenticated') throw new AuthError('role');
       if (payload.is_anonymous === true) throw new AuthError('anonymous');
       if (typeof payload.sub !== 'string' || !UUID.test(payload.sub)) throw new AuthError('sub');
-      return { id: payload.sub.toLowerCase(), expiresAt: payload.exp };
+      return { id: payload.sub.toLowerCase(), expiresAt: payload.exp, signedInAt: signedInAt(payload.amr) };
     },
   };
+}
+
+/**
+ * The newest real authentication in a token's `amr` list. Refreshing is not
+ * signing in, so `token_refresh` entries don't count (ADR 0026).
+ */
+export function signedInAt(amr: unknown): number | null {
+  if (!Array.isArray(amr)) return null;
+  let newest: number | null = null;
+  for (const entry of amr as Array<{ method?: unknown; timestamp?: unknown }>) {
+    if (entry.method === 'token_refresh' || typeof entry.timestamp !== 'number') continue;
+    if (newest === null || entry.timestamp > newest) newest = entry.timestamp;
+  }
+  return newest;
 }
 
 /** Supabase's public signing keys, cached; refetched when a new key id appears. */

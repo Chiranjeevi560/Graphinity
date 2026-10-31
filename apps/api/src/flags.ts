@@ -43,6 +43,8 @@ export const FLAG_DEFAULTS = {
   ads_holdout: false,
   /** Primal-dual budget pacing instead of the on/off rule. */
   ads_pacing: false,
+  /** Dangerous actions need a sign-in from the last 5 minutes (ADR 0026). */
+  step_up_auth: false,
 } as const;
 
 export type FlagName = keyof typeof FLAG_DEFAULTS;

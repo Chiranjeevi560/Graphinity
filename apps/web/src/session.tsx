@@ -56,6 +56,10 @@ export const api: Api = createApi({
   auth,
   fetch: (...args) => fetch(...args),
   online: () => navigator.onLine,
+  // A dangerous action needs a recent sign-in: go and get one, and come back here.
+  onReauth: () => {
+    void auth.startSignIn(location.pathname);
+  },
 });
 
 const store = createSessionStore({ auth, api });

@@ -267,7 +267,7 @@ export function registerPersonalGraphRoutes(app: FastifyInstance, deps: Personal
     },
   );
 
-  app.get('/me/data-export', { config: { auth: 'required' } }, async req => {
+  app.get('/me/data-export', { config: { auth: 'required', freshAuth: true } }, async req => {
     const user = signedIn(req);
     return deps.db.withUser(user.id, async q => {
       const profile = await q.query(

@@ -179,6 +179,7 @@ const app = await buildServer({
   embedder,
   speller: spelling.speller,
   recommendationsEnabled: () => flags.enabled('recommendations'),
+  stepUpEnabled: () => flags.enabled('step_up_auth'),
   searchEnabled: () => flags.enabled('search'),
   searchRankers: () => (flags.enabled('learned_search_ranking') ? searchRankers : NO_RANKERS),
 });

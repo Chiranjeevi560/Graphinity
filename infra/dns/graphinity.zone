@@ -1,0 +1,15 @@
+; DNS records to apply when the domain is bought (docs/adr/0026-step-up-and-transport.md).
+; Nothing in this repository applies them. Replace the domain if a different one is bought.
+; DNSSEC (ECDSAP256SHA256, algorithm 13) is switched on at the registrar, not in this file.
+$ORIGIN graphinity.com.
+$TTL 3600
+
+; Only these two authorities may issue certificates; wildcards from nobody.
+@       CAA  0 issue "letsencrypt.org"
+@       CAA  0 issue "pki.goog"
+@       CAA  0 issuewild ";"
+@       CAA  0 iodef "mailto:security@graphinity.com"
+
+; Graphinity sends no email from this domain: anything claiming to is forged.
+@       TXT  "v=spf1 -all"
+_dmarc  TXT  "v=DMARC1; p=reject; sp=reject; adkim=s; aspf=s; fo=1; rua=mailto:dmarc@graphinity.com"

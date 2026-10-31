@@ -41,6 +41,8 @@ declare module 'fastify' {
     write?: boolean;
     /** Accept a deleted account's still-valid token (only for retrying the deletion). */
     allowRevoked?: boolean;
+    /** Dangerous: needs a sign-in from the last STEP_UP_SECONDS while step-up is on (ADR 0026). */
+    freshAuth?: boolean;
   }
   interface FastifyRequest {
     user: SignedInUser | null;
@@ -99,6 +101,8 @@ export interface Deps {
   graphAnalyzer?: GraphAnalyzer;
   /** Spelling corrections for the precheck's word search; absent: words as typed only. */
   speller?: Pick<Speller, 'correctDraft'> | null;
+  /** Whether dangerous actions need a recent sign-in. Defaults to off. */
+  stepUpEnabled?: () => boolean;
   /** Global recommendation kill switch; per-user consent is enforced separately. */
   recommendationsEnabled?: () => boolean;
   /** The search kill switch (POST /search). Defaults to on. */
@@ -130,16 +134,19 @@ const messages = {
   authUnavailable: 'Sign-in can’t be checked right now. Try again in a minute.',
 } as const;
 
+/** How recent a sign-in dangerous actions need. */
+export const STEP_UP_SECONDS = 300;
+
 const securityHeaders = {
   // The API only ever returns JSON, so it may load nothing and be framed by nothing.
   'content-security-policy': "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
-  'strict-transport-security': 'max-age=63072000; includeSubDomains',
+  'strict-transport-security': 'max-age=63072000; includeSubDomains; preload',
   'x-content-type-options': 'nosniff',
   'x-frame-options': 'DENY',
   'referrer-policy': 'no-referrer',
   'cross-origin-opener-policy': 'same-origin',
   'cross-origin-resource-policy': 'same-site',
-  'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
+  'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), bluetooth=()',
   // Responses may contain personal data; never let a shared cache keep them.
   'cache-control': 'no-store',
 };
@@ -229,7 +236,7 @@ export async function buildServer(deps: Deps) {
     today: () => new Date(clock.now()).toISOString().slice(0, 10),
   });
   app.addHook('onRequest', async (req, reply) => {
-    const { auth: mode, write, allowRevoked } = req.routeOptions.config;
+    const { auth: mode, write, allowRevoked, freshAuth } = req.routeOptions.config;
     if (!mode) return;
     const header = req.headers.authorization;
     const token = header?.startsWith('Bearer ') ? header.slice(7) : null;
@@ -250,6 +257,16 @@ export async function buildServer(deps: Deps) {
     if (!allowRevoked && (await isRevoked(req.user.id))) {
       req.user = null;
       return reply.code(401).send({ error: 'signed_out', message: messages.signedOut });
+    }
+    if (
+      freshAuth &&
+      deps.stepUpEnabled?.() &&
+      (req.user.signedInAt === null || clock.now() / 1000 - req.user.signedInAt > STEP_UP_SECONDS)
+    ) {
+      return reply.code(403).send({
+        error: 'reauth_required',
+        message: 'For your safety, sign in again to do this. It only takes a moment.',
+      });
     }
     if (write) {
       const allowed = userWrites.take(req.user.id);
