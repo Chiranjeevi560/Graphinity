@@ -556,3 +556,10 @@ and questions older than 180 days. It stores no recommendation history, uses no 
 commercial signal, and doesn't optimize clicks. Revoking search or reading history takes effect on the
 next request. The result is a finite discovery list, not an endless feed.
 
+
+## Outside bidders (ADR 0022 part 9a)
+
+No new address: `POST /ads/select` may fill a slot with an outside bidder's ad while `ads` and
+`ads_rtb` are on and a partner is enabled, in the same shape as Graphinity's own, and
+`POST /ads/click/:token` handles either kind. A browser's `Sec-GPC: 1` header makes that request
+untracked and unshared, whatever the person chose.

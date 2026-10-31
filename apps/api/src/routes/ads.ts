@@ -126,6 +126,11 @@ export function registerAdRoutes(
         query: body.query ? cleanLine(body.query) : null,
         viewer,
         now: deps.clock.now(),
+        // What a bidder may know of the page: never a title in a path, or a query.
+        path: body.placement === 'question' ? `/q/${body.questionId ?? ''}` : '/search',
+        ip: req.ip,
+        userAgent: req.headers['user-agent'] ?? null,
+        gpc: req.headers['sec-gpc'] === '1',
       });
       return { ads: ads.map(a => ({ ...a, label: 'Sponsored' })) };
     },
@@ -158,7 +163,15 @@ export function registerAdRoutes(
             )
           ).rows[0],
       );
-      if (!row) return fail(reply, 404, 'not_found', 'This ad isn’t available any more.');
+      if (!row) {
+        // Not one of ours: an outside bidder's ad (part 9a), counted once, charged to nobody here.
+        const partner = await db.asSystem(
+          async q =>
+            (await q.query<{ url: string | null }>('SELECT app.record_partner_click($1) AS url', [token])).rows[0]?.url,
+        );
+        if (partner) return { destination: partner };
+        return fail(reply, 404, 'not_found', 'This ad isn’t available any more.');
+      }
       // A click id the advertiser can report a sale back with, only for people who allow measurement.
       if (!row.click_id) return { destination: row.destination };
       const url = new URL(row.destination);

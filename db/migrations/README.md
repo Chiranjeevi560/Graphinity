@@ -9,7 +9,7 @@ Every change to the database is a numbered SQL file here, applied in order, each
 2. Write plain SQL. Leave out `BEGIN` and `COMMIT`: the runner gives each file its own transaction,
    so a file applies completely or not at all, together with its record.
 3. If the API depends on the change, raise the schema version at the end of the file:
-   Increment the current schema version by one. The latest migration sets version 52.
+   Increment the current schema version by one. The latest migration sets version 53.
 4. New tables: `ENABLE` and `FORCE ROW LEVEL SECURITY`, explicit grants to `app_api`, policies, and
    an integration test (the RLS test fails if a table lacks them).
 5. `npm run db:apply` applies it locally. `npm test` runs every test against freshly migrated
