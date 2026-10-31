@@ -21,6 +21,8 @@ import {
 export const JOB_LABELS: Readonly<Record<string, string>> = {
   deletions: 'Finishing account deletions',
   'signal-expiry': 'Forgetting expired activity',
+  'legal-hold-expiry': 'Releasing copies of removed posts',
+  'rollout-governor': 'Watching rollouts',
   'route-factor-expiry': 'Forgetting old routing records',
   'search-expiry': 'Forgetting old searches',
   'graph-projection': 'Updating personal graphs',
@@ -196,6 +198,8 @@ export interface OpsStatus {
   alerts: Alert[];
   routes: RouteLatency[];
   jobs: JobHealth[];
+  /** Switches in a rollout ring, and those the governor turned off in the last day. */
+  rollouts: Array<{ name: string; ring: number | null; trippedAt: string | null }>;
 }
 
 /** Totals per window and objective, from one scan of the last 30 days. */
@@ -290,5 +294,11 @@ export async function loadStatus(q: Queryable): Promise<OpsStatus> {
     failures: Number(j.failures),
     healthy: !j.stale && !j.failing,
   }));
-  return { objectives, alerts: firingAlerts(windowOf), routes, jobs };
+  const rollouts = (
+    await q.query<{ name: string; ring: number | null; tripped_at: Date | null }>(
+      `SELECT name, ring, tripped_at FROM app.feature_flags
+       WHERE ring IS NOT NULL OR tripped_at > now() - interval '1 day' ORDER BY name`,
+    )
+  ).rows.map(r => ({ name: r.name, ring: r.ring, trippedAt: r.tripped_at?.toISOString() ?? null }));
+  return { objectives, alerts: firingAlerts(windowOf), routes, jobs, rollouts };
 }

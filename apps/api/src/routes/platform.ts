@@ -7,6 +7,7 @@ import type { Database, Queryable } from '../db.ts';
 import { assign } from '../experiments/assign.ts';
 import { evaluate } from '../experiments/stats.ts';
 import { GRIEVANCE_KINDS } from '../governance/legal.ts';
+import { RINGS } from '../governance/rollback.ts';
 import { PROCESSING } from '../governance/ropa.ts';
 import { extractClaims } from '../intelligence/claims.ts';
 import { verifyFaithfulness } from '../intelligence/faithfulness.ts';
@@ -39,6 +40,39 @@ export function registerPlatformRoutes(
     );
     return result.ok ? result.value : fail(reply, 403, 'not_owner', 'This page is for Graphinity’s owner.');
   }
+
+  // Move a switch through its rollout rings (ADR 0028). Going backwards is allowed.
+  app.post(
+    '/owner/rollouts',
+    {
+      config: { auth: 'required', write: true, freshAuth: true },
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['flag', 'ring'],
+          properties: {
+            flag: { type: 'string', pattern: '^[a-z_]{1,60}$' },
+            ring: { type: 'integer', minimum: 0, maximum: 3 },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      const { flag, ring } = req.body as { flag: string; ring: number };
+      return asOwner(signedIn(req).id, reply, async q => {
+        const { rows } = await q.query<{ ok: boolean }>('SELECT app.set_flag_ring($1, $2::smallint) AS ok', [
+          flag,
+          ring,
+        ]);
+        if (!rows[0]?.ok) return fail(reply, 404, 'not_found', 'There’s no switch with that name.');
+        await db.asSystem(sq =>
+          audit(sq, { action: 'rollout.moved', actor: 'owner', subject: flag, detail: { ring } }),
+        );
+        return { rollout: { flag, percent: RINGS[ring] } };
+      });
+    },
+  );
 
   app.get('/owner/dashboard/summary', { config: { auth: 'required' } }, async (req, reply) =>
     asOwner(signedIn(req).id, reply, async q => {

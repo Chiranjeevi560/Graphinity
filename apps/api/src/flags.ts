@@ -5,6 +5,7 @@
 // so a database blip can't switch a feature off (or on) by itself.
 import type { Database } from './db.ts';
 import type { Embedder } from './embeddings.ts';
+import { inRing } from './governance/rollback.ts';
 import { EmbeddingError } from './embeddings.ts';
 
 /** The switches the code knows, with the value used before the first refresh succeeds. */
@@ -58,6 +59,8 @@ export const REFRESH_MS = 30_000;
 
 export interface Flags {
   enabled(name: FlagName): boolean;
+  /** Whether it's on for this person: on, and inside its rollout ring if it has one (ADR 0028). */
+  enabledFor(name: FlagName, unit: string): boolean;
   /** Re-reads now. Resolves even when the database can't be reached. */
   refresh(): Promise<void>;
   stop(): void;
@@ -68,14 +71,16 @@ export function createFlags(
   options: { refreshMs?: number; onChange?: (name: string, enabled: boolean) => void } = {},
 ): Flags {
   const values = new Map<string, boolean>();
+  const rings = new Map<string, number | null>();
   const refresh = async () => {
     try {
-      const { rows } = await db.query<{ name: string; enabled: boolean }>(
-        'SELECT name, enabled FROM app.feature_flags',
+      const { rows } = await db.query<{ name: string; enabled: boolean; ring: number | null }>(
+        'SELECT name, enabled, ring FROM app.feature_flags',
       );
       for (const r of rows) {
         const before = values.get(r.name);
         values.set(r.name, r.enabled);
+        rings.set(r.name, r.ring);
         if (before !== undefined && before !== r.enabled) options.onChange?.(r.name, r.enabled);
       }
     } catch {
@@ -86,6 +91,11 @@ export function createFlags(
   timer.unref();
   return {
     enabled: name => values.get(name) ?? FLAG_DEFAULTS[name],
+    enabledFor: (name, unit) => {
+      if (!(values.get(name) ?? FLAG_DEFAULTS[name])) return false;
+      const ring = rings.get(name) ?? null;
+      return ring === null || inRing(name, unit, ring);
+    },
     refresh,
     stop: () => {
       clearInterval(timer);

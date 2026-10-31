@@ -250,6 +250,12 @@ SELECT status, count(*) FROM app.collusion_groups GROUP BY status;
 
 `node scripts/benchmark-fraud.mjs [accounts]` re-measures the detector on planted rings (no database).
 
+### Rollouts (ADR 0028)
+
+`POST /owner/rollouts { flag, ring }` moves a switch through 1%, 5%, 25%, 100%. Every 5 minutes the governor checks all
+requests; if they go bad (errors clearly over 1%, or p95 over 500 ms) it turns off every switch still in a ring, writes the
+audit log and alerts moderators. Only switches read per person use the ring (today: `step_up_auth`); the rest are all-or-nothing.
+
 ### Turning on step-up sign-in (ADR 0026)
 
 One check first, because a wrong guess would stop people deleting their accounts. Sign in on the real site, then in the

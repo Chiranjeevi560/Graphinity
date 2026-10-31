@@ -88,6 +88,9 @@ month joined. 404 `not_found` with "There’s no one with that name."
 `POST /review/collusion` and `POST /review/block` refuse with 403 `reauth_required` unless the person really signed in
 within the last 5 minutes.
 
+**Rollouts (ADR 0028):** `POST /owner/rollouts` `{ flag, ring: 0..3 }` (owner) puts a switch on for 1%, 5%, 25% or 100% of people,
+hashed per person. `GET /ops/status` carries `rollouts`. 404 `not_found` for an unknown switch.
+
 **Legal (ADR 0027):**
 
 - `POST /grievances` `{ kind, body, questionId?, sworn? }` → 201 `{ grievance: { id, reference, acknowledgeBy, resolveBy } }`.

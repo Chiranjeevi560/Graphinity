@@ -38,6 +38,7 @@ import { monitorRouting } from './ml/routing-monitor.ts';
 import { deserializeRoutingModel, scoreRouting, scoreRoutingAt, type RoutingModel } from './ml/routing-model.ts';
 import { personalGraphQueueStatus, projectPersonalGraphSignals, purgeExpiredPersonalSignals } from './personal-data.ts';
 import { releaseExpiredHolds } from './governance/holds.ts';
+import { runRolloutGovernor } from './governance/rollout-job.ts';
 import { expireNetworkMarks } from './networks.ts';
 import { createAlertSender, createLimiter, createPushSender } from './push-sender.ts';
 import { dueProblems, moderatorIds, problemsOf } from './ops/alerts.ts';
@@ -180,7 +181,7 @@ const app = await buildServer({
   embedder,
   speller: spelling.speller,
   recommendationsEnabled: () => flags.enabled('recommendations'),
-  stepUpEnabled: () => flags.enabled('step_up_auth'),
+  stepUpEnabled: userId => flags.enabledFor('step_up_auth', userId),
   searchEnabled: () => flags.enabled('search'),
   searchRankers: () => (flags.enabled('learned_search_ranking') ? searchRankers : NO_RANKERS),
 });
@@ -733,6 +734,26 @@ const runCollusion = serial(async () => {
   } catch (err) {
     app.log.warn({ kind: errorKind(err) }, 'collusion review failed');
   }
+});
+// The rollout governor (ADR 0028): turns switches still in a ring off when requests go bad.
+const governRollouts = () => {
+  recordedRun(db, 'rollout-governor', 300, () => runRolloutGovernor(db)).then(
+    tripped => {
+      if (tripped.length) {
+        app.log.warn({ flags: tripped.length }, 'rollouts turned off');
+        void flags.refresh();
+      }
+    },
+    (err: unknown) => {
+      app.log.warn({ kind: errorKind(err) }, 'rollout governor failed');
+    },
+  );
+};
+const governorTimer = setInterval(governRollouts, 5 * 60_000);
+governorTimer.unref();
+app.addHook('onClose', (_instance, done) => {
+  clearInterval(governorTimer);
+  done();
 });
 const firstCollusion = setTimeout(runCollusion, 20 * 60_000);
 firstCollusion.unref();
