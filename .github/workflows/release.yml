@@ -82,9 +82,11 @@ jobs:
         run: |
           sh scripts/install-tools.sh
           .local/tools/osv-scanner scan image --format spdx-2-3 --output-file sbom.spdx.json "$IMAGE:$SHA" || true
+          .local/tools/osv-scanner scan image --format cyclonedx-1-5 --output-file sbom.cdx.json "$IMAGE:$SHA" || true
           .local/tools/osv-scanner scan image --format json --output-file image-vulns.json "$IMAGE:$SHA" || true
           node scripts/image-report.mjs image-vulns.json
           test -s sbom.spdx.json
+          test -s sbom.cdx.json
 
       - name: Release manifest
         env:
@@ -94,7 +96,8 @@ jobs:
           mkdir -p release
           cp -R apps/web/dist release/website
           cp -R db/migrations release/migrations
-          cp sbom.spdx.json release/
+          cp sbom.spdx.json sbom.cdx.json release/
+          node scripts/dist-manifest.mjs apps/web/dist release/dist-manifest.json
           node -e '
             const m = { commit: process.env.SHA, image: `${process.env.IMAGE}@${process.env.DIGEST}`, builtAt: new Date().toISOString() };
             require("fs").writeFileSync("release/release.json", JSON.stringify(m, null, 2) + "\n");

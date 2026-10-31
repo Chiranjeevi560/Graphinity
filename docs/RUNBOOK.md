@@ -250,6 +250,11 @@ SELECT status, count(*) FROM app.collusion_groups GROUP BY status;
 
 `node scripts/benchmark-fraud.mjs [accounts]` re-measures the detector on planted rings (no database).
 
+### What a release carries
+
+`release.yml` keeps, for 90 days: signed SLSA build provenance for the image, SBOMs in SPDX and CycloneDX, a vulnerability
+summary, and `dist-manifest.json` with a SHA-256 of every website file. To check a live file against it: `curl -s <url> | shasum -a 256`.
+
 ### Rollouts (ADR 0028)
 
 `POST /owner/rollouts { flag, ring }` moves a switch through 1%, 5%, 25%, 100%. Every 5 minutes the governor checks all
