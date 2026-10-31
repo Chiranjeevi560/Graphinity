@@ -57,6 +57,8 @@ the page it serves, and `npm --workspace apps/web run preview` serves a stamped 
 
 These values end up in every visitor's page. **Never put a secret in one.**
 
+- `SECURITY_CONTACT` (optional, at stamping): an address or URL for `/.well-known/security.txt`. Unset: no file.
+
 ## Tests
 
 | Variable | Where | Notes |

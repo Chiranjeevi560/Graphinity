@@ -563,3 +563,20 @@ No new address: `POST /ads/select` may fill a slot with an outside bidder's ad w
 `ads_rtb` are on and a partner is enabled, in the same shape as Graphinity's own, and
 `POST /ads/click/:token` handles either kind. A browser's `Sec-GPC: 1` header makes that request
 untracked and unshared, whatever the person chose.
+
+## Platform (ADR 0024)
+
+Owner only (`app.platform_owners`): `GET /owner/dashboard/summary`, `POST /knowledge-graph/bitemporal/query`,
+`POST /feature-store/as-of-join`, `GET /experiments/evaluate`, `GET /commerce/intelligence/forecast`.
+
+Signed in: `GET /me/experiments`; `GET`/`DELETE /me/memory`, `PUT /me/memory/preferences/:name` (consent
+`memory_personalization`); `POST /grievances`. Moderators: `GET /ops/grievances`, `PATCH /ops/grievances/:id`.
+Business members: `GET /ads/campaigns/:id/lift`.
+
+Anyone: `GET /questions/:id/evidence` (quotes from visible answers, cited), `POST /knowledge-graph/transitions`,
+`GET /knowledge-graph/next`.
+
+With a business's API key: `POST /ads/partner-events` (always `202 {accepted:true}`), `POST /ads/audiences/partner-match`.
+
+Differs from the owner's API specification on purpose: `/search/retrieve-and-rank` isn't added (`POST /search` is
+it), `/ads/conversions/ingest` is `POST /ads/conversions`, `/ads/audiences/lookalike` is `POST` on audiences.

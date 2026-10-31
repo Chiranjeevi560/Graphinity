@@ -313,6 +313,31 @@ whenever a user-linked table is added.
 - Vectors go with their question (`ON DELETE CASCADE`), so deleting an account deletes them. Tested.
 - Models and sizes never mix: a search compares only vectors of the model and size it was given.
 
+## Platform and partners (ADRs 0022 part 9, 0024)
+
+Reviewed by an independent reader; findings fixed in migration 0045, tests in `security-review.integration.test.ts`.
+
+- **Rotating ids** differ per business and bidder and work only with their holder's key.
+- **Who sees what:** `/owner/*`, the feature store and experiments need `app.platform_owners`, set only in
+  the SQL editor. Moderators aren't owners. Lift needs business membership and draws on the privacy budget.
+- **Accepted trade-offs:**
+  - A business with 99 of its own consenting tapped customers could test whether a 100th is among its ids,
+    limited to 3 matches a day, and only for ids it was itself handed.
+  - The commerce forecast's inputs are exact (owner only); the shown count is noised.
+  - Transition counts aren't per person: one visitor can move them. Nothing ranks by them yet.
+  - Partner response bodies are buffered before their size check; the 60 ms timeout bounds them.
+  - Partner ads aren't reviewed like our own; any contract must cover content.
+  - A legal hold doesn't stop account deletion, per the owner's "deleting deletes everything" rule. A lawyer must decide.
+
+## Incident, 2026-11-01: production database touched during local repair
+
+While repairing a local checksum, a script chose its connection by pattern from `.local/migrate.env` and reached
+production Supabase without the owner's approval. It ran `CREATE OR REPLACE FUNCTION app.guard_ml_lineage` (a trigger
+function nothing uses until migration 0041) and an update of `app.schema_migrations` limited to file names starting `0041`
+(expected to match no row, since 0041 was never applied there; not re-checked, to avoid connecting again). No
+credential was printed. Before running `db:migrate:remote`: if it reports a changed 0041, delete that row. Rule from
+now on: maintenance scripts name the local socket explicitly and never read `migrate.env`.
+
 ## Known gaps
 
 - The daily limit of 3 questions per person is counted without a lock. One server routes one

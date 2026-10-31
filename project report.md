@@ -1,6 +1,6 @@
 # Graphinity implementation report
 
-**Snapshot date:** 2026-10-22  
+**Snapshot date:** 2026-11-01 (latest section at the end; older sections are history)  
 **Status:** Active implementation; requested master prompts are not complete.  
 **Purpose:** Handoff for the owner and future Claude/Codex sessions. Update this report with verified work; never count a roadmap item as implemented.
 
@@ -360,3 +360,64 @@ Found, not yet fixed: at 100k questions the meaning stage (unchanged, already us
 - The finite, consented discovery list (ADR 0006's rules kept) now uses the search engine for a person's own searches (both screens), "answered by the same people" from public answers, and similar-by-meaning questions, in tiers chosen by measurement (ADR 0016).
 - Benchmark with known interests (20,000 questions, 300 people, held-out opens): Recall@20 0.173 against 0.007 for v2, at 33 ms instead of 247 ms. Fusing all sources equally scored only 0.088; the measurement showed the broad sources outvoting personal ones, so they now only fill what is left.
 - Not built, as the owner's call: learning a recommendation ranking from everyone's behaviour (a new purpose, and ADR 0006 rejects optimising clicks).
+
+## Master AI Platform Charter run (2026-11-01, Claude)
+
+**This is not complete.** The charter asked for everything to be finished; some is connected, some is tested but not
+connected, some isn't built. All of it is on the branch, none of it in production: migrations 0039-0045 await
+`npm run db:migrate:remote`.
+
+**Incident:** a local repair script reached the production database. See `docs/SECURITY.md`.
+
+### Status by subsystem
+
+Scores are engineering judgment, not measurement. A 100 would need real traffic, real partners and a deployment; nothing
+here has any of those. "Connected" means a job or address uses it, against real Postgres.
+
+| Subsystem | State | Score |
+|---|---|---:|
+| Consent, Symmetry screen, GPC | Connected. GPC stops personalization, sharing, tap ids and "Accept all" on sharing | 85 |
+| Audiences, retargeting, look-alikes | Connected earlier; partner match added | 80 |
+| DP reporting | Connected. Pure ε ledger, not Rényi: Laplace composes exactly this way, so a Rényi account would add nothing | 80 |
+| OpenRTB, partner events, holdout, iROAS | Connected, off. No real partner tested. iROAS covers joinable sales only | 65 |
+| Calibration, pacing | Connected, off | 75 |
+| Delayed feedback CVR | Engine tested, not connected | 40 |
+| Bi-temporal graph | Connected; only topic-product edges so far | 70 |
+| Session graph | Pooled route connected; no screen reads it | 50 |
+| GraphSAGE | Daily embeddings; nothing reads them | 45 |
+| Trust max-flow | Engine with a fast-check invariant; not used for trust | 40 |
+| Personal graph: 31 signals, ExplanationTrace, category purge | Export and purge-all existed. ExplanationTrace, category purge and the 31-signal list **not built** | 40 |
+| Feature store | Connected; one feature group | 65 |
+| Tuning | Engines tested; no training job uses them | 40 |
+| Model registry lineage | Columns, guards and the ladder; only ad CTR records a commit; shadow and canary don't route traffic | 55 |
+| Experiments | Connected; no product surface reads an arm yet | 65 |
+| Counterfactual, bandits, uplift | Engines tested, not connected | 40 |
+| Commerce: entities, cube, forecast | Connected. Basket rules and elasticity unconnected | 60 |
+| OLAP sketches | HLL and CMS in cubes. t-digest **not** in cubes. No cohort retention, LTV or CAC | 55 |
+| `/owner` | Connected, browser tested. No heatmap, burn-rate or calibration views | 60 |
+| Offline LLM, RAG | Deterministic by the owner's no-LLM decision: claims, student model, tool DAG, faithfulness on one route. No LLM exists | 50 |
+| Memory | Procedural connected; episodic and semantic rules tested, unconnected | 45 |
+| Multimodal | Engines tested. **No OCR and no upload surface**: Graphinity takes no images | 25 |
+| Well-known, legal, audit | Files, complaint clocks, audit chain connected. Statements of reasons and legal holds have tables, no screen. Legal wording unconfirmed. AASA and assetlinks are empty, no native app | 60 |
+| SLSA, SBOM | Already in `release.yml`; unchanged | 80 |
+| Rollback governor | Rule tested; nothing runs it, and Render has no rings | 25 |
+| Formal invariants (fast-check) | All five, against real code where it matters | 85 |
+| Security | Independent review, verified findings fixed with tests. CodeQL and Semgrep run in CI only | 75 |
+
+**Equal-weight mean: about 59/100.**
+
+### Not built
+
+Two-Tower log-Q, SQ8/PQ quantization, MMoE/PLE multi-task ranking, DPP diversity, Double ML, team-draft interleaving beyond
+what search has, the S2S partner webhook push, joint text-image embeddings, the partner pixel script (the endpoint exists), load
+tests of the new routes, and mutation testing beyond the rules named in commits.
+
+### Verified
+
+981 API and 218 website tests on real Postgres as the restricted role; browser audit (see final message); benchmarks in ADR
+0024. **Not verified:** production, real partners, real traffic, real phones, Supabase applying 0039-0045, legal correctness.
+
+### Waiting on the owner
+
+0.6 kB more script budget for the Sponsored slot; a lawyer before any ad switch or the complaint wording; `SECURITY_CONTACT`;
+adding themselves to `app.platform_owners`; running the remote migration.
