@@ -25,6 +25,10 @@ import { createHmac } from 'node:crypto';
 import type { Exchange, Partner } from './exchange.ts';
 import { buildBidRequest, SENSITIVE_FIELDS } from './openrtb.ts';
 import { eid, floors, merge, type SlotOutcome } from './rtb.ts';
+import { pacedBid } from './pacing.ts';
+import { heldOut } from './lift.ts';
+import { murmur3 } from '../experiments/murmur.ts';
+import { calibrate, deserializeCalibration, type Calibration } from '../ml/isotonic.ts';
 
 export const REFRESH_MS = 30_000;
 /** A click rate to start from: the prior is worth this many impressions. */
@@ -32,6 +36,10 @@ export const PRIOR_CTR = 0.02;
 export const PRIOR_STRENGTH = 200;
 export const RESERVE_MICROS = 10_000;
 export const SLOTS = { search: 2, question: 1 } as const;
+/** Share of each campaign's reachable people held out to measure what it adds (ghost ads). */
+export const HOLDOUT_SHARE = 0.1;
+/** A campaign targeting a topic the reader just came for, from outside (charter: inbound signals). */
+export const INBOUND_BOOST = 3.5;
 export type Placement = keyof typeof SLOTS;
 
 interface Creative {
@@ -49,6 +57,8 @@ export interface IndexedCampaign {
   dailyBudgetMicros: number;
   frequencyCap: number;
   spentMicros: number;
+  /** Primal-dual pacing's λ while it runs (pacing.ts); null: the on/off rule. */
+  lambda?: number | null;
   impressions: number;
   clicks: number;
   creatives: Creative[];
@@ -72,6 +82,8 @@ export interface AdContext {
    * personalized ads and audiences are on; else null.
    */
   audiences?: ReadonlyMap<string, number> | null;
+  /** Topics the reader came for from outside, only when they allow partner sites; else absent. */
+  inbound?: ReadonlySet<string>;
 }
 
 /** Whether every targeting kind the campaign uses matches this context. */
@@ -162,16 +174,21 @@ export function choose(
   const creatives = new Map<string, Creative & { advertiser: string }>();
   for (const c of candidatesFor(index, ctx)) {
     if (!matches(c, ctx)) continue;
-    if (!paced(c.spentMicros, c.dailyBudgetMicros, dayFraction(now))) continue;
+    const lambda = c.lambda ?? null;
+    if (lambda === null && !paced(c.spentMicros, c.dailyBudgetMicros, dayFraction(now))) continue;
+    if (c.spentMicros >= c.dailyBudgetMicros) continue;
     const age = reminderAge(c, ctx, now);
     const dailyCap = age === null ? c.frequencyCap : Math.min(c.frequencyCap, RETARGET_PER_DAY);
     if ((seenToday.get(c.id) ?? 0) >= dailyCap) continue;
     if (age !== null && (seenThisWeek.get(c.id) ?? 0) >= RETARGET_PER_WEEK) continue;
     const shrunk = shrunkCtr(c.clicks, c.impressions, PRIOR_CTR, PRIOR_STRENGTH);
-    const cool = age === null ? 1 : cooling(age);
+    const fieldTargets = c.targets.get('field');
+    const boost = fieldTargets && [...(ctx.inbound ?? [])].some(f => fieldTargets.has(f)) ? INBOUND_BOOST : 1;
+    const cool = (age === null ? 1 : cooling(age)) * boost;
+    const bid = lambda === null ? c.maxCpcMicros : Math.max(1, pacedBid(c.maxCpcMicros, lambda));
     for (const cr of c.creatives) {
       const ctr = (predictCtr ? predictCtr(c.id, cr.id, ctx) : shrunk) * cool;
-      candidates.push({ campaignId: c.id, creativeId: cr.id, maxCpcMicros: c.maxCpcMicros, ctr });
+      candidates.push({ campaignId: c.id, creativeId: cr.id, maxCpcMicros: bid, ctr });
       creatives.set(cr.id, { ...cr, advertiser: c.advertiser });
     }
   }
@@ -187,6 +204,7 @@ export async function loadIndex(q: Queryable): Promise<IndexedCampaign[]> {
     max_cpc_micros: string;
     daily_budget_micros: string;
     frequency_cap: number;
+    lambda: number | null;
     spent: string;
     impressions: string;
     clicks: string;
@@ -195,6 +213,9 @@ export async function loadIndex(q: Queryable): Promise<IndexedCampaign[]> {
   }>(
     `SELECT c.id::text, a.name AS advertiser, a.id::text AS advertiser_id, c.max_cpc_micros::text,
             c.daily_budget_micros::text, c.frequency_cap,
+            CASE WHEN app.flag_on('ads_pacing') THEN
+              (SELECT p.lambda FROM app.ad_pacing p WHERE p.campaign_id = c.id AND p.day = (now() AT TIME ZONE 'UTC')::date)
+            END AS lambda,
             coalesce((SELECT sum(i.charged_micros) FROM app.ad_impressions i
                       WHERE i.campaign_id = c.id AND i.shown_at >= date_trunc('day', now(), 'UTC')), 0)::text AS spent,
             (SELECT count(*) FROM app.ad_impressions i WHERE i.campaign_id = c.id AND i.shown_at > now() - interval '30 days')::text AS impressions,
@@ -228,6 +249,7 @@ export async function loadIndex(q: Queryable): Promise<IndexedCampaign[]> {
       maxCpcMicros: Number(r.max_cpc_micros),
       dailyBudgetMicros: Number(r.daily_budget_micros),
       frequencyCap: r.frequency_cap,
+      lambda: r.lambda,
       spentMicros: Number(r.spent),
       impressions: Number(r.impressions),
       clicks: Number(r.clicks),
@@ -264,6 +286,8 @@ export interface ServeInput {
   userAgent?: string | null;
   /** The browser sent Sec-GPC: 1. Nothing about this reader is personalized or shared. */
   gpc?: boolean;
+  /** Words and topics the page saw on arrival from outside; used only with partner-sites consent, never stored. */
+  inbound?: { words: readonly string[]; fields: readonly string[] };
 }
 
 /** Outside bidders (part 9a), absent where they aren't configured. */
@@ -281,6 +305,8 @@ export interface AdServer {
   serve(input: ServeInput): Promise<ServedAd[]>;
   /** Re-reads the campaigns now (also every REFRESH_MS). */
   refresh(): Promise<void>;
+  /** A rotating id for a tap's destination, only for one who allows partner sites. */
+  tapEid?(viewer: string, now: number, userAgent: string | null): Promise<string | null>;
 }
 
 export function createAdServer(db: Pick<Database, 'asSystem'>, rtb?: RtbOptions): AdServer {
@@ -290,6 +316,28 @@ export function createAdServer(db: Pick<Database, 'asSystem'>, rtb?: RtbOptions)
   let loadedAt = -Infinity;
   let model: FtrlServing | null = null;
   let partners: Partner[] = [];
+  let calibration: Calibration | null = null;
+  const holdoutOn = async () =>
+    db.asSystem(
+      async q => (await q.query<{ on: boolean }>("SELECT app.flag_on('ads_holdout') AS on")).rows[0]?.on === true,
+    );
+  const eidOf = (secret: Buffer, adId: string, now: number, crossDevice: boolean, ua: string | null) =>
+    eid(
+      secret,
+      adId,
+      now,
+      crossDevice
+        ? null
+        : createHmac('sha256', secret)
+            .update(ua ?? '')
+            .digest('base64url'),
+    );
+  const rememberEid = (q: Queryable, id: string, adId: string, now: number) =>
+    q.query(`INSERT INTO app.ad_eids (eid, ad_id, expires_at) VALUES ($1, $2, $3) ON CONFLICT (eid) DO NOTHING`, [
+      id,
+      adId,
+      new Date(now + 62 * 86_400_000),
+    ]);
   const refresh = async () => {
     const campaigns = await db.asSystem(loadIndex);
     index = indexCampaigns(campaigns);
@@ -298,6 +346,8 @@ export function createAdServer(db: Pick<Database, 'asSystem'>, rtb?: RtbOptions)
     // The promoted click model, checked against its stored hash; none until one earns its place.
     const serving = await loadServing(db, AD_CTR);
     model = serving ? deserializeServing(serving.artifact) : null;
+    const curve = serving?.calibration;
+    calibration = curve ? deserializeCalibration(curve) : null;
     partners = rtb?.enabled()
       ? await db.asSystem(
           async q =>
@@ -309,6 +359,23 @@ export function createAdServer(db: Pick<Database, 'asSystem'>, rtb?: RtbOptions)
   };
   return {
     refresh,
+    async tapEid(viewer, now, userAgent) {
+      if (!rtb) return null;
+      const { secret } = rtb;
+      return db.asSystem(async q => {
+        const r = (
+          await q.query<{ ad_id: string; cross: boolean }>(
+            `SELECT i.ad_id::text, app.ads_permitted(i.profile_id, 'ads_cross_device') AS cross FROM app.ad_identities i
+             WHERE i.profile_id = $1 AND app.ads_permitted(i.profile_id, 'ads_partner_sites')`,
+            [viewer],
+          )
+        ).rows[0];
+        if (!r) return null;
+        const id = eidOf(secret, r.ad_id, now, r.cross, userAgent);
+        await rememberEid(q, id, r.ad_id, now);
+        return id;
+      });
+    },
     async serve(input) {
       const { placement, fields, query, viewer, now, gpc = false } = input;
       if (Date.now() - loadedAt > REFRESH_MS) await refresh();
@@ -382,21 +449,24 @@ export function createAdServer(db: Pick<Database, 'asSystem'>, rtb?: RtbOptions)
         return { person, adId, interests, audiences, seenToday, seenThisWeek };
       });
       const { person, adId, interests, audiences, seenToday, seenThisWeek } = context;
+      // Outside signals count only with this reader's partner-sites permission, and are never stored.
+      const inbound = adId !== null && person?.partnerSites === true ? input.inbound : undefined;
       const { wins, creatives } = choose(
         index,
         {
           placement,
           fields,
-          words: query ? tokenize(query) : [],
+          words: [...(query ? tokenize(query) : []), ...(inbound?.words ?? [])],
           country: person?.country ?? null,
           interests,
           audiences,
+          ...(inbound ? { inbound: new Set(inbound.fields) } : {}),
         },
         seenToday,
         now,
         model
-          ? (campaign, creative, c) =>
-              predictServing(
+          ? (campaign, creative, c) => {
+              const raw = predictServing(
                 model as FtrlServing,
                 ctrFeatures({
                   campaign,
@@ -405,15 +475,24 @@ export function createAdServer(db: Pick<Database, 'asSystem'>, rtb?: RtbOptions)
                   field: c.fields[0] ?? null,
                   hour: new Date(now).getUTCHours(),
                 }),
-              )
+              );
+              return calibration ? calibrate(calibration, raw) : raw;
+            }
           : undefined,
         seenThisWeek,
       );
-      let outcomes: SlotOutcome[] = wins.map(win => ({ kind: 'own', win }));
+      // A randomized tenth of tracked readers see no ad from a campaign they'd have got; the win is
+      // recorded as a ghost, so its effect can be measured against people who did see it.
+      const ghosts =
+        adId !== null && wins.length > 0 && (await holdoutOn())
+          ? wins.filter(w => heldOut(murmur3(`${adId}:${w.campaignId}`), HOLDOUT_SHARE))
+          : [];
+      const visible = ghosts.length ? wins.filter(w => !ghosts.includes(w)) : wins;
+      let outcomes: SlotOutcome[] = visible.map(win => ({ kind: 'own', win }));
       if (offering) {
         const slots = SLOTS[placement];
         const reserveCpm = RESERVE_MICROS / 1000;
-        const slotFloors = floors(wins, slots, reserveCpm);
+        const slotFloors = floors(visible, slots, reserveCpm);
         const shares = adId !== null && person?.partnerSites === true;
         const crossDevice = person?.crossDevice === true;
         const request = buildBidRequest({
@@ -429,16 +508,7 @@ export function createAdServer(db: Pick<Database, 'asSystem'>, rtb?: RtbOptions)
           partner:
             shares && adId
               ? {
-                  eid: eid(
-                    rtb.secret,
-                    adId,
-                    now,
-                    crossDevice
-                      ? null
-                      : createHmac('sha256', rtb.secret)
-                          .update(input.userAgent ?? '')
-                          .digest('base64url'),
-                  ),
+                  eid: eidOf(rtb.secret, adId, now, crossDevice, input.userAgent ?? null),
                   crossDevice,
                   interests: [...(interests ?? [])],
                 }
@@ -446,10 +516,24 @@ export function createAdServer(db: Pick<Database, 'asSystem'>, rtb?: RtbOptions)
           test: false,
           site: rtb.site,
         });
-        outcomes = merge(wins, await rtb.exchange.ask(partners, request), slotFloors);
+        if (shares && adId)
+          await db.asSystem(q =>
+            rememberEid(
+              q,
+              (request.user as { eids: Array<{ uids: Array<{ id: string }> }> }).eids[0]?.uids[0]?.id ?? '',
+              adId,
+              now,
+            ),
+          );
+        outcomes = merge(visible, await rtb.exchange.ask(partners, request), slotFloors);
       }
       const currency = rtb?.currency ?? 'INR';
       return db.asSystem(async q => {
+        for (const g of ghosts)
+          await q.query(
+            'INSERT INTO app.ad_ghost_impressions (campaign_id, ad_id, counterfactual_micros) VALUES ($1, $2, $3)',
+            [g.campaignId, adId, g.priceMicros],
+          );
         const served: ServedAd[] = [];
         for (const outcome of outcomes) {
           if (outcome.kind === 'partner') {

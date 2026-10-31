@@ -6,6 +6,7 @@
 // it never saw, and promoted only when it measurably predicts clicks better
 // than what serves now (shrunk per-campaign averages until a model serves).
 import { createHash } from 'node:crypto';
+import { calibrate, fitIsotonic, serializeCalibration } from '../ml/isotonic.ts';
 import type { Database } from '../db.ts';
 import {
   createFtrl,
@@ -67,6 +68,8 @@ export interface CtrTrainingResult {
   baselineLogLoss: number;
   difference: { mean: number; low: number; high: number };
   artifact: Buffer | null;
+  /** Fitted on the validation slice, by a model that never trained on it. */
+  calibration: { x: number[]; y: number[] } | null;
   counts: { train: number; validate: number; test: number; clicks: number };
 }
 
@@ -91,6 +94,7 @@ export function trainCtr(
     clicks: examples.filter(e => e.clicked).length,
   };
   let best = { alpha: ALPHAS[0] as number, loss: Infinity };
+  let curve = fitIsotonic([], []);
   for (const alpha of ALPHAS) {
     const m = createFtrl({ alpha });
     for (const e of train) learn(m, ctrFeatures(e), e.clicked);
@@ -98,11 +102,30 @@ export function trainCtr(
       validate.map(e => predict(m, ctrFeatures(e))),
       validate.map(e => e.clicked),
     );
-    if (loss < best.loss) best = { alpha, loss };
+    if (loss < best.loss) {
+      best = { alpha, loss };
+      curve = fitIsotonic(
+        validate.map(e => predict(m, ctrFeatures(e))),
+        validate.map(e => (e.clicked ? 1 : 0)),
+      );
+    }
   }
   const model = createFtrl({ alpha: best.alpha });
   for (const e of [...train, ...validate]) learn(model, ctrFeatures(e), e.clicked);
-  const candidate = test.map(e => predict(model, ctrFeatures(e)));
+  const raw = test.map(e => predict(model, ctrFeatures(e)));
+  const calibrated = raw.map(p => Math.min(1 - 1e-6, Math.max(1e-6, calibrate(curve, p))));
+  // FTRL minimizes log loss, so it's often calibrated already, and a curve from a small slice can
+  // make it worse (it failed a model that should have passed): the curve serves only if it helps.
+  const calibrationHelps =
+    logLoss(
+      calibrated,
+      test.map(e => e.clicked),
+    ) <
+    logLoss(
+      raw,
+      test.map(e => e.clicked),
+    );
+  const candidate = calibrationHelps ? calibrated : raw;
   const base = test.map(e => baseline(e));
   const clicks = test.map(e => e.clicked);
   const difference = lossDifference(candidate, base, clicks);
@@ -117,6 +140,7 @@ export function trainCtr(
     baselineLogLoss: logLoss(base, clicks),
     difference,
     artifact: promote ? serializeServing(servingOf(model)) : null,
+    calibration: calibrationHelps ? serializeCalibration(curve) : null,
     counts,
   };
 }
@@ -181,6 +205,8 @@ export async function trainAdCtrJob(db: Pick<Database, 'asSystem'>): Promise<Ctr
       logLoss: result.baselineLogLoss,
     },
     reason: result.reason,
+    ...(result.calibration ? { calibration: result.calibration } : {}),
+    ...(process.env.RENDER_GIT_COMMIT ? { gitCommit: process.env.RENDER_GIT_COMMIT } : {}),
   };
   if (result.promote && result.artifact)
     return { status: 'promoted', version: await recordPromoted(db, record, result.artifact), result };

@@ -7,6 +7,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Database } from '../db.ts';
 import { RULE_MODELS, ruleCredit, shapleyModel, type Path, type Touch } from '../ads/attribution.ts';
+import { lift } from '../ads/lift.ts';
 import { MIN_PEOPLE } from '../ads/privacy.ts';
 import { TokenBuckets, type BucketOptions, type Clock } from '../rate-limit.ts';
 import { fail, pgCode, signedIn } from './common.ts';
@@ -21,6 +22,161 @@ export function registerAdMeasurementRoutes(
   const { db } = deps;
   const off = (reply: FastifyReply) => fail(reply, 404, 'ads_off', 'Advertising on Graphinity isn’t available yet.');
   const perKey = new TokenBuckets(deps.limit, deps.clock);
+
+  const bearerKey = (header: string | undefined) => {
+    const key = header?.startsWith('Bearer ') ? header.slice(7) : '';
+    return keyPattern.test(key) ? key : null;
+  };
+  // A partner's product event (charter part 9): about a rotating id handed to its site by a tap.
+  app.post(
+    '/ads/partner-events',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['eidToken', 'event', 'eventId'],
+          properties: {
+            eidToken: { type: 'string', pattern: '^[A-Za-z0-9_-]{22}$' },
+            event: { enum: ['PRODUCT_SEARCH', 'PRODUCT_VIEW', 'ADD_TO_CART', 'PURCHASE'] },
+            eventId: { type: 'string', minLength: 1, maxLength: 100 },
+            productSku: { type: 'string', pattern: '^[a-z0-9-]{1,80}$' },
+            category: { type: 'string', pattern: '^[a-z]+(-[a-z]+)*$', maxLength: 40 },
+            valueMicros: { type: 'integer', minimum: 0, maximum: 1000000000000 },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!deps.enabled()) return off(reply);
+      const key = bearerKey(req.headers.authorization);
+      if (key && !perKey.take(hashKey(key)).ok) return fail(reply, 429, 'rate_limited', 'Too many events. Slow down.');
+      const b = req.body as {
+        eidToken: string;
+        event: string;
+        eventId: string;
+        productSku?: string;
+        category?: string;
+        valueMicros?: number;
+      };
+      const outcome = key
+        ? await db.asSystem(
+            async q =>
+              (
+                await q.query<{ r: string }>('SELECT app.record_partner_event($1, $2, $3, $4, $5, $6, $7) AS r', [
+                  hashKey(key),
+                  b.eidToken,
+                  b.event,
+                  b.productSku ?? null,
+                  b.category ?? null,
+                  b.eventId,
+                  b.valueMicros ?? 0,
+                ])
+              ).rows[0]?.r,
+          )
+        : 'unknown';
+      // The same for every refusal, so neither keys nor ids can be probed.
+      return reply.code(202).send({ counted: outcome === 'recorded' || outcome === 'already' });
+    },
+  );
+
+  // A partner's list of rotating ids, matched only when at least 100 are consenting people here.
+  app.post(
+    '/ads/audiences/partner-match',
+    {
+      bodyLimit: 2 * 1024 * 1024,
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['name', 'eidTokens'],
+          properties: {
+            name: { type: 'string', minLength: 1, maxLength: 120 },
+            eidTokens: { type: 'array', maxItems: 50000, items: { type: 'string', pattern: '^[A-Za-z0-9_-]{22}$' } },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!deps.enabled()) return off(reply);
+      const key = bearerKey(req.headers.authorization);
+      if (!key) return reply.code(202).send({ status: 'insufficient' });
+      if (!perKey.take(hashKey(key)).ok) return fail(reply, 429, 'rate_limited', 'Too many requests. Slow down.');
+      const b = req.body as { name: string; eidTokens: string[] };
+      const row = await db.asSystem(
+        async q =>
+          (
+            await q.query<{ public_id: string | null; status: string; size: number }>(
+              'SELECT * FROM app.match_partner_audience($1, $2, $3)',
+              [hashKey(key), b.name, b.eidTokens],
+            )
+          ).rows[0],
+      );
+      if (row?.status !== 'ready') return reply.code(202).send({ status: 'insufficient' });
+      return reply.code(201).send({ status: 'ready', audience: { id: row.public_id, size: row.size } });
+    },
+  );
+
+  // What a campaign truly adds: exposed against randomized ghost holdouts, members only.
+  app.get(
+    '/ads/campaigns/:id/lift',
+    {
+      config: { auth: 'required' },
+      schema: { params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } }, required: ['id'] } },
+    },
+    async (req, reply) => {
+      if (!deps.enabled()) return off(reply);
+      const user = signedIn(req);
+      const { id } = req.params as { id: string };
+      const campaign = await db.withUser(
+        user.id,
+        async q =>
+          (
+            await q.query<{ id: string; advertiser: string }>(
+              'SELECT id::text, advertiser_id::text AS advertiser FROM app.ad_campaigns WHERE public_id = $1',
+              [id],
+            )
+          ).rows[0],
+      );
+      if (!campaign) return fail(reply, 404, 'not_found', 'There’s no such campaign you run.');
+      const counts = await db.asSystem(
+        async q =>
+          (
+            await q.query<{ ep: number; ec: number; hp: number; hc: number; ev: string; hv: string; spend: string }>(
+              `WITH exposed AS (SELECT DISTINCT ad_id FROM app.ad_impressions WHERE campaign_id = $1 AND ad_id IS NOT NULL AND shown_at > now() - interval '30 days'),
+                    held AS (SELECT DISTINCT ad_id FROM app.ad_ghost_impressions WHERE campaign_id = $1 AND shown_at > now() - interval '30 days'),
+                    sales AS (SELECT ad_id, sum(value_micros) AS v FROM app.ad_partner_events WHERE advertiser_id = $2 AND kind = 'PURCHASE' AND occurred_at > now() - interval '30 days' GROUP BY 1)
+               SELECT (SELECT count(*) FROM exposed)::int AS ep, (SELECT count(*) FROM exposed JOIN sales USING (ad_id))::int AS ec,
+                      (SELECT count(*) FROM held)::int AS hp, (SELECT count(*) FROM held JOIN sales USING (ad_id))::int AS hc,
+                      (SELECT coalesce(sum(v), 0) FROM exposed JOIN sales USING (ad_id))::text AS ev,
+                      (SELECT coalesce(sum(v), 0) FROM held JOIN sales USING (ad_id))::text AS hv,
+                      (SELECT coalesce(sum(charged_micros), 0) FROM app.ad_impressions WHERE campaign_id = $1 AND shown_at > now() - interval '30 days')::text AS spend`,
+              [campaign.id, campaign.advertiser],
+            )
+          ).rows[0],
+      );
+      const result = counts
+        ? lift({
+            exposedPeople: counts.ep,
+            exposedConversions: counts.ec,
+            holdoutPeople: counts.hp,
+            holdoutConversions: counts.hc,
+          })
+        : null;
+      // Under 100 a side, or under 25 who bought, the answer is "not yet": no number to compare.
+      if (!counts || !result || counts.ec + counts.hc < MIN_PEOPLE) return { ready: false };
+      const perExposed = Number(counts.ev) / Math.max(1, counts.ep);
+      const perHeld = Number(counts.hv) / Math.max(1, counts.hp);
+      const spend = Number(counts.spend);
+      return {
+        ready: true,
+        lift: result,
+        // Only sales a partner could report with a rotating id: a held-out person with no prior tap
+        // has none, so this understates both arms and is a lower bound on what can be joined.
+        iRoas: spend > 0 ? ((perExposed - perHeld) * counts.ep) / spend : null,
+      };
+    },
+  );
 
   app.post(
     '/ads/advertisers/:id/keys',

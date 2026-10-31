@@ -43,6 +43,14 @@ import { dueProblems, moderatorIds, problemsOf } from './ops/alerts.ts';
 import { announceRouting, routeDueQuestions, type Explorer, type Ranker } from './routing.ts';
 import { systemClock } from './rate-limit.ts';
 import { buildServer } from './server.ts';
+import {
+  commerceRollup,
+  drainJournal,
+  evaluateExperiments,
+  materializeFeatures,
+  refreshKnowledgeGraph,
+  stepPacers,
+} from './platform/jobs.ts';
 
 let config;
 try {
@@ -599,6 +607,46 @@ const searchJudgeTimer = setInterval(judgeSearch, 60 * 60_000);
 searchJudgeTimer.unref();
 app.addHook('onClose', (_instance, done) => {
   clearInterval(searchJudgeTimer);
+  done();
+});
+// The platform's rollups (ADR 0024). Hourly: journal into cubes, the day's products and the graph,
+// features and experiments. Every five minutes, while advertising is on: budget pacing. Numbers only.
+const rollupSecret = config.ipHashKey;
+const runRollups = serial(async () => {
+  const steps: Array<[string, number, () => Promise<number>]> = [
+    ['olap-rollup', 3600, () => drainJournal(db, rollupSecret)],
+    ['commerce-rollup', 3600, () => commerceRollup(db, rollupSecret, Date.now())],
+    ['knowledge-graph', 3600, () => refreshKnowledgeGraph(db, Date.now())],
+    ['feature-store', 3600, () => materializeFeatures(db, Date.now())],
+    ['experiments', 3600, () => evaluateExperiments(db)],
+    [
+      'ad-signal-expiry',
+      3600,
+      () =>
+        db.asSystem(async q => (await q.query<{ n: number }>('SELECT app.expire_ad_signals() AS n')).rows[0]?.n ?? 0),
+    ],
+  ];
+  for (const [job, seconds, run] of steps)
+    await recordedRun(db, job, seconds, run).catch((err: unknown) => {
+      app.log.warn({ kind: errorKind(err), job }, 'platform job failed');
+    });
+});
+const rollupTimer = setInterval(runRollups, 60 * 60_000);
+rollupTimer.unref();
+const firstRollup = setTimeout(runRollups, 5 * 60_000);
+firstRollup.unref();
+const runPacing = serial(async () => {
+  if (!flags.enabled('ads') || !flags.enabled('ads_pacing')) return;
+  await recordedRun(db, 'ad-pacing', 300, () => stepPacers(db, Date.now())).catch((err: unknown) => {
+    app.log.warn({ kind: errorKind(err) }, 'ad pacing failed');
+  });
+});
+const pacingTimer = setInterval(runPacing, 5 * 60_000);
+pacingTimer.unref();
+app.addHook('onClose', (_instance, done) => {
+  clearInterval(rollupTimer);
+  clearTimeout(firstRollup);
+  clearInterval(pacingTimer);
   done();
 });
 // Audiences (ADR 0022 part 7), hourly while advertising is on: who is in each, from people
