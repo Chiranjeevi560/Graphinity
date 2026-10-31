@@ -102,7 +102,7 @@ export interface Deps {
   /** Spelling corrections for the precheck's word search; absent: words as typed only. */
   speller?: Pick<Speller, 'correctDraft'> | null;
   /** Whether dangerous actions need a recent sign-in. Defaults to off. */
-  stepUpEnabled?: () => boolean;
+  stepUpEnabled?: (userId: string) => boolean;
   /** Global recommendation kill switch; per-user consent is enforced separately. */
   recommendationsEnabled?: () => boolean;
   /** The search kill switch (POST /search). Defaults to on. */
@@ -260,7 +260,7 @@ export async function buildServer(deps: Deps) {
     }
     if (
       freshAuth &&
-      deps.stepUpEnabled?.() &&
+      deps.stepUpEnabled?.(req.user.id) &&
       (req.user.signedInAt === null || clock.now() / 1000 - req.user.signedInAt > STEP_UP_SECONDS)
     ) {
       return reply.code(403).send({

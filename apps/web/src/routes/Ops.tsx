@@ -28,6 +28,7 @@ interface Status {
     lastErrorKind: string | null;
     healthy: boolean;
   }>;
+  rollouts: Array<{ name: string; ring: number | null; trippedAt: string | null }>;
 }
 
 const objectiveWords = {
@@ -68,6 +69,24 @@ export default function OpsPage() {
       <h1 className="text-title1">Operations</h1>
 
       <LegalQueue />
+
+      {status.rollouts.length > 0 && (
+        <section className="review-section" aria-labelledby="rollouts-heading">
+          <h2 id="rollouts-heading" className="text-title3">
+            Rollouts
+          </h2>
+          <ul className="standing-list">
+            {status.rollouts.map(r => (
+              <li key={r.name} className="standing-row ops-row">
+                <span className="text-body">{r.name.replaceAll('_', ' ')}</span>
+                <span className={`text-subhead ops-figures ${r.trippedAt ? 'ops-problem' : 'secondary'}`}>
+                  {r.trippedAt ? 'Turned off: requests went bad' : `${String([1, 5, 25, 100][r.ring ?? 3])}% of people`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="review-section" aria-labelledby="now-heading">
         <h2 id="now-heading" className="text-title3">

@@ -19,7 +19,7 @@ import {
   type Gray,
 } from '../src/intelligence/media.ts';
 import { appendEntry, canonical, verifyChain, type AuditEntry } from '../src/governance/audit-chain.ts';
-import { decideRing } from '../src/governance/rollback.ts';
+import { inRing, RINGS, shouldTrip } from '../src/governance/rollback.ts';
 import { grievanceDeadlines, RESOLVE_MS, URGENT_MS, validStatement } from '../src/governance/legal.ts';
 
 describe('session graph', () => {
@@ -356,14 +356,28 @@ describe('the audit chain', () => {
 });
 
 describe('the rollback governor', () => {
-  const base = { errorRate: 0.001, p95Ms: 100 };
-  it('advances when healthy, holds without evidence, rolls back on harm', () => {
-    expect(decideRing(1, { requests: 1000, errors: 1, p95Ms: 100 }, base)).toBe('advance');
-    expect(decideRing(1, { requests: 100, errors: 0, p95Ms: 100 }, base)).toBe('hold');
-    expect(decideRing(1, { requests: 0, errors: 0, p95Ms: 0 }, base)).toBe('hold');
-    expect(decideRing(1, { requests: 1000, errors: 50, p95Ms: 100 }, base)).toBe('rollback');
-    expect(decideRing(1, { requests: 1000, errors: 0, p95Ms: 200 }, base)).toBe('rollback');
-    expect(decideRing(3, { requests: 1000, errors: 0, p95Ms: 100 }, base)).toBe('hold');
+  it('stays quiet when healthy or without evidence, and trips on harm', () => {
+    expect(shouldTrip({ requests: 0, errors: 0, p95Ms: null })).toBe(false);
+    expect(shouldTrip({ requests: 1000, errors: 5, p95Ms: 100 })).toBe(false);
+    // A handful of errors at night isn't evidence of anything.
+    expect(shouldTrip({ requests: 50, errors: 1, p95Ms: 100 })).toBe(false);
+    expect(shouldTrip({ requests: 1000, errors: 50, p95Ms: 100 })).toBe(true);
+    expect(shouldTrip({ requests: 1000, errors: 0, p95Ms: 501 })).toBe(true);
+    expect(shouldTrip({ requests: 1000, errors: 0, p95Ms: 500 })).toBe(false);
+    expect(shouldTrip({ requests: 10, errors: 0, p95Ms: 9000 })).toBe(false);
+  });
+
+  it('places about the ring’s share of people, the same each time, independently per switch', () => {
+    const people = Array.from({ length: 20_000 }, (_, i) => `person-${String(i)}`);
+    for (const [ring, percent] of RINGS.entries()) {
+      const share = people.filter(p => inRing('a', p, ring)).length / people.length;
+      expect(share * 100).toBeCloseTo(percent, percent === 100 ? 5 : -0.5);
+    }
+    expect(inRing('a', 'x', 1)).toBe(inRing('a', 'x', 1));
+    const both = people.filter(p => inRing('a', p, 2) && inRing('b', p, 2)).length / people.length;
+    expect(both).toBeCloseTo(0.0625, 1);
+    // Growing a ring keeps everyone already in it.
+    expect(people.filter(p => inRing('a', p, 0)).every(p => inRing('a', p, 1))).toBe(true);
   });
 });
 

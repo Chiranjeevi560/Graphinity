@@ -1,32 +1,32 @@
-// The auto-rollback governor (four rings of exposure). A release moves from staff to 1%,
-// 10% and 100% only while its error rate and latency hold against the baseline;
-// otherwise it's rolled back. Pure and deterministic; deciding from numbers means
-// nobody has to be awake.
+// The rollout governor (docs/adr/0028-rollout-governor.md): four rings of exposure, and a rule that
+// turns a switch off when requests go bad. Deciding from numbers means nobody has to be awake.
+import { murmur3 } from '../experiments/murmur.ts';
 
-export const RINGS = [
-  { name: 'staff', traffic: 0, minRequests: 50 },
-  { name: 'canary', traffic: 0.01, minRequests: 500 },
-  { name: 'early', traffic: 0.1, minRequests: 5_000 },
-  { name: 'general', traffic: 1, minRequests: 0 },
-] as const;
+/** Percent of people in each ring. */
+export const RINGS = [1, 5, 25, 100] as const;
+export const MAX_ERROR_RATE = 0.01;
+export const MAX_P95_MS = 500;
+/** Fewer requests in five minutes than this can't show a slowdown. */
+export const MIN_REQUESTS_FOR_LATENCY = 30;
 
-export interface RingHealth {
-  requests: number;
-  errors: number;
-  p95Ms: number;
+/** Whether a person falls inside a ring: the same answer each time, independent between switches. */
+export function inRing(flag: string, unit: string, ring: number): boolean {
+  return murmur3(`${unit}:rollout:${flag}`) % 100 < (RINGS[ring] ?? 100);
 }
 
-export type Decision = 'hold' | 'advance' | 'rollback';
+export interface Health {
+  requests: number;
+  errors: number;
+  p95Ms: number | null;
+}
 
-/** Rolls back on a clear error excess (one-sided z ≥ 3.3 over baseline plus 0.1%) or p95 over 1.5×. */
-export function decideRing(ring: number, health: RingHealth, baseline: { errorRate: number; p95Ms: number }): Decision {
-  if (health.requests === 0) return 'hold';
-  const limit = baseline.errorRate + 0.001;
-  const rate = health.errors / health.requests;
-  const se = Math.sqrt(Math.max(limit * (1 - limit), 1e-9) / health.requests);
-  if ((rate - limit) / se >= 3.3) return 'rollback';
-  const min = RINGS[ring]?.minRequests ?? 0;
-  if (health.requests >= Math.max(30, min) && health.p95Ms > baseline.p95Ms * 1.5) return 'rollback';
-  if (ring >= RINGS.length - 1 || health.requests < min) return 'hold';
-  return 'advance';
+/**
+ * One-sided z ≥ 3.3 over the error limit, so a handful of errors at night
+ * doesn't turn anything off (a plain rate would trip on 1 error in 50 requests).
+ */
+export function shouldTrip(h: Health): boolean {
+  if (h.requests === 0) return false;
+  const se = Math.sqrt((MAX_ERROR_RATE * (1 - MAX_ERROR_RATE)) / h.requests);
+  if ((h.errors / h.requests - MAX_ERROR_RATE) / se >= 3.3) return true;
+  return h.requests >= MIN_REQUESTS_FOR_LATENCY && h.p95Ms !== null && h.p95Ms > MAX_P95_MS;
 }

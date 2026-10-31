@@ -230,7 +230,7 @@ describe('alerts', () => {
     healthy: true,
     ...over,
   });
-  const base: OpsStatus = { objectives: [], alerts: [], routes: [], jobs: [] };
+  const base: OpsStatus = { objectives: [], alerts: [], routes: [], jobs: [], rollouts: [] };
 
   it('come from page alerts and unhealthy jobs only, in plain words', () => {
     const problems = problemsOf({

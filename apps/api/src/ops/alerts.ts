@@ -31,6 +31,14 @@ export function problemsOf(status: OpsStatus): Problem[] {
       body: `Using up a month’s allowance ${String(Math.round(a.burnLong))} times too fast over the last ${windowWords(a.long)}. Open Operations to see where.`,
     });
   }
+  for (const r of status.rollouts) {
+    if (r.trippedAt === null) continue;
+    out.push({
+      key: `rollout:${r.name}`,
+      title: `${r.name.replaceAll('_', ' ')} was turned off`,
+      body: 'Requests went bad during its rollout, so the governor switched it off. Check Operations before starting it again.',
+    });
+  }
   for (const j of status.jobs) {
     if (j.healthy) continue;
     const failed = j.lastFailureAt !== null && (j.lastSuccessAt === null || j.lastFailureAt > j.lastSuccessAt);
