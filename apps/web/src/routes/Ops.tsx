@@ -43,20 +43,21 @@ const windowWords = (minutes: number) =>
       ? `${String(minutes / 60)} hours`
       : `${String(minutes / 1440)} days`;
 
+const Loading = () => (
+  <main className="page stack-message">
+    <p className="text-body status" role="status">
+      Loading…
+    </p>
+  </main>
+);
+
 /** For moderators: whether Graphinity is working as it should, in plain words. */
 export default function OpsPage() {
   const { data: status, error, retry } = useLoad<Status>('/ops/status', true);
   // Times are "5 minutes ago" as of loading; reloading the page brings them up to date.
   const [now] = useState(Date.now);
   if (error) return <LoadFailed error={error} onRetry={retry} />;
-  if (!status)
-    return (
-      <main className="page stack-message">
-        <p className="text-body status" role="status">
-          Loading…
-        </p>
-      </main>
-    );
+  if (!status) return <Loading />;
   const pages = status.alerts.filter(a => a.severity === 'page');
   const unhealthy = status.jobs.filter(j => !j.healthy);
   const calm = pages.length === 0 && unhealthy.length === 0;
@@ -99,82 +100,141 @@ export default function OpsPage() {
         )}
       </section>
 
-      <section className="review-section" aria-labelledby="objectives-heading">
-        <h2 id="objectives-heading" className="text-title3">
-          The last 30 days
-        </h2>
+      <Section
+        title="The last 30 days"
+        empty=""
+        rows={status.objectives.map(o => [
+          objectiveWords[o.name],
+          o.good === null
+            ? 'No requests yet'
+            : `${percent(o.good, 2)}, against a goal of ${percent(o.target)} · ${
+                o.budgetRemaining < 0
+                  ? 'allowance used up'
+                  : `${percent(Math.min(1, o.budgetRemaining), 0)} of the allowance left`
+              }`,
+          o.good !== null && o.budgetRemaining < 0,
+        ])}
+      />
+      <p className="text-footnote secondary">
+        The allowance is how many requests may fail, or be slow, in 30 days while still meeting the objective.
+      </p>
+
+      <Section
+        title="Background work"
+        empty="Nothing has run yet."
+        rows={status.jobs.map(j => [
+          j.label,
+          j.lastFailureAt && (!j.lastSuccessAt || j.lastFailureAt > j.lastSuccessAt)
+            ? `Failed ${timeAgo(j.lastFailureAt, now)}`
+            : j.lastSuccessAt
+              ? `Worked ${timeAgo(j.lastSuccessAt, now)}`
+              : 'Not worked yet',
+          !j.healthy,
+        ])}
+      />
+      <Section
+        title="Slowest requests today"
+        empty="No requests today."
+        rows={status.routes.map(r => [
+          `${r.method} ${r.route}`,
+          `${count.format(r.requests)} ${r.requests === 1 ? 'request' : 'requests'}${r.p95 === null ? '' : ` · 95% within ${count.format(Math.round(r.p95))} ms`}${r.errors > 0 ? ` · ${count.format(r.errors)} failed` : ''}`,
+          r.errors > 0,
+        ])}
+      />
+    </main>
+  );
+}
+
+interface Period {
+  questions: number;
+  answers: number;
+}
+
+interface Summary {
+  totals: { day: Period; week: Period; month: Period };
+  models: Array<{ name: string; version: number; stage: string; algorithm: string }>;
+  experiments: Array<{ name: string; status: string; p: number }>;
+  commerce: Array<{ label: string; field: string; count: number; forecast: number | null }>;
+  audit: { entries: number; brokenAt: number | null };
+}
+
+type Row = [name: string, figures: string, problem?: boolean];
+
+const n = (x: number) => count.format(Math.round(x));
+const period = (name: string, p: Period): Row => [name, `${n(p.questions)} questions · ${n(p.answers)} answers`];
+
+function Section({ title, rows, empty }: { title: string; rows: Row[]; empty: string }) {
+  return (
+    <section className="review-section">
+      <h2 className="text-title3">{title}</h2>
+      {rows.length === 0 ? (
+        <p className="text-body secondary">{empty}</p>
+      ) : (
         <ul className="standing-list">
-          {status.objectives.map(o => (
-            <li key={o.name} className="standing-row ops-row">
-              <span className="text-body">{objectiveWords[o.name]}</span>
-              <span className="text-subhead secondary ops-figures">
-                {o.good === null ? 'No requests yet' : `${percent(o.good, 2)}, against a goal of ${percent(o.target)}`}
-                {o.good !== null && (
-                  <>
-                    {' · '}
-                    <span className={o.budgetRemaining < 0 ? 'ops-problem' : undefined}>
-                      {o.budgetRemaining < 0
-                        ? 'allowance used up'
-                        : `${percent(Math.min(1, o.budgetRemaining), 0)} of the allowance left`}
-                    </span>
-                  </>
-                )}
-              </span>
+          {rows.map(([name, figures, problem]) => (
+            <li key={name} className="standing-row ops-row">
+              <span className="text-body">{name}</span>
+              <span className={`text-subhead ops-figures ${problem ? 'ops-problem' : 'secondary'}`}>{figures}</span>
             </li>
           ))}
         </ul>
-        <p className="text-footnote secondary">
-          The allowance is how many requests may fail, or be slow, in 30 days while still meeting the objective.
-        </p>
-      </section>
+      )}
+    </section>
+  );
+}
 
-      <section className="review-section" aria-labelledby="jobs-heading">
-        <h2 id="jobs-heading" className="text-title3">
-          Background work
-        </h2>
-        {status.jobs.length === 0 ? (
-          <p className="text-body secondary">Nothing has run yet.</p>
-        ) : (
-          <ul className="standing-list">
-            {status.jobs.map(j => (
-              <li key={j.job} className="standing-row ops-row">
-                <span className="text-body">{j.label}</span>
-                <span className={`text-subhead ops-figures ${j.healthy ? 'secondary' : 'ops-problem'}`}>
-                  {j.lastFailureAt && (!j.lastSuccessAt || j.lastFailureAt > j.lastSuccessAt)
-                    ? `Failed ${timeAgo(j.lastFailureAt, now)}`
-                    : j.lastSuccessAt
-                      ? `Worked ${timeAgo(j.lastSuccessAt, now)}`
-                      : 'Not worked yet'}
-                </span>
-              </li>
-            ))}
-          </ul>
+/** For Graphinity's owner: how the whole thing is doing. Totals only; nothing here names anyone. */
+export function OwnerPage() {
+  const { data, error, retry } = useLoad<Summary>('/owner/dashboard/summary', true);
+  if (error) return <LoadFailed error={error} onRetry={retry} />;
+  if (!data) return <Loading />;
+  const { brokenAt, entries } = data.audit;
+  return (
+    <main className="page review">
+      <h1 className="text-title1">Owner</h1>
+      <Section
+        title="Activity"
+        empty=""
+        rows={[
+          period('Today', data.totals.day),
+          period('Last 7 days', data.totals.week),
+          period('Last 28 days', data.totals.month),
+        ]}
+      />
+      <Section
+        title="Products people ask about"
+        empty="A product shows once 25 people have asked."
+        rows={data.commerce.map(p => [
+          `${p.label} (${p.field})`,
+          `About ${n(p.count)} this week${p.forecast === null ? '' : ` · ${n(p.forecast)} expected in 30 days`}`,
+        ])}
+      />
+      <Section
+        title="Experiments"
+        empty="None running."
+        rows={data.experiments.map(e =>
+          e.status === 'halted_srm'
+            ? [e.name, 'Stopped: its groups are the wrong sizes', true]
+            : [e.name, `${e.status} · noise chance at most ${e.p.toFixed(3)}`],
         )}
-      </section>
-
-      <section className="review-section" aria-labelledby="routes-heading">
-        <h2 id="routes-heading" className="text-title3">
-          Slowest requests today
-        </h2>
-        {status.routes.length === 0 ? (
-          <p className="text-body secondary">No requests today.</p>
-        ) : (
-          <ul className="standing-list">
-            {status.routes.map(r => (
-              <li key={`${r.method} ${r.route}`} className="standing-row ops-row">
-                <span className="text-subhead ops-route">
-                  {r.method} {r.route}
-                </span>
-                <span className="text-subhead secondary ops-figures">
-                  {count.format(r.requests)} {r.requests === 1 ? 'request' : 'requests'}
-                  {r.p95 !== null && ` · 95% within ${count.format(Math.round(r.p95))} ms`}
-                  {r.errors > 0 && <span className="ops-problem">{` · ${count.format(r.errors)} failed`}</span>}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      />
+      <Section
+        title="Models"
+        empty="None trained yet."
+        rows={data.models.map(m => [
+          m.name,
+          `Version ${String(m.version)} · ${m.stage.toLowerCase()} · ${m.algorithm}`,
+        ])}
+      />
+      <Section
+        title="Audit log"
+        empty=""
+        rows={[
+          brokenAt === null
+            ? ['Unchanged', `${n(entries)} entries`]
+            : [`Entry ${String(brokenAt)} was changed`, 'Treat everything after it as untrusted', true],
+        ]}
+      />
     </main>
   );
 }

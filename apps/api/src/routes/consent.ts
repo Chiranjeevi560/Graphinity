@@ -30,6 +30,8 @@ const choicesSchema = {
   },
 } as const;
 
+const GPC_REFUSES = new Set(['ads_partner_sites', 'ads_cross_device']);
+
 /** Consent is purpose-specific, default-off, and written with an append-only choice history. */
 export function registerConsentRoutes(app: FastifyInstance, deps: ConsentDeps) {
   app.get('/me/consents', { config: { auth: 'required' } }, async req => {
@@ -89,10 +91,14 @@ export function registerConsentRoutes(app: FastifyInstance, deps: ConsentDeps) {
     { config: { auth: 'required', write: true }, schema: { body: choicesSchema } },
     async (req, reply) => {
       const user = signedIn(req);
-      const { choices, source = 'settings' } = req.body as {
+      const { choices: asked, source = 'settings' } = req.body as {
         choices: Array<{ category: string; enabled: boolean }>;
         source?: 'settings' | 'onboarding';
       };
+      // Global Privacy Control is a standing "don't share": a blanket "Accept all" can't overrule it.
+      // Only a person's own choice of that purpose in Privacy settings can.
+      const gpc = req.headers['sec-gpc'] === '1' && source === 'onboarding';
+      const choices = asked.map(c => (gpc && GPC_REFUSES.has(c.category) ? { ...c, enabled: false } : c));
       if (new Set(choices.map(choice => choice.category)).size !== choices.length) {
         return fail(reply, 400, 'duplicate_consent_category', 'Choose each data use only once.');
       }

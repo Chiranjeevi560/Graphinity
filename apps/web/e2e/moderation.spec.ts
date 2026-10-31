@@ -151,3 +151,20 @@ test('a moderator sees whether Graphinity is working, and what needs attention',
   await audit(page, 'operations with a problem');
   await asOwner("UPDATE app.ops_jobs SET last_failure_at = NULL, last_error_kind = NULL WHERE job = 'routing'", []);
 });
+
+test('the owner sees totals, and nobody else does', async ({ page, browserName }) => {
+  const run = `${browserName}${String(Date.now() % 1_000_000)}`;
+  await signIn(page, 'Test person A');
+  await setUpIfNeeded(page, `owner.${run}`);
+  await establishTestPersonA();
+  await asOwner('DELETE FROM app.platform_owners WHERE profile_id = $1', [TEST_PERSON_A]);
+  await page.goto('/owner');
+  await expect(page.getByText('This page is for Graphinity’s owner.')).toBeVisible();
+  clearConsoleErrors();
+  await asOwner('INSERT INTO app.platform_owners (profile_id) VALUES ($1) ON CONFLICT DO NOTHING', [TEST_PERSON_A]);
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Owner', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Audit log', level: 2 })).toBeVisible();
+  await audit(page, 'owner');
+  await asOwner('DELETE FROM app.platform_owners WHERE profile_id = $1', [TEST_PERSON_A]);
+});

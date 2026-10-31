@@ -530,10 +530,7 @@
   flex-direction: column;
   align-items: flex-start;
   gap: var(--space-1);
-}
-.ops-route {
   overflow-wrap: anywhere;
-  font-variant-numeric: tabular-nums;
 }
 .ops-problem {
   color: var(--red-text);
