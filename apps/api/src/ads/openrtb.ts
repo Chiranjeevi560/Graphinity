@@ -218,9 +218,7 @@ export interface PartnerBid {
 
 const isObject = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
 const text = (x: unknown, max: number) =>
-  typeof x === 'string' && x.trim().length > 0 && x.length <= max && !/[\p{Cc}<>]/u.test(x)
-    ? x.trim()
-    : null;
+  typeof x === 'string' && x.trim().length > 0 && x.length <= max && !/[\p{Cc}<>]/u.test(x) ? x.trim() : null;
 const HOST = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
 
 /** A Native 1.2 response's title, description and link, or null. Markup is text, never HTML. */
