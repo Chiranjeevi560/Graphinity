@@ -96,6 +96,46 @@ export function registerAdvertiserRoutes(
   app: FastifyInstance,
   { db, enabled }: { db: Database; enabled: () => boolean },
 ) {
+  // Where this advertiser's pixel may report from (ADR 0030), and its public id. Members only, in the database.
+  app.put(
+    '/ads/advertisers/:id/pixel',
+    {
+      config: { auth: 'required', write: true },
+      schema: {
+        params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } }, required: ['id'] },
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['domains'],
+          properties: {
+            domains: {
+              type: 'array',
+              maxItems: 10,
+              items: {
+                type: 'string',
+                maxLength: 253,
+                pattern: '^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$',
+              },
+            },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      const user = signedIn(req);
+      const { id } = req.params as { id: string };
+      const { domains } = req.body as { domains: string[] };
+      const pixel = await db.withUser(
+        user.id,
+        async q =>
+          (await q.query<{ p: string | null }>('SELECT app.set_pixel_domains($1, $2) AS p', [id, domains])).rows[0]
+            ?.p ?? null,
+      );
+      if (!pixel) return fail(reply, 403, 'not_owner', 'This isn’t your business.');
+      return { pixel: { id: pixel, domains } };
+    },
+  );
+
   const off = (reply: FastifyReply) => fail(reply, 404, 'ads_off', offMessage);
   const campaignOf = async (q: Queryable, publicId: string) =>
     (await q.query<{ id: string }>('SELECT id::text FROM app.ad_campaigns WHERE public_id = $1', [publicId])).rows[0];

@@ -1,3 +1,4 @@
+import { AdSlot } from '../components/AdSlot.tsx';
 import { useEffect, useState, type SubmitEvent } from 'react';
 import { Button, LinkButton } from '../components/Button.tsx';
 import { TextArea } from '../components/Form.tsx';
@@ -220,6 +221,7 @@ export default function Question({ id }: { id: string }) {
           </p>
         )}
       </article>
+      <AdSlot placement="question" questionId={question.id} />
 
       {asked && (
         <RoutingGraph

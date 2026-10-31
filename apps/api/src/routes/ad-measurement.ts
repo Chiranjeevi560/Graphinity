@@ -20,7 +20,7 @@ const SALE_CLIP_MICROS = 10_000_000_000;
 
 export const hashKey = (key: string) => createHash('sha256').update(key).digest('hex');
 
-export function registerAdMeasurementRoutes(
+export async function registerAdMeasurementRoutes(
   app: FastifyInstance,
   deps: { db: Database; enabled: () => boolean; clock: Clock; limit: BucketOptions },
 ) {
@@ -83,6 +83,71 @@ export function registerAdMeasurementRoutes(
       return reply.code(202).send({ accepted: true });
     },
   );
+
+  // The merchant pixel (ADR 0030): a sendBeacon from the merchant's page, so text/plain and no reply worth reading.
+  // Counts only from a host the advertiser listed, and never with money.
+  await app.register((pixel, _options, ready) => {
+    pixel.addContentTypeParser('text/plain', { parseAs: 'string' }, (_req, body, done) => {
+      try {
+        done(null, JSON.parse(body as string));
+      } catch {
+        done(Object.assign(new Error('not JSON'), { statusCode: 400 }));
+      }
+    });
+    pixel.post(
+      '/ads/pixel',
+      {
+        schema: {
+          body: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['pixel', 'eidToken', 'event', 'eventId'],
+            properties: {
+              pixel: { type: 'string', format: 'uuid' },
+              eidToken: { type: 'string', pattern: '^[A-Za-z0-9_-]{22}$' },
+              event: { enum: ['PRODUCT_SEARCH', 'PRODUCT_VIEW', 'ADD_TO_CART'] },
+              eventId: { type: 'string', minLength: 1, maxLength: 100 },
+              productSku: { type: 'string', pattern: '^[a-z0-9-]{1,80}$' },
+              category: { type: 'string', pattern: '^[a-z]+(-[a-z]+)*$', maxLength: 40 },
+            },
+          },
+        },
+      },
+      async (req, reply) => {
+        if (!deps.enabled()) return off(reply);
+        const b = req.body as {
+          pixel: string;
+          eidToken: string;
+          event: string;
+          eventId: string;
+          productSku?: string;
+          category?: string;
+        };
+        let host: string | null = null;
+        try {
+          host = req.headers.origin ? new URL(req.headers.origin).hostname : null;
+        } catch {
+          host = null;
+        }
+        // Global Privacy Control reaches here too, whatever the tag did.
+        if (host && req.headers['sec-gpc'] !== '1')
+          await db.asSystem(q =>
+            q.query('SELECT app.record_pixel_event($1, $2, $3, $4, $5, $6, $7)', [
+              b.pixel,
+              host,
+              b.eidToken,
+              b.event,
+              b.productSku ?? null,
+              b.category ?? null,
+              b.eventId,
+            ]),
+          );
+        // The same whatever happened, so neither ids nor sites can be probed.
+        return reply.code(202).send({ accepted: true });
+      },
+    );
+    ready();
+  });
 
   // A partner's list of rotating ids, matched only when at least 100 are consenting people here.
   app.post(

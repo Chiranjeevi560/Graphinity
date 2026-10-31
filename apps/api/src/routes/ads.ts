@@ -3,6 +3,7 @@
 // the ads themselves, chosen apart from knowledge results (part 4) and
 // counted only when tapped. Ads are asked for on their own: no search,
 // question or recommendation response ever carries one.
+import { extractProducts } from '../commerce/entity.ts';
 import type { FastifyInstance } from 'fastify';
 import type { AdServer } from '../ads/serve.ts';
 import type { Database } from '../db.ts';
@@ -72,6 +73,25 @@ export function registerAdRoutes(
     },
   );
 
+  const partnerSignalsAllowed = (viewer: string) =>
+    db.asSystem(
+      async q =>
+        (
+          await q.query<{ ok: boolean }>(
+            "SELECT app.flag_on('ads_partner_sites') AND app.ads_permitted($1, 'ads_partner_sites') AS ok",
+            [viewer],
+          )
+        ).rows[0]?.ok === true,
+    );
+
+  // Whether a page should ask for ads at all, and whether this person's browser signals may be read.
+  app.get('/ads/status', { config: { auth: 'optional' } }, async req => {
+    if (!deps.enabled()) return { on: false, partnerSignals: false };
+    const viewer = req.user?.id ?? null;
+    if (!viewer || req.headers['sec-gpc'] === '1') return { on: true, partnerSignals: false };
+    return { on: true, partnerSignals: await partnerSignalsAllowed(viewer) };
+  });
+
   // Ads for a place on a page. While advertising is off, none: the page simply has no ads.
   app.post(
     '/ads/select',
@@ -111,6 +131,7 @@ export function registerAdRoutes(
         browserTopics?: number[];
       };
       let fields = body.field ? [body.field] : [];
+      let title: string | null = null;
       if (body.placement === 'question') {
         if (!body.questionId) return fail(reply, 400, 'invalid_request', 'Say which question the ads are for.');
         // A question the reader may not see, or one moderators hid, has no ads.
@@ -118,14 +139,15 @@ export function registerAdRoutes(
           viewer,
           async q =>
             (
-              await q.query<{ field: string; hidden: boolean }>(
-                'SELECT field, app.is_question_hidden(id) AS hidden FROM app.questions WHERE id = $1',
+              await q.query<{ field: string; title: string; hidden: boolean }>(
+                'SELECT field, title, app.is_question_hidden(id) AS hidden FROM app.questions WHERE id = $1',
                 [body.questionId],
               )
             ).rows[0],
         );
         if (!question || question.hidden) return { ads: [] };
         fields = [question.field];
+        title = question.title;
       }
       const ads = await deps.server.serve({
         placement: body.placement,
@@ -147,7 +169,16 @@ export function registerAdRoutes(
             }
           : {}),
       });
-      return { ads: ads.map(a => ({ ...a, label: 'Sponsored' })) };
+      // Products on this page, for the browser's own interest groups: only with permission, and no GPC.
+      const words = title ?? body.query ?? '';
+      const intent =
+        viewer && words && req.headers['sec-gpc'] !== '1' && (await partnerSignalsAllowed(viewer))
+          ? extractProducts(words).map(p => p.key)
+          : [];
+      return {
+        ads: ads.map(a => ({ ...a, label: 'Sponsored' })),
+        ...(intent.length ? { intentProducts: intent } : {}),
+      };
     },
   );
 

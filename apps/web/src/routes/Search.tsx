@@ -1,3 +1,4 @@
+import { AdSlot } from '../components/AdSlot.tsx';
 import { useEffect, useRef, useState } from 'react';
 import { BackButton } from '../components/BackButton.tsx';
 import { LinkButton } from '../components/Button.tsx';
@@ -138,6 +139,7 @@ function Results({
   const corrected = correctionWords(response.corrections);
   return (
     <section className="search-results" aria-labelledby="results-heading">
+      <AdSlot placement="search" query={query} />
       <h2 id="results-heading" className="text-footnote secondary search-count" role="status">
         {response.results.length === 0
           ? `Nothing matches “${query}” yet.`

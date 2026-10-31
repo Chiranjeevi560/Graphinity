@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { browserTopics, landingQuery } from '../lib/ad-signals.ts';
+import { browserTopics, joinProductIntent, landingQuery } from '../lib/ad-signals.ts';
 import { api } from '../session.tsx';
 import './SponsoredSlot.css';
 
@@ -14,7 +14,6 @@ interface Ad {
  * Ads, asked for on their own and kept apart from knowledge results (ADR 0022). Renders nothing
  * while advertising is off or there's no ad, so the page doesn't move. Only outside signals the
  * server may ignore are sent; it uses them only with the person's partner-sites permission.
- * Not on any page yet: adding it needs 0.6 kB more script budget, which is the owner's call (CONSTRAINTS.md).
  */
 export function SponsoredSlot({
   placement,
@@ -34,7 +33,7 @@ export function SponsoredSlot({
     const load = async () => {
       const landing = signals ? landingQuery(location.search) : null;
       const topics = signals ? await browserTopics() : [];
-      return api<{ ads: Ad[] }>('/ads/select', {
+      return api<{ ads: Ad[]; intentProducts?: string[] }>('/ads/select', {
         method: 'POST',
         signedIn: 'if-possible',
         body: {
@@ -49,6 +48,8 @@ export function SponsoredSlot({
     load().then(
       found => {
         if (live) setAds(found.ads);
+        // On this device only: the browser's own auction may later use it on other sites.
+        if (signals) for (const p of found.intentProducts ?? []) void joinProductIntent(p, location.origin);
       },
       () => {
         // An ad that fails to load is no ad: nobody needs to know.

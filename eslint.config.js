@@ -73,6 +73,7 @@ export default tseslint.config(
   { files: ['scripts/**', '*.config.*', 'apps/*/*.config.*'], languageOptions: { globals: globals.node } },
   // The notification worker runs in the browser as a service worker.
   { files: ['apps/web/public/sw.js'], languageOptions: { globals: globals.serviceworker } },
+  { files: ['apps/web/public/ads/tag.js'], languageOptions: { globals: globals.browser } },
   // The keep-awake Cloudflare Worker (module syntax, Workers runtime).
   { files: ['workers/**/*.js', 'apps/web/functions/**/*.ts'], languageOptions: { globals: globals.serviceworker } },
 
