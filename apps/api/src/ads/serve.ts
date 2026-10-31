@@ -21,6 +21,10 @@ import { loadServing } from '../ml/registry.ts';
 import { paced, runAuction, shrunkCtr, type Candidate, type Win } from './auction.ts';
 import { AD_CTR, ctrFeatures } from './ctr-features.ts';
 import { cooling, RETARGET_PER_DAY, RETARGET_PER_WEEK } from './audiences.ts';
+import { createHmac } from 'node:crypto';
+import type { Exchange, Partner } from './exchange.ts';
+import { buildBidRequest, SENSITIVE_FIELDS } from './openrtb.ts';
+import { eid, floors, merge, type SlotOutcome } from './rtb.ts';
 
 export const REFRESH_MS = 30_000;
 /** A click rate to start from: the prior is worth this many impressions. */
@@ -247,24 +251,45 @@ export interface ServedAd {
   advertiser: string;
 }
 
+export interface ServeInput {
+  placement: Placement;
+  fields: readonly string[];
+  query: string | null;
+  viewer: string | null;
+  now: number;
+  /** What a bidder may know of the page: a path holding no words of it. */
+  path?: string;
+  /** Only used for a reader who allows partner sites, and only cut down (openrtb.ts). */
+  ip?: string | null;
+  userAgent?: string | null;
+  /** The browser sent Sec-GPC: 1. Nothing about this reader is personalized or shared. */
+  gpc?: boolean;
+}
+
+/** Outside bidders (part 9a), absent where they aren't configured. */
+export interface RtbOptions {
+  enabled: () => boolean;
+  exchange: Exchange;
+  /** Keys the rotating extended ids. */
+  secret: Buffer;
+  /** Graphinity's own host name. */
+  site: string;
+  currency: string;
+}
+
 export interface AdServer {
-  serve(input: {
-    placement: Placement;
-    fields: readonly string[];
-    query: string | null;
-    viewer: string | null;
-    now: number;
-  }): Promise<ServedAd[]>;
+  serve(input: ServeInput): Promise<ServedAd[]>;
   /** Re-reads the campaigns now (also every REFRESH_MS). */
   refresh(): Promise<void>;
 }
 
-export function createAdServer(db: Pick<Database, 'asSystem'>): AdServer {
+export function createAdServer(db: Pick<Database, 'asSystem'>, rtb?: RtbOptions): AdServer {
   let index: CampaignIndex = indexCampaigns([]);
   let byId = new Map<string, IndexedCampaign>();
   let size = 0;
   let loadedAt = -Infinity;
   let model: FtrlServing | null = null;
+  let partners: Partner[] = [];
   const refresh = async () => {
     const campaigns = await db.asSystem(loadIndex);
     index = indexCampaigns(campaigns);
@@ -273,19 +298,37 @@ export function createAdServer(db: Pick<Database, 'asSystem'>): AdServer {
     // The promoted click model, checked against its stored hash; none until one earns its place.
     const serving = await loadServing(db, AD_CTR);
     model = serving ? deserializeServing(serving.artifact) : null;
+    partners = rtb?.enabled()
+      ? await db.asSystem(
+          async q =>
+            (await q.query<Partner>('SELECT id::text AS id, endpoint FROM app.ad_partners WHERE enabled ORDER BY id'))
+              .rows,
+        )
+      : [];
     loadedAt = Date.now();
   };
   return {
     refresh,
-    async serve({ placement, fields, query, viewer, now }) {
+    async serve(input) {
+      const { placement, fields, query, viewer, now, gpc = false } = input;
       if (Date.now() - loadedAt > REFRESH_MS) await refresh();
-      if (size === 0) return [];
-      return db.asSystem(async q => {
+      const offering = rtb?.enabled() === true && partners.length > 0 && !fields.some(f => SENSITIVE_FIELDS.has(f));
+      if (size === 0 && !offering) return [];
+      // Read, then ask bidders holding no database connection, then write: a slow partner
+      // must never tie up one of the pool's few connections.
+      const context = await db.asSystem(async q => {
         // Who the reader is to ad systems, only if they allow personalized ads.
         const person = viewer
           ? (
-              await q.query<{ country: string | null; personalized: boolean }>(
-                `SELECT p.country, app.ads_permitted(p.id, 'ads_personalization') AS personalized
+              await q.query<{
+                country: string | null;
+                personalized: boolean;
+                partnerSites: boolean;
+                crossDevice: boolean;
+              }>(
+                `SELECT p.country, app.ads_permitted(p.id, 'ads_personalization') AS personalized,
+                        app.ads_permitted(p.id, 'ads_partner_sites') AS "partnerSites",
+                        app.ads_permitted(p.id, 'ads_cross_device') AS "crossDevice"
                  FROM app.profiles p WHERE p.id = $1`,
                 [viewer],
               )
@@ -296,7 +339,7 @@ export function createAdServer(db: Pick<Database, 'asSystem'>): AdServer {
         let audiences: Map<string, number> | null = null;
         const seenToday = new Map<string, number>();
         const seenThisWeek = new Map<string, number>();
-        if (viewer && person?.personalized) {
+        if (viewer && person?.personalized && !gpc) {
           await q.query('INSERT INTO app.ad_identities (profile_id) VALUES ($1) ON CONFLICT DO NOTHING', [viewer]);
           adId =
             (
@@ -336,35 +379,99 @@ export function createAdServer(db: Pick<Database, 'asSystem'>): AdServer {
             ).rows.map(r => [r.audience, r.at.getTime()]),
           );
         }
-        const { wins, creatives } = choose(
-          index,
-          {
-            placement,
-            fields,
-            words: query ? tokenize(query) : [],
-            country: person?.country ?? null,
-            interests,
-            audiences,
-          },
-          seenToday,
-          now,
-          model
-            ? (campaign, creative, c) =>
-                predictServing(
-                  model as FtrlServing,
-                  ctrFeatures({
-                    campaign,
-                    creative,
-                    placement,
-                    field: c.fields[0] ?? null,
-                    hour: new Date(now).getUTCHours(),
-                  }),
-                )
-            : undefined,
-          seenThisWeek,
-        );
+        return { person, adId, interests, audiences, seenToday, seenThisWeek };
+      });
+      const { person, adId, interests, audiences, seenToday, seenThisWeek } = context;
+      const { wins, creatives } = choose(
+        index,
+        {
+          placement,
+          fields,
+          words: query ? tokenize(query) : [],
+          country: person?.country ?? null,
+          interests,
+          audiences,
+        },
+        seenToday,
+        now,
+        model
+          ? (campaign, creative, c) =>
+              predictServing(
+                model as FtrlServing,
+                ctrFeatures({
+                  campaign,
+                  creative,
+                  placement,
+                  field: c.fields[0] ?? null,
+                  hour: new Date(now).getUTCHours(),
+                }),
+              )
+          : undefined,
+        seenThisWeek,
+      );
+      let outcomes: SlotOutcome[] = wins.map(win => ({ kind: 'own', win }));
+      if (offering) {
+        const slots = SLOTS[placement];
+        const reserveCpm = RESERVE_MICROS / 1000;
+        const slotFloors = floors(wins, slots, reserveCpm);
+        const shares = adId !== null && person?.partnerSites === true;
+        const crossDevice = person?.crossDevice === true;
+        const request = buildBidRequest({
+          placement,
+          slots,
+          floorCpm: Math.min(...slotFloors),
+          currency: rtb.currency,
+          fields,
+          path: input.path ?? '/',
+          country: person?.country ?? null,
+          ip: input.ip ?? null,
+          userAgent: input.userAgent ?? null,
+          partner:
+            shares && adId
+              ? {
+                  eid: eid(
+                    rtb.secret,
+                    adId,
+                    now,
+                    crossDevice
+                      ? null
+                      : createHmac('sha256', rtb.secret)
+                          .update(input.userAgent ?? '')
+                          .digest('base64url'),
+                  ),
+                  crossDevice,
+                  interests: [...(interests ?? [])],
+                }
+              : null,
+          test: false,
+          site: rtb.site,
+        });
+        outcomes = merge(wins, await rtb.exchange.ask(partners, request), slotFloors);
+      }
+      const currency = rtb?.currency ?? 'INR';
+      return db.asSystem(async q => {
         const served: ServedAd[] = [];
-        for (const w of wins) {
+        for (const outcome of outcomes) {
+          if (outcome.kind === 'partner') {
+            const { bid, priceMicros } = outcome;
+            const token = (
+              await q.query<{ token: string }>(
+                `INSERT INTO app.ad_partner_impressions (partner_id, placement, price_micros, currency, destination_url, domain)
+                 VALUES ($1, $2, $3, $4, $5, $6) RETURNING token::text`,
+                [bid.partner, placement, priceMicros, currency, bid.url, bid.domain],
+              )
+            ).rows[0]?.token;
+            if (token)
+              served.push({
+                token,
+                headline: bid.headline,
+                body: bid.body,
+                domain: bid.domain,
+                advertiser: bid.domain,
+              });
+            continue;
+          }
+          const w = outcome.win;
           const cr = creatives.get(w.creativeId);
           if (!cr) continue;
           // For private reports (part 8): the reader's country, and which of the campaign's

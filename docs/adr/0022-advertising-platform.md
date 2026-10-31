@@ -38,7 +38,7 @@ unless a jurisdiction-specific consent and a lawyer's approval allow more.
 | 6 | Measurement and attribution | Click ids only under `ads_measurement`, API keys, conversions reported server to server (6a); multi-touch attribution models, benchmarked, and a report per campaign (6b) | **Built** |
 | 7 | Audiences | Segments from interest rules, ad reminders (retargeting) capped 3 a day and 7 a week and cooling with time, look-alikes (spherical k-means over a seed's interests with a popularity correction, benchmarked), every audience at least 100 people, behind `ads_audiences` | **Built** |
 | 8 | Reporting | Advertiser reports by day, country, placement or audience over complete days: per-person clipping, fixed Laplace noise per cell (HMAC-seeded), cells under 25 people or 50 impressions suppressed, 2.0 ε per business per day; the 30-day report shows nothing under 25 people | **Built** |
-| 9 | Partner interfaces | OpenRTB 2.6 bid request/response adapters (DSPs, SSPs, exchanges), a partner tag (pixel) and SDK, a server-to-server conversion API; all behind their own switches | Planned |
+| 9 | Partner interfaces | OpenRTB 2.6 bid request/response adapters behind `ads_rtb` (9a, built); partner tag, signed conversions, holdout and inbound signals (9b onward) | **9a built** |
 
 Fraud (invalid clicks and impressions) reuses the rate limits, the shared-network marks and
 collusion review (ADR 0017), and adds click-pattern checks with part 6.
@@ -436,6 +436,27 @@ the sum of fixed per-day cells, so their noise grows only as the square root of 
 is shown depends on the true count); deleting an account turns its impressions untracked, which
 can change an already-released cell's clipping; both are small next to the noise and are kept
 for the charter's hard floor.
+
+## Part 9a, as built (migration 0038)
+
+**Off twice over:** nothing leaves unless `ads` and `ads_rtb` are on and the owner has enabled a row in
+`app.ad_partners` (no API can add one). No partner, contract or lawyer's approval exists today.
+
+**What a bidder gets:** see `src/ads/openrtb.ts`. Without the reader's `ads_partner_sites` permission:
+page categories, placement, a coarse device type, the floor. With it: audience segments, a monthly
+rotating EID and an address cut to /24 or /48. Pages about health, immigration or law are never
+offered at all. A page's path carries its id only, never its title or a query. `Sec-GPC: 1` makes
+the reader untracked and unshared for that request, whatever they chose.
+
+**Keeping pages fast:** bidders are asked between two database transactions, holding no connection,
+with a 60 ms timeout, 64 requests in flight at most, and a breaker per partner.
+
+**Who wins:** a partner takes a slot only by paying more than our ad would earn there, at second
+price plus 0.01. Its ad is plain text, validated field by field, labelled Sponsored like ours.
+
+**Known limit:** partner ads aren't reviewed by moderators the way our own are. Before enabling a
+partner, the contract must cover content rules; there's no billing to a partner yet either, since
+none exists: `ad_partner_impressions` holds what billing would need.
 
 ## Scale (100 million people)
 

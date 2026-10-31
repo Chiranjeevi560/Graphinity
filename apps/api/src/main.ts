@@ -7,6 +7,7 @@ import { completePendingDeletions } from './deletions.ts';
 import { AD_CTR, trainAdCtrJob } from './ads/ctr.ts';
 import { buildAudiences } from './ads/audience-build.ts';
 import { createAdServer } from './ads/serve.ts';
+import { createExchange } from './ads/exchange.ts';
 import { createRecorder } from './ops/metrics.ts';
 import { compactMinutes, loadStatus, recordedRun, saveMinute } from './ops/store.ts';
 import { monitorDrift } from './ml/drift-monitor.ts';
@@ -148,7 +149,14 @@ try {
 const authAdmin = createSupabaseAdmin({ supabaseUrl: config.supabaseUrl, secretKey: config.supabaseSecretKey });
 const events = createEvents();
 const metrics = createRecorder();
-const adServer = createAdServer(db);
+// Outside bidders (ADR 0022 part 9a): only while `ads_rtb` is on and the owner has enabled a partner.
+const adServer = createAdServer(db, {
+  enabled: () => flags.enabled('ads') && flags.enabled('ads_rtb'),
+  exchange: createExchange((url, init) => fetch(url, init)),
+  secret: config.ipHashKey,
+  site: new URL(config.webOrigin).hostname,
+  currency: 'INR',
+});
 const app = await buildServer({
   metrics,
   adServer,
@@ -241,6 +249,19 @@ const purgeSignals = () => {
     },
     (err: unknown) => {
       app.log.warn({ kind: errorKind(err) }, 'ad impression expiry failed');
+    },
+  );
+  // Outside bidders' impressions: 13 months at most (migration 0038).
+  recordedRun(db, 'ad-partner-impression-expiry', 3600, () =>
+    db.asSystem(
+      async q => (await q.query<{ n: number }>('SELECT app.expire_ad_partner_impressions() AS n')).rows[0]?.n ?? 0,
+    ),
+  ).then(
+    deleted => {
+      if (deleted) app.log.info({ deleted }, 'expired partner impressions removed');
+    },
+    (err: unknown) => {
+      app.log.warn({ kind: errorKind(err) }, 'partner impression expiry failed');
     },
   );
   // Advertising interests: 13 months at most, sooner once faded (migration 0030).

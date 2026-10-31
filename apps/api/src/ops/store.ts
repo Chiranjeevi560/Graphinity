@@ -33,6 +33,7 @@ export const JOB_LABELS: Readonly<Record<string, string>> = {
   alerts: 'Sending these alerts',
   'ad-interest-expiry': 'Forgetting old advertising interests',
   'ad-impression-expiry': 'Forgetting old ad impressions',
+  'ad-partner-impression-expiry': 'Forgetting old outside-bidder impressions',
   'ad-audiences': 'Building advertising audiences',
 };
 
