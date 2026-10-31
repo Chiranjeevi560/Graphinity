@@ -45,6 +45,8 @@ export function createApi(deps: {
   fetch: typeof fetch;
   /** Whether the device has a network at all (navigator.onLine). */
   online: () => boolean;
+  /** The server wants a recent sign-in before this action (ADR 0026). */
+  onReauth?: () => void;
 }) {
   const noAnswer = () =>
     deps.online() ? new ApiError(0, 'unreachable', UNREACHABLE) : new ApiError(0, 'offline', OFFLINE);
@@ -90,6 +92,7 @@ export function createApi(deps: {
     const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
     if (!res.ok) {
       const { error, message, ...details } = data ?? {};
+      if (error === 'reauth_required') deps.onReauth?.();
       throw new ApiError(
         res.status,
         typeof error === 'string' ? error : 'unknown',

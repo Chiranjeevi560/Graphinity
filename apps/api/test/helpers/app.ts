@@ -33,6 +33,7 @@ export async function startApp(
     metrics?: MetricsRecorder;
     adsEnabled?: () => boolean;
     adServer?: AdServer;
+    stepUpEnabled?: () => boolean;
   } = {},
 ) {
   const t = await createTestDatabase();
@@ -60,6 +61,7 @@ export async function startApp(
     ...(opts.metrics ? { metrics: opts.metrics } : {}),
     ...(opts.adsEnabled ? { adsEnabled: opts.adsEnabled } : {}),
     ...(opts.adServer ? { adServer: opts.adServer } : {}),
+    ...(opts.stepUpEnabled ? { stepUpEnabled: opts.stepUpEnabled } : {}),
     ...(opts.recommendationsEnabled ? { recommendationsEnabled: opts.recommendationsEnabled } : {}),
     ...(opts.searchEnabled ? { searchEnabled: opts.searchEnabled } : {}),
     searchRandom: opts.searchRandom ?? (() => 0.999),

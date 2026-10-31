@@ -299,7 +299,7 @@ export function registerProfileRoutes(app: FastifyInstance, deps: ProfileDeps) {
   app.delete(
     '/me',
     {
-      config: { auth: 'required', write: true, allowRevoked: true },
+      config: { auth: 'required', write: true, allowRevoked: true, freshAuth: true },
       schema: {
         body: {
           type: 'object',

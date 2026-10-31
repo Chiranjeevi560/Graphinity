@@ -84,6 +84,10 @@ Your own current name counts as available.
 Public. `{ "profile": { handle, country, fields, joined } }`: no id, no timestamps beyond the
 month joined. 404 `not_found` with "There’s no one with that name."
 
+**Step-up (ADR 0026):** while `step_up_auth` is on, `DELETE /me`, `GET /me/data-export`, `POST /review/decision`,
+`POST /review/collusion` and `POST /review/block` refuse with 403 `reauth_required` unless the person really signed in
+within the last 5 minutes.
+
 ### `DELETE /me` (signed in, counts as a write)
 Body: `{ "confirm": true }`. Deletes the profile and everything that cascades from it, records the
 sign-in as pending removal, locks the account out (a keyed hash, 2 hours), then asks Supabase to

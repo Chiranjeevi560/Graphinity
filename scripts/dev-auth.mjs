@@ -75,6 +75,7 @@ async function session(sub) {
     aal: 'aal1',
     is_anonymous: false,
     session_id: randomUUID(),
+    amr: [{ method: 'oauth', timestamp: now }],
     // A real Supabase token carries the email. Graphinity must never use it;
     // including it here lets the tests prove that.
     email: `${sub.slice(0, 8)}@example.test`,

@@ -36,6 +36,8 @@ describe('feature flags', () => {
       { name: 'recommendations', enabled: true },
       { name: 'routing_exploration', enabled: false },
       { name: 'search', enabled: true },
+      // Off until the owner has checked real tokens: on wrongly, it would block deleting an account (ADR 0026).
+      { name: 'step_up_auth', enabled: false },
     ]);
     // The database and the code's fallbacks agree, so a failed first read changes nothing.
     expect(Object.fromEntries(rows.map(r => [r.name, r.enabled]))).toEqual({ ...FLAG_DEFAULTS });

@@ -31,6 +31,7 @@ describe('createTokenVerifier', () => {
     expect(await verifier.verify(await issuer.sign({}, { sub, issuedAt, lifetime: 3600 }))).toEqual({
       id: sub,
       expiresAt: issuedAt + 3600,
+      signedInAt: null,
     });
   });
 

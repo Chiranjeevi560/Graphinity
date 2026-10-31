@@ -250,6 +250,18 @@ SELECT status, count(*) FROM app.collusion_groups GROUP BY status;
 
 `node scripts/benchmark-fraud.mjs [accounts]` re-measures the detector on planted rings (no database).
 
+### Turning on step-up sign-in (ADR 0026)
+
+One check first, because a wrong guess would stop people deleting their accounts. Sign in on the real site, then in the
+browser's developer tools copy your access token's `amr` claim (paste the token into a local JWT decoder, never a website).
+It must have an entry whose `method` isn't `token_refresh` and whose `timestamp` is about when you signed in. If so:
+
+```sql
+UPDATE app.feature_flags SET enabled = true WHERE name = 'step_up_auth';
+```
+
+Then try deleting a test account after 6 minutes: the site should send you to sign in first.
+
 ### The learned search ranking
 
 Training runs daily (logged as `model training`, model `search-ranker`). The judge runs hourly while

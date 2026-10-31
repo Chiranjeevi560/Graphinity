@@ -36,13 +36,14 @@ export function contentSecurityPolicy({ connectSrc, localHttp = false }: HeaderO
 export function securityHeaders(options: HeaderOptions): Record<string, string> {
   return {
     'Content-Security-Policy': contentSecurityPolicy(options),
-    'Strict-Transport-Security': 'max-age=63072000; includeSubDomains',
+    'Strict-Transport-Security': 'max-age=63072000; includeSubDomains; preload',
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
     // Links people paste must not tell other sites which question they came from.
     'Referrer-Policy': 'same-origin',
     'Cross-Origin-Opener-Policy': 'same-origin',
-    'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
+    'Cross-Origin-Resource-Policy': 'same-origin',
+    'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), bluetooth=()',
   };
 }
 
@@ -54,6 +55,11 @@ export function pagesHeadersFile(options: HeaderOptions): string {
   return [
     '/*',
     all,
+    '',
+    // Partners' pages load the tag from here; everything else stays ours.
+    '/ads/*',
+    '  ! Cross-Origin-Resource-Policy',
+    '  Cross-Origin-Resource-Policy: cross-origin',
     '',
     // Hashed file names change on every deploy, so they can be cached forever.
     '/assets/*',

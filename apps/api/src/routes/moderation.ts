@@ -196,7 +196,7 @@ export function registerModerationRoutes(app: FastifyInstance, { db }: { db: Dat
   app.post(
     '/review/decision',
     {
-      config: { auth: 'required', write: true },
+      config: { auth: 'required', write: true, freshAuth: true },
       schema: {
         body: {
           type: 'object',
@@ -236,7 +236,7 @@ export function registerModerationRoutes(app: FastifyInstance, { db }: { db: Dat
   app.post(
     '/review/collusion',
     {
-      config: { auth: 'required', write: true },
+      config: { auth: 'required', write: true, freshAuth: true },
       schema: {
         body: {
           type: 'object',
@@ -296,7 +296,7 @@ export function registerModerationRoutes(app: FastifyInstance, { db }: { db: Dat
 
   app.post(
     '/review/block',
-    { config: { auth: 'required', write: true }, schema: { body: blockBody } },
+    { config: { auth: 'required', write: true, freshAuth: true }, schema: { body: blockBody } },
     async (req, reply) => {
       const user = signedIn(req);
       const body = req.body as { handle: string; reason?: string };
