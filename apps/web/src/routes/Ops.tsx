@@ -1,3 +1,4 @@
+import { LegalQueue } from '../components/LegalQueue.tsx';
 import { useState } from 'react';
 import { LoadFailed } from '../components/Message.tsx';
 import { timeAgo } from '../lib/questions.ts';
@@ -65,6 +66,8 @@ export default function OpsPage() {
   return (
     <main className="page review">
       <h1 className="text-title1">Operations</h1>
+
+      <LegalQueue />
 
       <section className="review-section" aria-labelledby="now-heading">
         <h2 id="now-heading" className="text-title3">

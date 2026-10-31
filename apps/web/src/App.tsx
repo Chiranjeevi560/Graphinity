@@ -23,6 +23,7 @@ const ReviewPage = lazy(() => import('./routes/Review.tsx'));
 const OpsPage = lazy(() => import('./routes/Ops.tsx'));
 const Privacy = lazy(() => import('./routes/Privacy.tsx'));
 const Terms = lazy(() => import('./routes/Terms.tsx'));
+const Complaint = lazy(() => import('./routes/Complaint.tsx'));
 const Goodbye = lazy(() => import('./routes/Goodbye.tsx'));
 const NotFound = lazy(() => import('./routes/NotFound.tsx'));
 // Live updates only matter once signed in: loaded then, not by every reader.
@@ -81,6 +82,8 @@ function route(path: string, state: SessionState): ReactNode {
     case '/owner':
       // Whether this person is the owner is the server's to say: the page shows its refusal.
       return state.status === 'ready' ? <OwnerPage /> : <Redirect to="/" />;
+    case '/legal/complaint':
+      return state.status === 'ready' ? <Complaint /> : <Redirect to="/" />;
     case '/ask':
       return state.status === 'ready' ? <Ask profile={state.profile} /> : <Redirect to="/" />;
     case '/me/edit':

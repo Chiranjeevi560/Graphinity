@@ -3,7 +3,7 @@
 // certain unlawful content within 72 hours of a complaint; EU DSA Art. 17: a statement of
 // reasons for every restriction; US DMCA §512: keep what a takedown concerns (legal hold).
 
-export const GRIEVANCE_KINDS = ['general', 'unlawful_content', 'personal_data', 'copyright'] as const;
+export const GRIEVANCE_KINDS = ['general', 'unlawful_content', 'impersonation', 'personal_data', 'copyright'] as const;
 export type GrievanceKind = (typeof GRIEVANCE_KINDS)[number];
 
 const HOUR = 3_600_000;
@@ -14,7 +14,7 @@ export const RESOLVE_MS = 15 * 24 * HOUR;
 export function grievanceDeadlines(kind: GrievanceKind, receivedAt: number) {
   return {
     acknowledgeBy: receivedAt + ACK_MS,
-    resolveBy: receivedAt + (kind === 'unlawful_content' ? URGENT_MS : RESOLVE_MS),
+    resolveBy: receivedAt + (kind === 'unlawful_content' || kind === 'impersonation' ? URGENT_MS : RESOLVE_MS),
   };
 }
 

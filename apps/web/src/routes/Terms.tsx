@@ -9,6 +9,10 @@ export default function Terms() {
       <h1 className="text-title1">Terms</h1>
       <p className="text-body secondary">Last updated 18 October 2026</p>
 
+      <p className="text-body">
+        To complain about a post or how we handled your data, <Link to="/legal/complaint">make a complaint</Link>.
+      </p>
+
       <h2 className="text-title3">Using Graphinity</h2>
       <ul className="text-body">
         <li>You must be 18 or older.</li>

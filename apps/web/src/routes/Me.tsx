@@ -1,3 +1,4 @@
+import { Statements } from '../components/Statements.tsx';
 import { useState } from 'react';
 import { Button, LinkButton } from '../components/Button.tsx';
 import { Dialog } from '../components/Dialog.tsx';
@@ -56,6 +57,8 @@ export default function Me({ profile }: { profile: Profile }) {
       </section>
 
       {standing && <Standing standing={standing} />}
+
+      <Statements />
 
       <Notifications />
 

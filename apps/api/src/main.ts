@@ -37,6 +37,7 @@ import { NO_RANKERS, SEARCH_RANKER, type Rankers } from './search/rankers.ts';
 import { monitorRouting } from './ml/routing-monitor.ts';
 import { deserializeRoutingModel, scoreRouting, scoreRoutingAt, type RoutingModel } from './ml/routing-model.ts';
 import { personalGraphQueueStatus, projectPersonalGraphSignals, purgeExpiredPersonalSignals } from './personal-data.ts';
+import { releaseExpiredHolds } from './governance/holds.ts';
 import { expireNetworkMarks } from './networks.ts';
 import { createAlertSender, createLimiter, createPushSender } from './push-sender.ts';
 import { dueProblems, moderatorIds, problemsOf } from './ops/alerts.ts';
@@ -238,6 +239,15 @@ const purgeSignals = () => {
     },
     (err: unknown) => {
       app.log.warn({ kind: errorKind(err) }, 'personal signal expiry failed');
+    },
+  );
+  // Removed posts' copies go once the appeal window closes, unless an appeal is open.
+  recordedRun(db, 'legal-hold-expiry', 3600, () => releaseExpiredHolds(db)).then(
+    released => {
+      if (released) app.log.info({ released }, 'legal holds released');
+    },
+    (err: unknown) => {
+      app.log.warn({ kind: errorKind(err) }, 'legal hold expiry failed');
     },
   );
   // Routing factors are kept 180 days (migration 0016), then deleted.
