@@ -21,8 +21,8 @@ export async function startAdWorld(prefix: string, flags: readonly string[] = ['
     adServer: {
       serve: (input: Parameters<ReturnType<typeof createAdServer>['serve']>[0]) => must(holder.server).serve(input),
       refresh: () => must(holder.server).refresh(),
-      tapEid: (viewer: string, now: number, ua: string | null) =>
-        must(holder.server).tapEid?.(viewer, now, ua) ?? Promise.resolve(null),
+      tapEid: (viewer: string, now: number, ua: string | null, token: string) =>
+        must(holder.server).tapEid?.(viewer, now, ua, token) ?? Promise.resolve(null),
     },
   });
   // Bidders never asked in these worlds; the secret is for rotating ids on taps.

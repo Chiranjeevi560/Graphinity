@@ -133,8 +133,8 @@ export function registerAdRoutes(
         query: body.query ? cleanLine(body.query) : null,
         viewer,
         now: deps.clock.now(),
-        // What a bidder may know of the page: never a title in a path, or a query.
-        path: body.placement === 'question' ? `/q/${body.questionId ?? ''}` : '/search',
+        // What a bidder may know of the page: its categories, never which page (an id leads to its words).
+        path: '/',
         ip: req.ip,
         userAgent: req.headers['user-agent'] ?? null,
         gpc: req.headers['sec-gpc'] === '1',
@@ -188,13 +188,15 @@ export function registerAdRoutes(
         return fail(reply, 404, 'not_found', 'This ad isn’t available any more.');
       }
       // A click id the advertiser can report a sale back with, only for people who allow measurement.
+      const gpc = req.headers['sec-gpc'] === '1';
       const eid =
-        viewer && req.headers['sec-gpc'] !== '1'
-          ? await deps.server.tapEid?.(viewer, deps.clock.now(), req.headers['user-agent'] ?? null)
+        viewer && !gpc
+          ? await deps.server.tapEid?.(viewer, deps.clock.now(), req.headers['user-agent'] ?? null, token)
           : null;
-      if (!row.click_id && !eid) return { destination: row.destination };
+      const clickId = gpc ? null : row.click_id;
+      if (!clickId && !eid) return { destination: row.destination };
       const url = new URL(row.destination);
-      if (row.click_id) url.searchParams.set('gr_click', row.click_id);
+      if (clickId) url.searchParams.set('gr_click', clickId);
       if (eid) url.searchParams.set('gr_eid', eid);
       return { destination: url.toString() };
     },

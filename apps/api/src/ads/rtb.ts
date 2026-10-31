@@ -64,13 +64,13 @@ export function merge(
 
 /**
  * A reader's extended id for partners: rotates every UTC month and whenever their ad identity
- * does (turning personalized ads off), and differs per device unless they allow one profile
- * across devices. Says nothing about them by itself; HMAC-SHA256, 128 bits, base64url.
+ * does (turning personalized ads off), differs per device unless they allow one profile across
+ * devices, and differs per business or bidder (`scope`), so no two of them can join their lists. Says nothing about them by itself; HMAC-SHA256, 128 bits, base64url.
  */
-export function eid(secret: Buffer, adId: string, at: number, deviceKey: string | null): string {
+export function eid(secret: Buffer, adId: string, at: number, deviceKey: string | null, scope = ''): string {
   const month = new Date(at).toISOString().slice(0, 7);
   return createHmac('sha256', secret)
-    .update(['eid', adId, month, deviceKey ?? '*'].join('\u0000'))
+    .update(['eid', adId, month, deviceKey ?? '*', scope].join('\u0000'))
     .digest()
     .subarray(0, 16)
     .toString('base64url');

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import fc from 'fast-check';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { fieldsOfTopics } from '../src/ads/inbound.ts';
+import { hashKey } from '../src/routes/ad-measurement.ts';
 import { choose, indexCampaigns, INBOUND_BOOST, type IndexedCampaign } from '../src/ads/serve.ts';
 import { advanceStage, recordPromoted } from '../src/ml/registry.ts';
 import { commerceRollup, drainJournal, stepPacers } from '../src/platform/jobs.ts';
@@ -66,11 +67,17 @@ describe('holdouts', () => {
         )
       ).rows[0],
     );
-    const { adIds } = await crowd(w, 400, { travel: 3 });
+    const { ids, adIds } = await crowd(w, 400, { travel: 3 });
+    await o.query(
+      `INSERT INTO app.user_consent_settings (user_id, category, enabled, policy_version)
+       SELECT id, 'ads_measurement', true, c.policy_version FROM unnest($1::uuid[]) AS t(id)
+       JOIN app.consent_categories c ON c.name = 'ads_measurement'`,
+      [ids],
+    );
     for (const [i, adId] of adIds.entries()) {
       if (i % 2)
         await o.query(
-          'INSERT INTO app.ad_ghost_impressions (campaign_id, ad_id, counterfactual_micros) VALUES ($1, $2, 1000)',
+          "INSERT INTO app.ad_ghost_impressions (campaign_id, ad_id, counterfactual_micros, shown_at) VALUES ($1, $2, 1000, now() - interval '2 days')",
           [campaign.id, adId],
         );
       else {
@@ -82,13 +89,13 @@ describe('holdouts', () => {
           ).rows[0],
         ).id;
         await o.query(
-          "INSERT INTO app.ad_impressions (campaign_id, creative_id, ad_id, placement, price_micros) VALUES ($1, $2, $3, 'search', 1000)",
+          "INSERT INTO app.ad_impressions (campaign_id, creative_id, ad_id, placement, price_micros, shown_at) VALUES ($1, $2, $3, 'search', 1000, now() - interval '2 days')",
           [campaign.id, creative, adId],
         );
       }
       if (i % 2 === 0 ? i % 4 === 0 : i % 20 === 1)
         await o.query(
-          "INSERT INTO app.ad_partner_events (advertiser_id, ad_id, kind, external_id, value_micros) VALUES ($1, $2, 'PURCHASE', $3, 1000000)",
+          "INSERT INTO app.ad_partner_events (advertiser_id, ad_id, kind, external_id, value_micros, occurred_at) VALUES ($1, $2, 'PURCHASE', $3, 1000000, now() - interval '2 days')",
           [campaign.adv, adId, `sale-${String(i)}`],
         );
     }
@@ -199,6 +206,21 @@ describe('inbound signals', () => {
     const eid = new URL(tap.json<{ destination: string }>().destination).searchParams.get('gr_eid');
     expect(eid).toMatch(/^[A-Za-z0-9_-]{22}$/);
     expect(eid).not.toContain(p.id);
+    // That business can report a sale with it, end to end.
+    const key = `grk_${'t'.repeat(43)}`;
+    await h.t.owner.query(
+      "INSERT INTO app.ad_api_keys (advertiser_id, key_hash, prefix) SELECT id, $2, 'grk_tttttt' FROM app.ad_advertisers WHERE public_id = $1",
+      [live.advertiser, hashKey(key)],
+    );
+    await h.app.inject({
+      method: 'POST',
+      url: '/ads/partner-events',
+      headers: { authorization: `Bearer ${key}` },
+      payload: { eidToken: eid, event: 'PURCHASE', eventId: 'tap-sale' },
+    });
+    expect(
+      (await h.t.owner.query("SELECT 1 FROM app.ad_partner_events WHERE external_id = 'tap-sale'")).rows,
+    ).toHaveLength(1);
     const q = await w.member();
     const other = (await w.select(q.token, { placement: 'search', field: 'fitness' })).find(
       a => a.headline === live.headline,

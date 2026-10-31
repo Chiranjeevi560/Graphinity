@@ -195,8 +195,10 @@ export function registerPlatformRoutes(
       if (b.from === b.to) return reply.code(204).send();
       await db.asSystem(async q => {
         // Only topics we know: an open address must not fill the table with made-up keys.
-        const known = await q.query('SELECT 1 FROM app.fields WHERE slug = ANY($1)', [[b.from, b.to]]);
-        if (known.rowCount !== 2) return;
+        const known = await q.query('SELECT 1 FROM app.fields WHERE slug = ANY($1)', [
+          [b.from, b.to, ...(b.previous ? [b.previous] : [])],
+        ]);
+        if (known.rowCount !== (b.previous && b.previous !== b.from && b.previous !== b.to ? 3 : 2)) return;
         for (const prior of b.previous ? ['', b.previous] : [''])
           await q.query(
             `INSERT INTO app.kg_session_transitions (from_key, to_key, prior_key) VALUES ($1, $2, $3)
@@ -236,7 +238,8 @@ export function registerPlatformRoutes(
           ).rows,
       );
       const second = rows.filter(r => r.prior_key !== '');
-      // Pooled counts, shown only once several people have made the step, so one step isn't visible.
+      // Pooled counts, shown from five steps up. Steps aren't per person: someone repeating one can reach
+      // five; nothing depends on this for ranking yet.
       const base = second.reduce((a, r) => a + r.c, 0) >= 5 ? second : rows.filter(r => r.prior_key === '');
       const total = base.reduce((a, r) => a + r.c, 0);
       return {
@@ -373,8 +376,8 @@ export function registerPlatformRoutes(
         const entered = running.find(e => e.id === a.experiment);
         // The metric: answers given since entering, and in the 14 days before (CUPED's covariate).
         await q.query(
-          `INSERT INTO app.exp_unit_metrics (exp_id, unit_id, arm, pre_experiment_covariate_x)
-           VALUES ($1, $2, $3, (SELECT count(*) FROM app.answers WHERE answerer_id = $4 AND created_at > now() - interval '14 days' AND created_at <= now()))
+          `INSERT INTO app.exp_unit_metrics (exp_id, unit_id, arm, subject, pre_experiment_covariate_x)
+           VALUES ($1, $2, $3, $4, (SELECT count(*) FROM app.answers WHERE answerer_id = $4 AND created_at > now() - interval '14 days' AND created_at <= now()))
            ON CONFLICT (exp_id, unit_id) DO NOTHING`,
           [a.experiment, unit, a.arm, user.id],
         );
@@ -430,6 +433,11 @@ export function registerPlatformRoutes(
     async (req, reply) => {
       const { id } = req.params as { id: string };
       const viewer = req.user?.id ?? null;
+      const allowed = buckets.take(viewer ? `u:${viewer}` : visitorKey(visitorAddress(req.ip), deps.keySecret));
+      if (!allowed.ok) {
+        reply.header('retry-after', String(allowed.retryAfterSeconds));
+        return fail(reply, 429, 'rate_limited', 'Too many requests. Wait a minute, then try again.');
+      }
       type Answers = Array<{ id: string; body: string }>;
       const tools = new Map<string, Tool<null>>([
         [
@@ -445,7 +453,7 @@ export function registerPlatformRoutes(
                   (
                     await q.query<{ id: string; body: string }>(
                       `SELECT a.id::text, a.body FROM app.answers a
-                       WHERE a.question_id = $1 AND NOT app.is_answer_hidden(a.id) ORDER BY a.id LIMIT 200`,
+                       WHERE a.question_id = $1 AND NOT app.is_answer_hidden(a.id) AND NOT app.is_question_hidden(a.question_id) ORDER BY a.id LIMIT 200`,
                       [id],
                     )
                   ).rows,
@@ -479,13 +487,15 @@ export function registerPlatformRoutes(
         return fail(reply, 503, 'unavailable', 'This can’t be worked out right now. Try again in a minute.');
       const answers = a.value as Answers;
       const claims = c.value as Array<ReturnType<typeof extractClaims>[number] & { answer: string }>;
-      const sources = answers.map(x => ({ id: x.id, text: x.body }));
-      const verified = verifyFaithfulness(claims.map(x => x.sentence).join('\n'), sources);
-      const faithful = new Set(verified.kept.map(k => k.sentence));
+      const bodies = new Map(answers.map(x => [x.id, x.body]));
       return {
         claims: claims
-          .filter(x => faithful.has(x.sentence))
           .slice(0, 100)
+          // Each quote checked against its own answer only: one comparison, not every answer's.
+          .filter(
+            x =>
+              verifyFaithfulness(x.sentence, [{ id: x.answer, text: bodies.get(x.answer) ?? '' }]).dropped.length === 0,
+          )
           .map(x => ({
             metric: x.metric,
             value: x.value,
@@ -584,7 +594,7 @@ export function registerPlatformRoutes(
         const r = (
           await q.query<{ public_id: string; acknowledge_by: Date; resolve_by: Date }>(
             `INSERT INTO app.grievances (user_id, kind, body, question_id, acknowledge_by, resolve_by)
-             VALUES ($1, $2, $3, $4, now(), now()) RETURNING public_id::text, acknowledge_by, resolve_by`,
+             VALUES ($1, $2, $3, (SELECT id FROM app.questions WHERE id = $4), now(), now()) RETURNING public_id::text, acknowledge_by, resolve_by`,
             [user.id, b.kind, b.body.trim(), b.questionId ?? null],
           )
         ).rows[0];
