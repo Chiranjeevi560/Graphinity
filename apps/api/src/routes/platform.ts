@@ -7,6 +7,7 @@ import type { Database, Queryable } from '../db.ts';
 import { assign } from '../experiments/assign.ts';
 import { evaluate } from '../experiments/stats.ts';
 import { GRIEVANCE_KINDS } from '../governance/legal.ts';
+import { PROCESSING } from '../governance/ropa.ts';
 import { extractClaims } from '../intelligence/claims.ts';
 import { verifyFaithfulness } from '../intelligence/faithfulness.ts';
 import { runPlan, type Tool } from '../intelligence/orchestrator.ts';
@@ -583,19 +584,23 @@ export function registerPlatformRoutes(
             kind: { enum: [...GRIEVANCE_KINDS] },
             body: { type: 'string', minLength: 10, maxLength: 4000 },
             questionId: digits,
+            sworn: { type: 'boolean' },
           },
         },
       },
     },
     async (req, reply) => {
       const user = signedIn(req);
-      const b = req.body as { kind: string; body: string; questionId?: string };
+      const b = req.body as { kind: string; body: string; questionId?: string; sworn?: boolean };
+      if (b.kind === 'copyright' && !b.sworn)
+        return fail(reply, 400, 'sworn_required', 'A copyright notice needs your sworn statement that it is accurate.');
       const row = await db.withUser(user.id, async q => {
         const r = (
-          await q.query<{ public_id: string; acknowledge_by: Date; resolve_by: Date }>(
-            `INSERT INTO app.grievances (user_id, kind, body, question_id, acknowledge_by, resolve_by)
-             VALUES ($1, $2, $3, (SELECT id FROM app.questions WHERE id = $4), now(), now()) RETURNING public_id::text, acknowledge_by, resolve_by`,
-            [user.id, b.kind, b.body.trim(), b.questionId ?? null],
+          await q.query<{ public_id: string; reference: string; acknowledge_by: Date; resolve_by: Date }>(
+            `INSERT INTO app.grievances (user_id, kind, body, question_id, sworn, acknowledge_by, resolve_by)
+             VALUES ($1, $2, $3, (SELECT id FROM app.questions WHERE id = $4), $5, now(), now())
+             RETURNING public_id::text, reference, acknowledge_by, resolve_by`,
+            [user.id, b.kind, b.body.trim(), b.questionId ?? null, b.sworn === true],
           )
         ).rows[0];
         return r;
@@ -611,10 +616,113 @@ export function registerPlatformRoutes(
       return reply.code(201).send({
         grievance: {
           id: row?.public_id,
+          reference: row?.reference,
           acknowledgeBy: row?.acknowledge_by.toISOString(),
           resolveBy: row?.resolve_by.toISOString(),
         },
       });
+    },
+  );
+  // The record of processing (GDPR Art. 30): public, as a privacy notice is.
+  app.get('/privacy/ropa', () => Promise.resolve({ draft: true, processing: PROCESSING }));
+
+  // Decisions about a person's own posts, with reasons, and the appeal (DSA Art. 17, 20).
+  app.get('/me/statements', { config: { auth: 'required' } }, async req => {
+    const user = signedIn(req);
+    const { rows } = await db.withUser(user.id, q =>
+      q.query(
+        `SELECT public_id AS id, question_id::text AS "questionId", restriction, facts, legal_ground AS "legalGround",
+                terms_ground AS "termsGround", automated, redress, issued_at AS "issuedAt", appeal_by AS "appealBy",
+                appeal_status AS "appealStatus"
+         FROM app.statements_of_reasons WHERE affected_id = $1 ORDER BY issued_at DESC LIMIT 50`,
+        [user.id],
+      ),
+    );
+    return { statements: rows };
+  });
+  app.post(
+    '/me/statements/:id/appeal',
+    {
+      config: { auth: 'required', write: true },
+      schema: {
+        params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } }, required: ['id'] },
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['why'],
+          properties: { why: { type: 'string', minLength: 10, maxLength: 2000 } },
+        },
+      },
+    },
+    async (req, reply) => {
+      const user = signedIn(req);
+      const { id } = req.params as { id: string };
+      const { why } = req.body as { why: string };
+      const done = await db.withUser(user.id, async q => {
+        const { rows } = await q.query<{ ok: boolean }>('SELECT app.appeal_statement($1, $2) AS ok', [id, why.trim()]);
+        return rows[0]?.ok === true;
+      });
+      if (!done)
+        return fail(
+          reply,
+          409,
+          'cannot_appeal',
+          'This can’t be appealed: it was already appealed, or the 14 days have passed.',
+        );
+      await db.asSystem(q => audit(q, { action: 'statement.appealed', actor: 'person', subject: id, detail: {} }));
+      return reply.code(201).send({ appeal: { received: true } });
+    },
+  );
+  app.get('/ops/appeals', { config: { auth: 'required' } }, async (req, reply) => {
+    const user = signedIn(req);
+    const result = await db.withUser(user.id, async q =>
+      (await isModerator(q))
+        ? {
+            appeals: (
+              await q.query(
+                `SELECT public_id AS id, restriction, facts, appeal_text AS why, appealed_at AS "appealedAt"
+                 FROM app.statements_of_reasons WHERE appeal_status = 'appealed' ORDER BY appealed_at LIMIT 100`,
+              )
+            ).rows,
+          }
+        : null,
+    );
+    return result ?? fail(reply, 403, 'not_a_moderator', 'This page is for moderators.');
+  });
+  app.post(
+    '/ops/appeals/:id',
+    {
+      config: { auth: 'required', write: true, freshAuth: true },
+      schema: {
+        params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } }, required: ['id'] },
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['decision'],
+          properties: { decision: { enum: ['uphold', 'overturn'] } },
+        },
+      },
+    },
+    async (req, reply) => {
+      const user = signedIn(req);
+      const { id } = req.params as { id: string };
+      const { decision } = req.body as { decision: 'uphold' | 'overturn' };
+      const outcome = await db.withUser(user.id, async q => {
+        if (!(await isModerator(q))) return 'forbidden';
+        const { rows } = await q.query<{ r: string }>('SELECT app.decide_appeal($1, $2) AS r', [
+          id,
+          decision === 'uphold',
+        ]);
+        return rows[0]?.r ?? 'not_open';
+      });
+      if (outcome === 'forbidden') return fail(reply, 403, 'not_a_moderator', 'This page is for moderators.');
+      if (outcome === 'same_person')
+        return fail(reply, 403, 'same_person', 'Another moderator has to decide this appeal.');
+      if (outcome !== 'decided') return fail(reply, 404, 'not_found', 'There’s no open appeal with that id.');
+      await db.asSystem(q =>
+        audit(q, { action: `statement.${decision}`, actor: 'moderator', subject: id, detail: {} }),
+      );
+      return { appeal: { id, decision } };
     },
   );
   app.get('/ops/grievances', { config: { auth: 'required' } }, async (req, reply) => {
@@ -624,7 +732,7 @@ export function registerPlatformRoutes(
         ? {
             rows: (
               await q.query(
-                `SELECT public_id AS id, kind, body, received_at AS "receivedAt", acknowledge_by AS "acknowledgeBy",
+                `SELECT public_id AS id, reference, kind, body, received_at AS "receivedAt", acknowledge_by AS "acknowledgeBy",
                         resolve_by AS "resolveBy", acknowledged_at AS "acknowledgedAt"
                  FROM app.grievances WHERE resolved_at IS NULL ORDER BY resolve_by LIMIT 100`,
               )

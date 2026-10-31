@@ -379,6 +379,8 @@ now on: maintenance scripts name the local socket explicitly and never read `mig
   that instant; nothing changes and the moderator is told to try again.
 - Membership in a collusion group is not in a person's data export, like block reasons: telling a
   ring it is under review would tell it to change. It is deleted with the account.
+- A legal hold keeps the words of a removed post with no author until the appeal closes; deleting an account still
+  works (ADR 0027). Whether that meets a real legal demand is for a lawyer.
 - Awards whose question was deleted can't be named by a guarded take-back row, so they stay.
 - Advertising (ADR 0022) uses a person's data only when `app.ads_permitted()` says so: switches on,
   the country's rule approved by a lawyer (only the owner can change rules) and the person's own

@@ -88,6 +88,16 @@ month joined. 404 `not_found` with "There’s no one with that name."
 `POST /review/collusion` and `POST /review/block` refuse with 403 `reauth_required` unless the person really signed in
 within the last 5 minutes.
 
+**Legal (ADR 0027):**
+
+- `POST /grievances` `{ kind, body, questionId?, sworn? }` → 201 `{ grievance: { id, reference, acknowledgeBy, resolveBy } }`.
+  Kinds: `general`, `unlawful_content`, `impersonation`, `personal_data`, `copyright` (400 `sworn_required` without `sworn`).
+- `GET /me/statements` → the reasons for moderators' removals of your posts. `POST /me/statements/:id/appeal` `{ why }` →
+  201, or 409 `cannot_appeal` (already appealed, or after 14 days).
+- `GET /ops/grievances`, `GET /ops/appeals` (moderators). `POST /ops/appeals/:id` `{ decision: 'uphold' | 'overturn' }`:
+  403 `same_person` for whoever made the decision or is affected; 404 when no appeal is open.
+- `GET /privacy/ropa` (public): purpose, lawful basis and retention for every table.
+
 ### `DELETE /me` (signed in, counts as a write)
 Body: `{ "confirm": true }`. Deletes the profile and everything that cascades from it, records the
 sign-in as pending removal, locks the account out (a keyed hash, 2 hours), then asks Supabase to

@@ -28,6 +28,49 @@ export async function isBlocked(q: Queryable): Promise<boolean> {
 
 export const blockedMessage = 'Your account can’t post right now. If you think this is a mistake, contact us.';
 
+/**
+ * Removing a post tells its author why and how to appeal (DSA Art. 17, ADR 0027),
+ * and keeps a copy of the words, with no author, until the appeal window closes.
+ */
+async function recordRemoval(q: Queryable, kind: 'question' | 'answer', id: string, moderator: string) {
+  const post = (
+    await q.query<{ author: string; text: string; reasons: string[] | null }>(
+      kind === 'question'
+        ? `SELECT p.asker_id AS author, p.title || E'\n' || p.body AS text,
+             (SELECT array_agg(DISTINCT r.reason) FROM app.reports r WHERE r.question_id = p.id) AS reasons
+           FROM app.questions p WHERE p.id = $1`
+        : `SELECT p.answerer_id AS author, p.body AS text,
+             (SELECT array_agg(DISTINCT r.reason) FROM app.reports r WHERE r.answer_id = p.id) AS reasons
+           FROM app.answers p WHERE p.id = $1`,
+      [id],
+    )
+  ).rows[0];
+  if (!post) return;
+  const because = post.reasons?.length ? ` after reports of: ${post.reasons.join(', ').replaceAll('_', ' ')}` : '';
+  const statement = (
+    await q.query<{ id: string; appeal_by: Date }>(
+      `INSERT INTO app.statements_of_reasons
+         (${kind}_id, affected_id, decided_by, restriction, facts, terms_ground, automated, redress)
+       VALUES ($1, $2, $3, 'removal', $4, $5, false, $6) RETURNING id::text, appeal_by`,
+      [
+        id,
+        post.author,
+        moderator,
+        `A moderator removed this ${kind}${because}.`,
+        'Graphinity terms: using Graphinity',
+        'You can appeal within 14 days from your account page. Another moderator will decide.',
+      ],
+    )
+  ).rows[0];
+  await q.query(
+    `INSERT INTO app.legal_holds (${kind === 'question' ? 'question_id, ' : ''}reason, statement_id, content, release_after)
+     VALUES (${kind === 'question' ? '$1, ' : ''}'Appeal window for a removal', $${kind === 'question' ? '2' : '1'}, $${kind === 'question' ? '3' : '2'}, $${kind === 'question' ? '4' : '3'})`,
+    kind === 'question'
+      ? [id, statement?.id, post.text, statement?.appeal_by]
+      : [statement?.id, post.text, statement?.appeal_by],
+  );
+}
+
 export function registerModerationRoutes(app: FastifyInstance, { db }: { db: Database }) {
   for (const kind of ['question', 'answer'] as const) {
     app.post(
@@ -220,6 +263,7 @@ export function registerModerationRoutes(app: FastifyInstance, { db }: { db: Dat
             decision,
             user.id,
           ]);
+          if (decision === 'remove') await recordRemoval(q, kind, id, user.id);
           return { decision: { kind, id, decision } };
         });
       } catch (err) {

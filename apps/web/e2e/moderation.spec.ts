@@ -168,3 +168,26 @@ test('the owner sees totals, and nobody else does', async ({ page, browserName }
   await audit(page, 'owner');
   await asOwner('DELETE FROM app.platform_owners WHERE profile_id = $1', [TEST_PERSON_A]);
 });
+
+test('a person makes a complaint and gets a reference, and a moderator sees it', async ({ page, browserName }) => {
+  const run = `${browserName}${String(Date.now() % 1_000_000)}`;
+  await signIn(page, 'Test person A');
+  await setUpIfNeeded(page, `moderator.${run}`);
+  await establishTestPersonA();
+  await asOwner('INSERT INTO app.moderators (profile_id) VALUES ($1) ON CONFLICT DO NOTHING', [TEST_PERSON_A]);
+  await page.goto('/terms');
+  await page.getByRole('link', { name: 'make a complaint' }).click();
+  await expect(page.getByRole('heading', { name: 'Make a complaint', level: 1 })).toBeVisible();
+  await audit(page, 'complaint');
+  await page.getByLabel('What is it about?').selectOption('impersonation');
+  await page.getByLabel(/What happened/).fill(`Someone is pretending to be me, case ${run}.`);
+  await page.getByRole('button', { name: 'Send complaint' }).click();
+  await expect(page.getByRole('heading', { name: 'We have your complaint' })).toBeVisible();
+  await expect(page.getByText(/GRV-\d{8}-[0-9A-F]{8}/)).toBeVisible();
+  await page.goto('/ops');
+  const item = page.getByRole('listitem').filter({ hasText: `case ${run}` });
+  await expect(item).toBeVisible();
+  await audit(page, 'ops with a complaint');
+  await item.getByRole('button', { name: 'Acknowledge' }).click();
+  await expect(item.getByText('Acknowledged.')).toBeVisible();
+});
