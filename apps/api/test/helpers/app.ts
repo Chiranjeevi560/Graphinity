@@ -69,6 +69,7 @@ export async function startApp(
     // Generous limits: these tests are about behaviour, not rate limiting.
     limits: {
       ...defaultLimits,
+      global: { capacity: 100_000, refillPerSecond: 10_000, maxKeys: 1 },
       visitor: { capacity: 10_000, refillPerSecond: 1000, maxKeys: 10 },
       userWrites: { capacity: 1000, refillPerSecond: 100, maxKeys: 100 },
       search: { capacity: 10_000, refillPerSecond: 1000, maxKeys: 100 },
