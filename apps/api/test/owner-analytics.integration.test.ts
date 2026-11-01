@@ -187,11 +187,15 @@ describe('who can read', () => {
       (await h.call('PUT', '/owner/acquisition-spend', owner.token, { ...spend, month, amountMicros: 1_000_000_000 }))
         .statusCode,
     ).toBe(200);
-    const week = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
+    const week = `${month}-01`;
     await h.t.owner.query(
       `INSERT INTO app.olap_cohort_retention (cohort_week, week_offset, cohort_size, active) VALUES ($1, 0, 100, 100)
        ON CONFLICT (cohort_week, week_offset) DO UPDATE SET cohort_size = 100, active = 100`,
       [week],
+    );
+    // Other months, earlier and ahead, don't add to this one.
+    await h.t.owner.query(
+      `INSERT INTO app.acquisition_spend (month, currency, amount_micros) VALUES ('2020-01-01', 'INR', 999000000000), ('2099-01-01', 'INR', 999000000000)`,
     );
     const res = await h.call('GET', '/owner/dashboard/summary', owner.token);
     const row = res
@@ -199,7 +203,8 @@ describe('who can read', () => {
         economics: Array<{ currency: string; costPerJoinMicros: number | null; lifetimeValueMicros: number | null }>;
       }>()
       .economics.find(e => e.currency === 'INR');
-    expect(row?.costPerJoinMicros).toBeGreaterThan(0);
+    // The month's spend over that month's joiners, and not the month before's too.
+    expect(row?.costPerJoinMicros).toBe(10_000_000);
     // No ad income in this world: value is zero income over real weeks, not a guess.
     expect(row?.lifetimeValueMicros).toBe(0);
     await h.t.owner.query('DELETE FROM app.platform_owners WHERE profile_id = $1', [owner.id]);
@@ -209,12 +214,26 @@ describe('who can read', () => {
 describe('unit economics', () => {
   it('weights retention by people and stays silent where a part is missing', () => {
     expect(
-      expectedWeeks([
-        { week_offset: 0, cohort_size: 100, active: 100 },
-        { week_offset: 1, cohort_size: 100, active: 50 },
-        { week_offset: 1, cohort_size: 300, active: 50 },
-      ]),
-    ).toBeCloseTo(1.25);
+      expectedWeeks(
+        [
+          { cohort_week: '2026-01-05', week_offset: 0, cohort_size: 100, active: 100 },
+          { cohort_week: '2026-01-05', week_offset: 1, cohort_size: 100, active: 50 },
+          // Nobody from this cohort came back in week 1, so it has no row there. It still counts as gone.
+          { cohort_week: '2026-01-12', week_offset: 0, cohort_size: 300, active: 300 },
+        ],
+        Date.parse('2026-03-01'),
+      ),
+    ).toBeCloseTo(1 + 50 / 400);
+    // A cohort too young to have reached a week isn't counted against it.
+    expect(
+      expectedWeeks(
+        [
+          { cohort_week: '2026-01-05', week_offset: 1, cohort_size: 100, active: 50 },
+          { cohort_week: '2026-01-19', week_offset: 0, cohort_size: 100, active: 100 },
+        ],
+        Date.parse('2026-01-20'),
+      ),
+    ).toBeCloseTo(0.5 + 0.5);
     expect(
       unitEconomics({ revenueMicros: 100, personWeeks: 10, lifetimeWeeks: 2, spendMicros: 40, joined: 4 }),
     ).toEqual({

@@ -27,6 +27,8 @@ export function LegalQueue() {
   const [page, setPage] = useState(0);
   const complaints = useLoad<{ rows: Grievance[]; open: number }>(`/ops/grievances?page=${String(page)}`, true);
   const pages = Math.ceil((complaints.data?.open ?? 0) / PAGE_SIZE);
+  // Resolving can empty the last page: step back, or it would read as if nothing were waiting.
+  if (complaints.data && pages > 0 && page >= pages) setPage(pages - 1);
   const appeals = useLoad<{ appeals: Appeal[] }>('/ops/appeals', true);
   const [done, setDone] = useState<Record<string, string>>({});
   const [outcome, setOutcome] = useState<Record<string, string>>({});
@@ -48,7 +50,7 @@ export function LegalQueue() {
       <h2 id="legal-heading" className="text-title3">
         Complaints and appeals
       </h2>
-      {complaints.data?.rows.length === 0 && appeals.data?.appeals.length === 0 && (
+      {complaints.data?.open === 0 && appeals.data?.appeals.length === 0 && (
         <p className="text-body secondary">None waiting.</p>
       )}
       {error && (
