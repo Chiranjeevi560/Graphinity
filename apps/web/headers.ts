@@ -84,7 +84,7 @@ export function pagesHeadersFile(options: HeaderOptions): string {
 
 /** Throws if the built HTML contains a script without a src. */
 export function assertNoInlineScripts(html: string): void {
-  const inline = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)].filter(
+  const inline = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\b[^>]*>/gi)].filter(
     ([, attrs, body]) =>
       !/\bsrc\s*=/.test(attrs ?? '') &&
       (body ?? '').trim() !== '' &&
