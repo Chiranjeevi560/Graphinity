@@ -42,8 +42,8 @@ type Report = {
 describe('private reports', () => {
   it('show a campaign’s complete days with noise, and asking again costs again with fresh noise', async () => {
     const live = await w.liveCampaign([{ kind: 'keyword', value: 'reportone' }]);
-    const { adIds } = await crowd(w, 60, {});
-    // Each shown it 20 times (the most one person counts for): 1,200, far above the floor.
+    const { adIds } = await crowd(w, 120, {});
+    // Each shown it 20 times (the most one person counts for): 2,400, far above the floor.
     await shown(live.campaign, adIds, 20, 20);
     const body = { campaignId: live.campaign, startDate: yesterday(), endDate: yesterday(), breakdown: 'day' };
     const first = await ask(live.owner.token, body);
@@ -52,8 +52,8 @@ describe('private reports', () => {
     expect(r.cells).toHaveLength(1);
     const [cell] = r.cells;
     expect(cell?.day).toBe(yesterday());
-    // 1,200 impressions with Laplace noise of scale 100: off by more than 1,500 once in 3 million.
-    expect(Math.abs((cell?.impressions ?? 0) - 1200)).toBeLessThan(1500);
+    // 2,400 impressions with Laplace noise of scale 100: off by more than 1,500 once in 3 million.
+    expect(Math.abs((cell?.impressions ?? 0) - 2400)).toBeLessThan(1500);
     expect(r.privacy).toMatchObject({ epsilonCharged: 1, epsilonRemaining: 1 });
     const again = (await ask(live.owner.token, body)).json<Report>().report;
     expect(again.privacy).toMatchObject({ epsilonCharged: 1, epsilonRemaining: 0 });

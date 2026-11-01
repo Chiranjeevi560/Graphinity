@@ -35,26 +35,30 @@ await run(tool('psql'), [
   '-c',
   'CREATE SCHEMA IF NOT EXISTS extensions; CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions;',
 ]);
-const fail = () => {
-  console.error('The restore failed: a wrong passphrase, or a damaged or changed file.');
-  process.exit(1);
-};
+const failed = 'The restore failed: a wrong passphrase, or a damaged or changed file.';
+let ok;
 if (isAuthenticated(file)) {
   // Decrypted in full first: the tag is only checked at the end, and pg_restore must never read unverified bytes.
+  // Plain text sits in `work` for this long, so nothing here may exit before the finally has removed it.
   const work = mkdtempSync(join(tmpdir(), 'graphinity-restore-'));
   const plain = join(work, 'dump');
   try {
-    await decryptToFile(file, plain, process.env.BACKUP_PASSPHRASE ?? '').catch(fail);
-    const code = await done(
-      spawn(tool('pg_restore'), ['--no-owner', '--exit-on-error', '-d', name, plain], { env, stdio: 'inherit' }),
-    );
-    if (code !== 0) fail();
+    await decryptToFile(file, plain, process.env.BACKUP_PASSPHRASE ?? '');
+    ok =
+      (await done(
+        spawn(tool('pg_restore'), ['--no-owner', '--exit-on-error', '-d', name, plain], { env, stdio: 'inherit' }),
+      )) === 0;
+  } catch {
+    ok = false;
   } finally {
     rmSync(work, { recursive: true, force: true });
   }
 } else {
-  // An older backup, made before files carried a tag: nothing proves it wasn't changed.
-  console.error('This backup is in the older format, without tamper protection. Restoring it anyway.');
+  // An older backup, from before files carried a tag: nothing proves it wasn't changed, so it takes asking for.
+  if (!process.argv.includes('--allow-unverified')) {
+    console.error('This backup has no tamper protection. If you trust the file, add --allow-unverified.');
+    process.exit(1);
+  }
   const dec = spawn(
     'openssl',
     ['enc', '-d', '-aes-256-cbc', '-pbkdf2', '-iter', '200000', '-pass', 'env:BACKUP_PASSPHRASE', '-in', file],
@@ -66,6 +70,10 @@ if (isAuthenticated(file)) {
   });
   dec.stdout.pipe(restore.stdin);
   const [a, b] = await Promise.all([done(dec), done(restore)]);
-  if (a !== 0 || b !== 0) fail();
+  ok = a === 0 && b === 0;
+}
+if (!ok) {
+  console.error(failed);
+  process.exit(1);
 }
 console.log(`Restored into local database ${name}.`);

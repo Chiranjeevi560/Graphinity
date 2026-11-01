@@ -385,9 +385,9 @@ export function registerModerationRoutes(app: FastifyInstance, { db }: { db: Dat
             user.id,
             reason,
           ]);
+          // Names no one: this log can't be changed and outlives accounts, and block_details says who.
+          await auditWithin(q, { action: 'block.added', actor: 'moderator', subject: 'person', detail: {} });
         }
-        // By public id, not handle: a handle names a person, and this log outlives them.
-        await auditWithin(q, { action: 'block.added', actor: 'moderator', subject: person.id, detail: {} });
         return { block: { handle, blocked: true } };
       });
     },
@@ -400,9 +400,12 @@ export function registerModerationRoutes(app: FastifyInstance, { db }: { db: Dat
       const user = signedIn(req);
       const handle = normalizeHandle((req.body as { handle: string }).handle);
       return asModerator(user.id, reply, async q => {
-        await q.query('DELETE FROM app.blocks b USING app.profiles p WHERE b.profile_id = p.id AND p.handle = $1', [
-          handle,
-        ]);
+        const removed = await q.query(
+          'DELETE FROM app.blocks b USING app.profiles p WHERE b.profile_id = p.id AND p.handle = $1',
+          [handle],
+        );
+        if (removed.rowCount)
+          await auditWithin(q, { action: 'block.removed', actor: 'moderator', subject: 'person', detail: {} });
         return { block: { handle, blocked: false } };
       });
     },

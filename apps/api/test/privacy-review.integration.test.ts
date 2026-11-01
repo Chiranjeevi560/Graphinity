@@ -147,6 +147,43 @@ describe('turning measurement off', () => {
   });
 });
 
+describe('someone who allows measurement but not personalized ads', () => {
+  const tapBy = async (categories: string[], word: string) => {
+    const p = await w.member();
+    await h.call('PUT', '/me/consents', p.token, {
+      choices: categories.map(category => ({ category, enabled: true })),
+    });
+    await w.liveCampaign([{ kind: 'keyword', value: word }]);
+    const ad = must((await w.select(p.token, { placement: 'search', query: `${word} timetable` }))[0]);
+    const row = must(
+      (
+        await h.t.owner.query<{ ad_id: string | null }>('SELECT ad_id FROM app.ad_impressions WHERE token = $1', [
+          ad.token,
+        ])
+      ).rows[0],
+    );
+    return { adId: row.ad_id, tap: (await h.call('POST', `/ads/click/${ad.token}`, p.token)).body };
+  };
+
+  it('gets an identity for measuring, and no id handed to partners', async () => {
+    await h.t.owner.query(
+      "UPDATE app.feature_flags SET enabled = true WHERE name IN ('ads_measurement', 'ads_partner_sites')",
+    );
+    try {
+      const measured = await tapBy(['ads_measurement', 'ads_partner_sites'], 'kettlemeasure');
+      expect(measured.adId).not.toBeNull();
+      expect(measured.tap).not.toContain('gr_eid');
+      // The same tap by someone who chose personal ads does hand one over, or this test proves nothing.
+      const chosen = await tapBy(['ads_personalization', 'ads_measurement', 'ads_partner_sites'], 'kettlechosen');
+      expect(chosen.tap).toContain('gr_eid');
+    } finally {
+      await h.t.owner.query(
+        "UPDATE app.feature_flags SET enabled = false WHERE name IN ('ads_measurement', 'ads_partner_sites')",
+      );
+    }
+  });
+});
+
 describe('the data export', () => {
   it('has their advertising rows, memory, complaints and statements, and only theirs', async () => {
     const [p, other] = [await allowing(), await allowing()];

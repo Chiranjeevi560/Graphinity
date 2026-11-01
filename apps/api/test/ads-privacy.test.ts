@@ -11,6 +11,7 @@ import {
   privateCells,
   releaseCost,
   type TrueCell,
+  noisyFloor,
 } from '../src/ads/privacy.ts';
 
 const secret = Buffer.alloc(32, 7);
@@ -55,6 +56,16 @@ describe('noise', () => {
     // Mean absolute noise is Δ/ε: 100 for impressions, 5 for conversions.
     expect(spread('impressions') / (CLIP.impressions / EPSILON_PER_METRIC)).toBeCloseTo(1, 1);
     expect(spread('conversions') / (CLIP.conversions / EPSILON_PER_METRIC)).toBeCloseTo(1, 0);
+  });
+});
+
+describe('the floor', () => {
+  it('rises with the noise, so a long report can’t let one person through', () => {
+    const lone = { value: 'IS', day: '2026-10-20', people: 1, impressions: 100_000, clicks: 0, conversions: 0 };
+    let through = 0;
+    for (let i = 0; i < 2000; i++) if (privateCells('1', 'country', [lone], secret, String(i), 92).length) through += 1;
+    expect(through).toBe(0);
+    expect(noisyFloor(230)).toBeGreaterThan(3000);
   });
 });
 
