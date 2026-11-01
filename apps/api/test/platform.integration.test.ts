@@ -350,6 +350,7 @@ describe('experiments', () => {
     }>();
     expect(first.experiments).toHaveLength(1);
     expect((await h.call('GET', '/me/experiments', p.token)).json()).toEqual(first);
+    await h.call('PUT', '/me/consents', p.token, { choices: [{ category: 'search_improvement', enabled: true }] });
     await enrol(db(), p.id, must(first.experiments[0]).experiment);
     const units = await o.query<{ unit_id: string }>('SELECT unit_id FROM app.exp_unit_metrics WHERE exp_id = $1', [
       exp,

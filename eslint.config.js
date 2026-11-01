@@ -132,4 +132,19 @@ export default tseslint.config(
   },
   pureKernel,
   firewalled,
+  // In both lists, and a later rule replaces an earlier one, so this file needs both sets at once.
+  {
+    files: ['apps/api/src/ml/collusion.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            ...firewalled.rules['no-restricted-imports'][1].patterns,
+            ...pureKernel.rules['no-restricted-imports'][1].patterns,
+          ],
+        },
+      ],
+    },
+  },
 );

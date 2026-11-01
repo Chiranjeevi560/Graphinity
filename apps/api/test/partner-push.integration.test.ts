@@ -161,6 +161,8 @@ describe('pushing cohorts to partners', () => {
     const tomorrow = await ids(NOW + 86_400_000)('cars-vehicles');
     expect(today.size).toBeGreaterThanOrEqual(100);
     expect([...today].filter(e => tomorrow.has(e))).toEqual([]);
+    // In an order that says nothing: score order would link someone across days.
+    expect([...today]).toEqual([...today].sort());
   });
 
   it('asks nobody about this until its switch allows it', async () => {

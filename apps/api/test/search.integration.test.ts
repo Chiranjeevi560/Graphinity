@@ -1,6 +1,7 @@
 // POST /search on a real database with pgvector (ADR 0015 part 2): one engine
 // with the Ask check, results anyone may see, reasons in words, its own limit
 // and kill switch.
+import { enrol } from '../src/experiments/enrol.ts';
 import { createHash } from 'node:crypto';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { Embedder } from '../src/embeddings.ts';
@@ -375,6 +376,10 @@ describe('the cascade and diversified search', () => {
          VALUES ($1, 'search_diversity', 0, 10000, 0.0001, 'running')`,
         [layer],
       );
+      const stamped = await app.t.owner.query<{ s: Date | null }>(
+        `SELECT started_at AS s FROM app.exp_definitions WHERE name = 'search_diversity'`,
+      );
+      expect(stamped.rows[0]?.s).toBeTruthy();
       const search = async (token: string) =>
         (await app.call('POST', '/search', token, { query: 'saffron tariff' }))
           .json<{ results: Result[] }>()
@@ -391,6 +396,9 @@ describe('the cascade and diversified search', () => {
       const enrolled = async (id: string) =>
         (await app.t.owner.query('SELECT 1 FROM app.exp_unit_metrics WHERE subject = $1', [id])).rowCount;
       expect(await enrolled(helper.id)).toBe(1);
+      expect(await enrolled(other.id)).toBe(0);
+      // Consent is checked where the row is written, so withdrawing can't slip between the two.
+      expect(await enrol(app.t.database, other.id, 'search_diversity')).toBeNull();
       expect(await enrolled(other.id)).toBe(0);
       // Who saw what is on the record, so later learning can tell these apart.
       const logged = await app.t.owner.query<{ experiment: string }>(

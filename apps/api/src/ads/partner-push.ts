@@ -78,7 +78,8 @@ export async function pushCohorts(
     const body = JSON.stringify({
       day,
       segment: s.field,
-      eids: s.ids.map(id => eid(secret, id, now, null, `push:${s.partner}:${s.field}:${day}`)),
+      // Sorted: the query's order follows interest, and would link a person across days despite their changing id.
+      eids: s.ids.map(id => eid(secret, id, now, null, `push:${s.partner}:${s.field}:${day}`)).sort(),
     });
     const signature = createHmac('sha256', pushKey(secret, s.partner)).update(body).digest('hex');
     try {

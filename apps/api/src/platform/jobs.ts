@@ -417,7 +417,7 @@ export async function evaluateExperiments(db: Pick<Database, 'asSystem'>): Promi
       // answers from before they entered count too: arms are assigned at random, so that doesn't favour either.
       await q.query(
         `UPDATE app.exp_unit_metrics m SET post_metric_y = (SELECT count(*) FROM app.answers a, app.exp_definitions d
-           WHERE d.exp_id = m.exp_id AND a.answerer_id = m.subject AND a.created_at >= d.created_at), updated_at = now()
+           WHERE d.exp_id = m.exp_id AND a.answerer_id = m.subject AND a.created_at >= d.started_at), updated_at = now()
          WHERE m.exp_id = $1 AND m.subject IS NOT NULL`,
         [e.id],
       );

@@ -238,11 +238,16 @@ const money = (micros: number | null, currency: string) =>
 
 /** What the owner spent bringing people in. Only the owner knows this, so only the owner can say it. */
 function SpendForm({ onSaved }: { onSaved: () => void }) {
-  const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [month, setMonth] = useState(() => {
+    // Cost is worked out for finished months, so last month is what's usually being entered.
+    const d = new Date();
+    d.setDate(0);
+    return d.toISOString().slice(0, 7);
+  });
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState<string | null>(null);
   const value = Number(amount);
-  const usable = amount.trim() !== '' && Number.isFinite(value) && value >= 0 && /^\d{4}-\d\d$/.test(month);
+  const usable = amount.trim() !== '' && value >= 0 && /^20\d{2}-(0[1-9]|1[0-2])$/.test(month);
 
   async function save() {
     setNote(null);
@@ -253,10 +258,10 @@ function SpendForm({ onSaved }: { onSaved: () => void }) {
         body: { month, currency: 'INR', amountMicros: Math.round(value * 1_000_000) },
       });
       setAmount('');
-      setNote('Saved.');
+      setNote('Saved. Saving the same month again replaces it.');
       onSaved();
     } catch (err) {
-      setNote(err instanceof ApiError ? err.message : 'That didn’t save.');
+      setNote(err instanceof ApiError ? err.message : 'That didn’t save. Try again.');
     }
   }
 
@@ -280,7 +285,7 @@ function SpendForm({ onSaved }: { onSaved: () => void }) {
         }}
       />
       <label htmlFor="spend-amount" className="text-subhead">
-        Spent bringing people in, in rupees
+        Spent bringing people in (₹)
       </label>
       <input
         id="spend-amount"
@@ -382,7 +387,7 @@ export function OwnerPage() {
       <RetentionHeatmap cohorts={data.retention} />
       <Section
         title="What a person is worth"
-        empty="Shown once there’s ad income or recorded spend."
+        empty="Shown once there’s income or a finished month’s spend."
         rows={data.economics.map(e => [
           e.currency,
           `Roughly worth ${money(e.lifetimeValueMicros, e.currency)} over about ${e.lifetimeWeeks.toFixed(1)} weeks · costs ${money(e.costPerJoinMicros, e.currency)} to bring in`,
@@ -437,7 +442,7 @@ export function OwnerPage() {
         rows={data.evaluations.map(e => [e.name, describeEvaluation(e.metrics)])}
       />
       {data.failedPushes > 0 && (
-        <Section title="Partner lists" empty="" rows={[['Not delivered in 7 days', n(data.failedPushes), true]]} />
+        <Section title="Partners" empty="" rows={[['Not delivered in 7 days', n(data.failedPushes), true]]} />
       )}
       <Section
         title="Audit log"

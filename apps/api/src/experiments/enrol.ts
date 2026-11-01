@@ -48,9 +48,9 @@ export async function experimentArms(
 }
 
 /**
- * Enters a person in one named experiment, which the caller has checked they may be in, and returns their arm or null.
- * The covariate is the 14 days before the experiment began, for everyone: CUPED needs it to be untouched by the
- * experiment, and a late joiner's "14 days before entering" isn't.
+ * Enters a person who chose to help improve search in one named experiment, returning their arm, or null if they aren't
+ * in it or have withdrawn. The covariate is the 14 days before the experiment began, for everyone: CUPED needs it to be
+ * untouched by the experiment, and a late joiner's "14 days before entering" isn't.
  */
 export async function enrol(
   db: Pick<Database, 'asSystem'>,
@@ -60,14 +60,16 @@ export async function enrol(
   return db.asSystem(async q => {
     const mine = (await arms(q, userId)).find(a => a.experiment === experiment);
     if (!mine) return null;
-    await q.query(
+    const entered = await q.query(
       `INSERT INTO app.exp_unit_metrics (exp_id, unit_id, arm, subject, pre_experiment_covariate_x)
        SELECT $1::bigint, $2::text, $3::text, $4::uuid, count(*) FROM app.answers a, app.exp_definitions d
-       WHERE d.exp_id = $1::bigint AND a.answerer_id = $4::uuid AND a.created_at < d.created_at
-         AND a.created_at > d.created_at - interval '14 days'
-       ON CONFLICT (exp_id, unit_id) DO NOTHING`,
+       WHERE d.exp_id = $1::bigint AND a.answerer_id = $4::uuid AND a.created_at < d.started_at
+         AND a.created_at > d.started_at - interval '14 days'
+       HAVING app.search_improvement_allowed_locked($4::uuid)
+       ON CONFLICT (exp_id, unit_id) DO UPDATE SET updated_at = now()`,
       [mine.id, mine.unit, mine.arm, userId],
     );
+    if (!entered.rowCount) return null;
     return mine.arm;
   });
 }
