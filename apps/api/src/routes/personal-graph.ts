@@ -345,7 +345,9 @@ export function registerPersonalGraphRoutes(app: FastifyInstance, deps: Personal
       const adInterests = await q.query(
         'SELECT field, name, score, updated_at AS "updatedAt" FROM app.my_ad_interests()',
       );
-      const adActivity = await q.query<{ activity: unknown }>('SELECT app.my_ad_activity() AS activity');
+      const adActivity = await q.query<{ activity: unknown; memberships: unknown }>(
+        'SELECT app.my_ad_activity() AS activity, app.my_ad_memberships() AS memberships',
+      );
       const memory = await q.query(
         `SELECT tier, key, value, strength, reviews, seen_at AS "seenAt" FROM app.memory_entries
          WHERE user_id = $1 ORDER BY seen_at`,
@@ -425,6 +427,7 @@ export function registerPersonalGraphRoutes(app: FastifyInstance, deps: Personal
         consentHistory: consentHistory.rows,
         adInterests: adInterests.rows,
         adActivity: adActivity.rows[0]?.activity ?? null,
+        adMemberships: adActivity.rows[0]?.memberships ?? null,
         memory: memory.rows,
         complaints: complaints.rows,
         statementsOfReasons: statements.rows,

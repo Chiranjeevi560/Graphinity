@@ -3,14 +3,14 @@
 // A key is shown once and kept only as its SHA-256. Reporting answers the
 // same "not counted" for every kind of refusal, so keys and click ids can't
 // be probed.
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Database } from '../db.ts';
-import { RULE_MODELS, ruleCredit, shapleyModel, type Path, type Touch } from '../ads/attribution.ts';
+import { RULE_MODELS, ruleCredit, type Path, type Touch } from '../ads/attribution.ts';
 import { lift } from '../ads/lift.ts';
 import { cellUniform, laplace, MIN_PEOPLE } from '../ads/privacy.ts';
 import { reportSecret } from './ad-reports.ts';
-import { TokenBuckets, type BucketOptions, type Clock } from '../rate-limit.ts';
+import { TokenBuckets, visitorAddress, visitorKey, type BucketOptions, type Clock } from '../rate-limit.ts';
 import { fail, pgCode, signedIn } from './common.ts';
 
 const keyPattern = /^grk_[A-Za-z0-9_-]{43}$/;
@@ -27,7 +27,7 @@ export const hashKey = (key: string) => createHash('sha256').update(key).digest(
 
 export async function registerAdMeasurementRoutes(
   app: FastifyInstance,
-  deps: { db: Database; enabled: () => boolean; clock: Clock; limit: BucketOptions },
+  deps: { db: Database; enabled: () => boolean; clock: Clock; limit: BucketOptions; keySecret: Buffer },
 ) {
   const { db } = deps;
   const off = (reply: FastifyReply) => fail(reply, 404, 'ads_off', 'Advertising on Graphinity isn’t available yet.');
@@ -134,8 +134,13 @@ export async function registerAdMeasurementRoutes(
         } catch {
           host = null;
         }
-        // Per pixel and per id, so one script can't fill the table: the same polite answer either way.
-        if (!perKey.take(`pixel:${b.pixel}`).ok || !perKey.take(`pixel-eid:${b.eidToken}`).ok)
+        // Per address first, or anyone could use up a merchant's allowance by flooding its public pixel id. Then per
+        // pixel and per id, so one script can't fill the table: the same polite answer either way.
+        if (
+          !perKey.take(`pixel-from:${visitorKey(visitorAddress(req.ip), deps.keySecret)}`).ok ||
+          !perKey.take(`pixel:${b.pixel}`).ok ||
+          !perKey.take(`pixel-eid:${b.eidToken}`).ok
+        )
           return reply.code(202).send({ accepted: true });
         // Global Privacy Control reaches here too, whatever the tag did.
         if (host && req.headers['sec-gpc'] !== '1')
@@ -229,9 +234,9 @@ export async function registerAdMeasurementRoutes(
           ).rows[0],
       );
       if (!campaign) return fail(reply, 404, 'not_found', 'There’s no such campaign you run.');
-      // Complete days only, sale values clipped per person, noise fixed per campaign and day, and a
-      // charge to the business's budget: otherwise reporting a sale for one id and re-reading shows
-      // whether that person saw the ad. Only people who allow measurement now are joined.
+      // Complete days only, sale values clipped per person, fresh noise and a charge for every read:
+      // otherwise reporting a sale for one id and re-reading shows whether that person saw the ad.
+      // Only people who allow measurement now are joined.
       const today = new Date(deps.clock.now()).toISOString().slice(0, 10);
       const yesterday = new Date(deps.clock.now() - 86_400_000).toISOString().slice(0, 10);
       const outcome = await db.asSystem(async q => {
@@ -272,12 +277,12 @@ export async function registerAdMeasurementRoutes(
         return fail(reply, 429, 'privacy_budget', 'This business’s reports for today are used up. Try tomorrow.');
       const { secret, counts } = outcome;
       if (!counts) return { ready: false };
+      const read = randomUUID();
       // Six figures share the charge. Group sizes too: the interval and "incremental" would give them away.
       const noisy = (name: string, value: number, sensitivity: number) =>
         Math.max(
           0,
-          value +
-            laplace(sensitivity / (LIFT_EPSILON / 6), cellUniform(secret, `lift|${campaign.id}|${yesterday}|${name}`)),
+          value + laplace(sensitivity / (LIFT_EPSILON / 6), cellUniform(secret, `lift|${campaign.id}|${read}|${name}`)),
         );
       const exposedPeople = Math.round(noisy('ep', counts.ep, 1));
       const holdoutPeople = Math.round(noisy('hp', counts.hp, 1));
@@ -464,20 +469,10 @@ export async function registerAdMeasurementRoutes(
           ).rows[0],
       );
       if (!found) return fail(reply, 404, 'not_found', 'There’s no such campaign you run.');
-      // Complete days only, charged to the business's budget, with noise fixed per campaign and day. Exact figures on a
-      // live window let a business report a sale, re-read, and learn whether that person saw the ad (ADR 0022 part 8).
+      // Complete days only, and every read is charged with fresh noise, before anything about the data is said. Exact
+      // figures on a live window let a business report a sale, re-read, and learn who saw the ad (ADR 0022 part 8).
       const yesterday = new Date(deps.clock.now() - 86_400_000).toISOString().slice(0, 10);
       const data = await db.asSystem(async q => {
-        const totals = (
-          await q.query<{ people: number; spent: string }>(
-            // Tracked identities only: signed-out requests could otherwise pad the floor.
-            `SELECT count(DISTINCT ad_id)::int AS people, coalesce(sum(charged_micros), 0)::text AS spent
-             FROM app.ad_impressions WHERE campaign_id = $1
-               AND shown_at >= $2::date - 29 AND shown_at < $2::date + 1`,
-            [found.id, yesterday],
-          )
-        ).rows[0] ?? { people: 0, spent: '0' };
-        if (totals.people < MIN_PEOPLE) return null;
         const release = (
           await q.query<{ outcome: string }>('SELECT outcome FROM app.release_ad_report($1, $2::date[], $3, $4)', [
             found.id,
@@ -487,6 +482,15 @@ export async function registerAdMeasurementRoutes(
           ])
         ).rows[0];
         if (release?.outcome === 'exhausted') return { exhausted: true as const };
+        const totals = (
+          await q.query<{ people: number; spent: string }>(
+            // Tracked identities only: signed-out requests could otherwise pad the floor.
+            `SELECT count(DISTINCT ad_id)::int AS people, coalesce(sum(charged_micros), 0)::text AS spent
+             FROM app.ad_impressions WHERE campaign_id = $1
+               AND shown_at >= $2::date - 29 AND shown_at < $2::date + 1`,
+            [found.id, yesterday],
+          )
+        ).rows[0] ?? { people: 0, spent: '0' };
         // The business's conversions in the window, at most REPORT_PER_PERSON a person, so one
         // person's effect on any figure is bounded, as the noise assumes.
         const conversions = (
@@ -521,18 +525,25 @@ export async function registerAdMeasurementRoutes(
         ).rows;
         return { totals, conversions, seen, secret: await reportSecret(q) };
       });
-      if (!data) return { report: { days: 30, belowMinimum: true, minimumPeople: MIN_PEOPLE } };
       if (data.exhausted)
-        return fail(reply, 429, 'privacy_budget', 'This business’s reports for today are used up. Try tomorrow.');
-      const { credited } = campaignReport(found.id, data.conversions, data.seen, Date.now());
-      // Six models, two figures each, share the charge.
-      const share = REPORT_EPSILON / 12;
-      const noisy = (name: string, value: number, sensitivity: number) =>
+        return fail(
+          reply,
+          429,
+          'privacy_budget',
+          'This business’s reports are used up for now. Try again in a few days.',
+        );
+      const { credited } = campaignReport(found.id, data.conversions, data.seen);
+      // Half the charge decides the floor; two figures for each rule model share the rest.
+      const share = REPORT_EPSILON / 2 / (2 * Object.keys(credited).length);
+      const read = randomUUID();
+      const noisy = (name: string, value: number, sensitivity: number, epsilon = share) =>
         Math.max(
           0,
-          value +
-            laplace(sensitivity / share, cellUniform(data.secret, `attribution|${found.id}|${yesterday}|${name}`)),
+          value + laplace(sensitivity / epsilon, cellUniform(data.secret, `attribution|${found.id}|${read}|${name}`)),
         );
+      // The floor itself is noised, or a business could add viewers one at a time and watch it flip.
+      if (noisy('people', data.totals.people, 1, REPORT_EPSILON / 2) < MIN_PEOPLE)
+        return { report: { days: 30, belowMinimum: true, minimumPeople: MIN_PEOPLE } };
       return {
         report: {
           days: 30,
@@ -579,7 +590,6 @@ export function campaignReport(
     value: string;
   }>,
   seen: ReadonlyArray<{ ad_id: string; campaign: string; at: Date }>,
-  now: number,
 ) {
   const byPerson = new Map<string, Touch[]>();
   for (const s of seen) {
@@ -603,17 +613,12 @@ export function campaignReport(
     }
     return { path: { touches, converted: true, at }, value: Number(c.value) };
   });
-  const others: Path[] = [];
-  for (const [adId, touches] of byPerson) {
-    if (converters.has(adId)) continue;
-    const recent = touches.filter(t => t.at > now - WINDOW_MS);
-    if (recent.length) others.push({ touches: recent, converted: false, at: now });
-  }
-  const shapley = shapleyModel([...paths.map(p => p.path), ...others]);
-  const models: Array<[string, (p: Path) => Map<string, number>]> = [
-    ...RULE_MODELS.map(m => [m, (p: Path) => ruleCredit(p, m)] as [string, (p: Path) => Map<string, number>]),
-    ['data_driven', shapley],
-  ];
+  // Not the data-driven model: one person's path moves the rates behind everyone's credit, by more than the noise
+  // on a released figure assumes. Rule models credit each path from that path alone.
+  const models: Array<[string, (p: Path) => Map<string, number>]> = RULE_MODELS.map(m => [
+    m,
+    (p: Path) => ruleCredit(p, m),
+  ]);
   const credited: Record<string, { conversions: number; valueMicros: number }> = {};
   for (const [name, model] of models) {
     let share = 0;

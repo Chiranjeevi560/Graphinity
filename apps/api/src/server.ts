@@ -371,7 +371,13 @@ export async function buildServer(deps: Deps) {
     keySecret: config.ipHashKey,
   });
   registerAdvertiserRoutes(app, { db, enabled: deps.adsEnabled ?? (() => false) });
-  await registerAdMeasurementRoutes(app, { db, enabled: deps.adsEnabled ?? (() => false), clock, limit: limits.ads });
+  await registerAdMeasurementRoutes(app, {
+    keySecret: config.ipHashKey,
+    db,
+    enabled: deps.adsEnabled ?? (() => false),
+    clock,
+    limit: limits.ads,
+  });
   registerAdAudienceRoutes(app, { db, enabled: deps.adsEnabled ?? (() => false) });
   registerAdReportRoutes(app, { db, enabled: deps.adsEnabled ?? (() => false), clock });
   registerPlatformRoutes(app, { db, clock, limit: limits.ads, keySecret: config.ipHashKey });

@@ -35,16 +35,15 @@ const ask = (token: string, body: object) => w.h.call('POST', '/ads/reports/priv
 type Report = {
   report: {
     cells: Array<{ value: string; day: string; impressions: number; clicks: number; conversions: number }>;
-    suppressed: number;
-    privacy: { epsilonCharged: number; epsilonRemainingToday: number };
+    privacy: { epsilonCharged: number; epsilonRemaining: number };
   };
 };
 
 describe('private reports', () => {
-  it('show a campaign’s complete days with fixed noise, and asking again costs nothing and changes nothing', async () => {
+  it('show a campaign’s complete days with noise, and asking again costs again with fresh noise', async () => {
     const live = await w.liveCampaign([{ kind: 'keyword', value: 'reportone' }]);
-    const { adIds } = await crowd(w, 40, {});
-    // Each shown it 20 times (the most one person counts for): 800, far above the floor.
+    const { adIds } = await crowd(w, 60, {});
+    // Each shown it 20 times (the most one person counts for): 1,200, far above the floor.
     await shown(live.campaign, adIds, 20, 20);
     const body = { campaignId: live.campaign, startDate: yesterday(), endDate: yesterday(), breakdown: 'day' };
     const first = await ask(live.owner.token, body);
@@ -53,12 +52,12 @@ describe('private reports', () => {
     expect(r.cells).toHaveLength(1);
     const [cell] = r.cells;
     expect(cell?.day).toBe(yesterday());
-    // 800 impressions with Laplace noise of scale 100: off by more than 1,500 once in 3 million.
-    expect(Math.abs((cell?.impressions ?? 0) - 800)).toBeLessThan(1500);
-    expect(r.privacy).toMatchObject({ epsilonCharged: 0.6, epsilonRemainingToday: 1.4 });
+    // 1,200 impressions with Laplace noise of scale 100: off by more than 1,500 once in 3 million.
+    expect(Math.abs((cell?.impressions ?? 0) - 1200)).toBeLessThan(1500);
+    expect(r.privacy).toMatchObject({ epsilonCharged: 1, epsilonRemaining: 1 });
     const again = (await ask(live.owner.token, body)).json<Report>().report;
-    expect(again.cells).toEqual(r.cells);
-    expect(again.privacy).toMatchObject({ epsilonCharged: 0, epsilonRemainingToday: 1.4 });
+    expect(again.privacy).toMatchObject({ epsilonCharged: 1, epsilonRemaining: 0 });
+    expect(again.cells).not.toEqual(r.cells);
     // Nothing of who: no person's id anywhere, and no ids but the campaign's own.
     for (const id of adIds) expect(first.body).not.toContain(id);
     expect(first.body.replace(live.campaign, '')).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-/);
@@ -76,7 +75,9 @@ describe('private reports', () => {
         breakdown: 'day',
       })
     ).json<Report>().report;
-    expect([r.cells, r.suppressed]).toEqual([[], 1]);
+    expect(r.cells).toEqual([]);
+    // Nothing says a hidden cell exists: a count of them would say whether anyone saw the ad at all.
+    expect(JSON.stringify(r)).not.toContain('suppressed');
   });
 
   it('cover complete days only, and at most 92 of them', async () => {
@@ -86,9 +87,8 @@ describe('private reports', () => {
     expect((await range(yesterday(), utcDay(0))).json<Body>().error).toBe('day_not_over');
     expect((await range(yesterday(), utcDay(-2))).json<Body>().error).toBe('invalid_range');
     expect((await range(utcDay(-100), yesterday())).json<Body>().error).toBe('invalid_range');
-    // Each new day costs its share of the budget: one person can be on all of them. So a long range is refused at
-    // first; it isn't charged as if the days were strangers.
-    expect((await range(utcDay(-91), yesterday())).json<Body>().error).toBe('privacy_budget_spent');
+    // A read costs the same however long, and shares that charge across its days, so long ranges are noisier rather than refused.
+    expect((await range(utcDay(-91), yesterday())).statusCode).toBe(200);
     expect((await range(utcDay(-2), yesterday())).statusCode).toBe(200);
     // The database refuses releasing today however it's asked.
     const id = must(
@@ -105,18 +105,17 @@ describe('private reports', () => {
     ).rejects.toThrow(/complete days/);
   });
 
-  it('stop releasing new details once the day’s budget is spent, while what was seen stays available', async () => {
+  it('stop releasing new details once the day’s budget is spent, and draw nothing more', async () => {
     const live = await w.liveCampaign([{ kind: 'keyword', value: 'reportfour' }]);
-    const { adIds } = await crowd(w, 30, {});
+    const { adIds } = await crowd(w, 60, {});
     await shown(live.campaign, adIds, 2);
     const by = (breakdown: string) =>
       ask(live.owner.token, { campaignId: live.campaign, startDate: yesterday(), endDate: yesterday(), breakdown });
-    expect((await by('day')).json<Report>().report.privacy.epsilonRemainingToday).toBeCloseTo(1.4, 6);
-    expect((await by('country')).json<Report>().report.privacy.epsilonRemainingToday).toBeCloseTo(0.8, 6);
-    // Placement costs 1.2 (a person can be in both placements): more than is left.
+    expect((await by('day')).json<Report>().report.privacy.epsilonRemaining).toBeCloseTo(1, 6);
+    expect((await by('country')).json<Report>().report.privacy.epsilonRemaining).toBeCloseTo(0, 6);
     const refused = await by('placement');
     expect([refused.statusCode, refused.json<Body>().error]).toEqual([429, 'privacy_budget_spent']);
-    expect((await by('day')).statusCode).toBe(200);
+    expect((await by('day')).statusCode).toBe(429);
     // The budget is per business: another business's is untouched.
     const rival = await w.liveCampaign([{ kind: 'keyword', value: 'reportrival' }]);
     expect(
@@ -127,8 +126,26 @@ describe('private reports', () => {
           endDate: yesterday(),
           breakdown: 'placement',
         })
-      ).json<Report>().report.privacy.epsilonRemainingToday,
-    ).toBeCloseTo(0.8, 6);
+      ).json<Report>().report.privacy.epsilonRemaining,
+    ).toBeCloseTo(0, 6);
+    // Over 30 days a business has 12.0 however it spreads it: a whole day's budget left today doesn't help.
+    const month = await w.liveCampaign([{ kind: 'keyword', value: 'reportmonth' }]);
+    await w.h.t.owner.query(
+      `INSERT INTO app.ad_privacy_budget_ledger (advertiser_id, epoch, epsilon_spent)
+       SELECT a.id, (now() AT TIME ZONE 'UTC')::date - g, 2.0
+       FROM app.ad_advertisers a, generate_series(1, 6) g WHERE a.public_id = $1`,
+      [month.advertiser],
+    );
+    expect(
+      (
+        await ask(month.owner.token, {
+          campaignId: month.campaign,
+          startDate: yesterday(),
+          endDate: yesterday(),
+          breakdown: 'day',
+        })
+      ).statusCode,
+    ).toBe(429);
     // And the database never lets the ledger pass 2.0.
     await expect(
       w.h.t.owner.query(
@@ -141,7 +158,7 @@ describe('private reports', () => {
 
   it('clip each person’s share of a cell, and count conversions on the day they arrived', async () => {
     const live = await w.liveCampaign([{ kind: 'keyword', value: 'reportfive' }]);
-    const { adIds } = await crowd(w, 30, {});
+    const { adIds } = await crowd(w, 60, {});
     await shown(live.campaign, adIds, 1);
     // One person shown it 1,000 times counts as 20; an untracked viewer's impressions count one each.
     await shown(live.campaign, adIds.slice(0, 1), 999);
@@ -156,8 +173,8 @@ describe('private reports', () => {
     const from = new Date(`${yesterday()}T00:00:00Z`);
     const to = new Date(from.getTime() + DAY);
     const [cell] = await w.h.t.database.asSystem(q => trueCells(q, id, 'day', from, to));
-    // Only the 30 tracked people count toward the floor: signed-out requests could pad it.
-    expect(cell).toMatchObject({ people: 30, impressions: 29 + 20 + 2 });
+    // Only the 60 tracked people count toward the floor: signed-out requests could pad it.
+    expect(cell).toMatchObject({ people: 60, impressions: 59 + 20 + 2 });
     // Two conversions by one person, received yesterday though bought three days ago: clipped to
     // one, and counted on the day they arrived (a day already reported can't change later).
     await w.h.t.owner.query(
@@ -173,7 +190,7 @@ describe('private reports', () => {
 
   it('refuse an audience breakdown when one person could be in more cells than a day’s budget hides', async () => {
     const live = await w.liveCampaign([{ kind: 'keyword', value: 'reportseven' }]);
-    // Four audiences targeted: a person in all four would be in four cells (4 × 0.6 > 2.0).
+    // Four audiences targeted: a person in all four would be in four cells (4 × 1.0 > 2.0).
     await w.h.t.owner.query(
       `WITH c AS (SELECT id, advertiser_id FROM app.ad_campaigns WHERE public_id = $1),
             a AS (INSERT INTO app.ad_audiences (advertiser_id, name, kind, rule)

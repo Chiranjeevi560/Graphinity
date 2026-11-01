@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { must } from './helpers/must.ts';
 import {
   CLIP,
   cellKey,
@@ -57,6 +58,21 @@ describe('noise', () => {
   });
 });
 
+describe('reading again', () => {
+  it('draws fresh noise, and a longer report has more of it', () => {
+    const c = { value: 'IN', day: '2026-10-20', people: 5000, impressions: 90_000, clicks: 900, conversions: 90 };
+    const read = (id: string, days: number) => must(privateCells('1', 'country', [c], secret, id, days)[0]).impressions;
+    expect(read('a', 1)).toBe(read('a', 1));
+    expect(read('a', 1)).not.toBe(read('b', 1));
+    const spread = (days: number) => {
+      let s = 0;
+      for (let i = 0; i < 400; i++) s += Math.abs(read(String(i), days) - 90_000);
+      return s / 400;
+    };
+    expect(spread(10)).toBeGreaterThan(spread(1) * 5);
+  });
+});
+
 describe('cells', () => {
   const cell = (over: Partial<TrueCell>): TrueCell => ({
     value: 'IN',
@@ -72,18 +88,19 @@ describe('cells', () => {
     const shown = privateCells(
       '1',
       'country',
-      [cell({}), cell({ value: 'US', people: 24 }), cell({ value: 'GB', impressions: 3 })],
+      [cell({ people: 200 }), cell({ value: 'US', people: 1 }), cell({ value: 'GB', people: 200, impressions: 3 })],
       secret,
+      'read-1',
+      1,
     );
-    expect(shown.cells.map(c => c.value)).toEqual(['IN']);
-    expect(shown.suppressed).toBe(2);
-    const [c] = shown.cells;
+    expect(shown.map(c => c.value)).toEqual(['IN']);
+    const [c] = shown;
     expect(Math.abs((c?.impressions ?? 0) - 2000)).toBeLessThan(1000);
   });
 
   it('cost ε by how many cells one person can be in', () => {
     expect([cellsPerPerson('day', 0), cellsPerPerson('country', 3), cellsPerPerson('placement', 0)]).toEqual([1, 1, 2]);
     expect([cellsPerPerson('audience', 0), cellsPerPerson('audience', 3)]).toEqual([1, 3]);
-    expect([releaseCost('day', 0), releaseCost('placement', 0), releaseCost('audience', 3)]).toEqual([0.6, 1.2, 1.8]);
+    expect([releaseCost('day', 0), releaseCost('placement', 0), releaseCost('audience', 3)]).toEqual([1, 2, 3]);
   });
 });

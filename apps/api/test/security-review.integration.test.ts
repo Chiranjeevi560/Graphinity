@@ -175,7 +175,8 @@ describe('finding 4: lift', () => {
       `SELECT epsilon_spent::text AS e FROM app.ad_privacy_budget_ledger l JOIN app.ad_campaigns c ON c.advertiser_id = l.advertiser_id WHERE c.public_id = $1`,
       [live.campaign],
     );
-    expect(Number(must(again.rows[0]).e)).toBeCloseTo(0.8, 5);
+    // Every read costs: free re-reads would show who withdrew between them.
+    expect(Number(must(again.rows[0]).e)).toBeCloseTo(1.6, 5);
   });
 });
 

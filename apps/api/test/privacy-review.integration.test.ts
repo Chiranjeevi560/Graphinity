@@ -71,10 +71,10 @@ describe('Global Privacy Control', () => {
     const id = await w.question();
     const read = (headers: Record<string, string>) =>
       h.app.inject({
-          method: 'GET',
-          url: `/questions/${id}`,
-          headers: { authorization: `Bearer ${reader.token}`, ...headers },
-        });
+        method: 'GET',
+        url: `/questions/${id}`,
+        headers: { authorization: `Bearer ${reader.token}`, ...headers },
+      });
     expect((await read({ 'sec-gpc': '1' })).statusCode).toBe(200);
     expect(await interests(reader.id)).toBe(0);
     expect((await read({})).statusCode).toBe(200);
@@ -108,6 +108,45 @@ describe('advertising rows follow the person', () => {
   });
 });
 
+describe('turning measurement off', () => {
+  const allowed = (id: string) =>
+    h.t.owner.query<{ p: boolean }>("SELECT app.ads_permitted($1, 'ads_measurement') AS p", [id]);
+
+  it('removes what measurement collected and stops a merchant reporting more', async () => {
+    const p = await allowing();
+    const impression = await saleFor(p);
+    await h.t.owner.query("UPDATE app.feature_flags SET enabled = true WHERE name = 'ads_measurement'");
+    expect(must((await allowed(p.id)).rows[0]).p).toBe(true);
+    expect((await after(impression)).sales).toBe(1);
+    await h.call('PUT', '/me/consents', p.token, { choices: [{ category: 'ads_measurement', enabled: false }] });
+    const row = await after(impression);
+    expect(row).toMatchObject({ click_id: null, sales: 0 });
+    // Personalized ads are still on, so the identity stays.
+    expect(row.ad_id).not.toBeNull();
+    await h.t.owner.query("UPDATE app.feature_flags SET enabled = false WHERE name = 'ads_measurement'");
+  });
+
+  it('a tap with no identity gets no click id, so nothing outlives a person', async () => {
+    const p = await allowing();
+    await h.t.owner.query("UPDATE app.feature_flags SET enabled = true WHERE name = 'ads_measurement'");
+    await h.call('PUT', '/me/consents', p.token, { choices: [{ category: 'ads_measurement', enabled: true }] });
+    const live = await w.liveCampaign([{ kind: 'keyword', value: 'kettlenoid' }]);
+    const { rows } = await h.t.owner.query<{ token: string }>(
+      `INSERT INTO app.ad_impressions (campaign_id, creative_id, ad_id, placement, price_micros)
+       SELECT c.id, cr.id, NULL, 'search', 5 FROM app.ad_campaigns c JOIN app.ad_creatives cr ON cr.campaign_id = c.id
+       WHERE c.public_id = $1 LIMIT 1 RETURNING token::text`,
+      [live.campaign],
+    );
+    const token = must(rows[0]).token;
+    const clicked = await h.t.owner.query<{ click_id: string | null }>(
+      'SELECT click_id FROM app.record_ad_click($1, $2)',
+      [token, p.id],
+    );
+    expect(must(clicked.rows[0]).click_id).toBeNull();
+    await h.t.owner.query("UPDATE app.feature_flags SET enabled = false WHERE name = 'ads_measurement'");
+  });
+});
+
 describe('the data export', () => {
   it('has their advertising rows, memory, complaints and statements, and only theirs', async () => {
     const [p, other] = [await allowing(), await allowing()];
@@ -121,12 +160,14 @@ describe('the data export', () => {
     ]);
     const body = (await h.call('GET', '/me/data-export', p.token)).json<{
       adActivity: { shown: unknown[]; reportedSales: unknown[]; partnerEvents: unknown[]; heldBack: unknown[] };
+      adMemberships: { audiences: unknown[]; rotatingIds: number };
       memory: Array<{ key: string }>;
       complaints: unknown[];
       statementsOfReasons: unknown[];
     }>();
     expect(body.adActivity.shown).toHaveLength(1);
     expect(body.adActivity.reportedSales).toHaveLength(1);
+    expect(body.adMemberships).toEqual({ audiences: [], rotatingIds: 0 });
     expect(body.memory.map(m => m.key)).toEqual(['visas']);
     expect(body.complaints).toEqual([]);
     expect(body.statementsOfReasons).toEqual([]);
