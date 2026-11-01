@@ -515,7 +515,7 @@ The migration lint mistook a TRUNCATE guard for a TRUNCATE, and `ship.sh` never 
 
 GPC header and notice, 90-day forecasts, claim ports, a purity lint rule, stage timings, a second independent review across the checklist's 12 roles with its findings fixed, and `docs/SECURITY_AUDIT_REPORT.md`. Earlier I reported the 3.5× boost and the invariants as unconfirmed: both exist.
 
-**Checklist, recounted: 25 done as written, 20 built with differences, 16 partial, 0 unfinished in the repository.** Judged from code searches, reviews and test results, not a line-by-line re-check. Most partial items need things code can't supply: traffic, a real LLM or images (the owner's decisions), a domain, partners or a real release. Two are decided against, in ADR 0032: a feature-store cache and journal partitioning.
+**Checklist, recounted item by item: 21 done as written, 26 built with differences, 14 partial (1.22, 3.1, 3.2, 3.3, 3.6, 3.7, 3.8, 4.1, 4.5, 5.1, 5.2, 5.4, 5.7, 5.8).** Judged from code searches, reviews and test results, not a line-by-line re-check. Most partial items need things code can't supply: traffic, a real LLM or images (the owner's decisions), a domain, partners or a real release. Two are decided against, in ADR 0032: a feature-store cache and journal partitioning.
 
 **Equal-weight mean: about 65/100. This isn't production ready.** Scores are judgment.
 
