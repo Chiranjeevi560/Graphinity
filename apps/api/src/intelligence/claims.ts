@@ -10,6 +10,8 @@ export interface Claim {
   value: number;
   currency?: string;
   days?: number;
+  /** The port or airport named in the same sentence, if any. */
+  port?: string;
   outcome: 'success' | 'failure' | 'unknown';
   sentence: string;
 }
@@ -69,23 +71,31 @@ export const sentencesOf = (text: string) =>
 const parseAmount = (raw: string, scale: string | undefined) =>
   Number(raw.replace(/,/g, '')) * (scale ? (SCALE[scale.toLowerCase()] ?? 1) : 1);
 
+// A capitalized name right before "port", "airport" or "customs": "through Chennai port". Only names written as names,
+// since a lowercase word here is usually not a place ("the sea port").
+const PORT = /\b([A-Z][\p{L}]+(?: [A-Z][\p{L}]+)?) (?:sea ?port|airport|port|customs)\b/u;
+
 export function extractClaims(text: string): Claim[] {
   const out: Claim[] = [];
   for (const sentence of sentencesOf(text)) {
     const outcome = FAILURE.test(sentence) ? 'failure' : SUCCESS.test(sentence) ? 'success' : 'unknown';
+    const named = PORT.exec(sentence)?.[1];
+    const place = named ? { port: named } : {};
     for (const m of sentence.matchAll(MONEY_BEFORE)) {
       const value = parseAmount(m[2] ?? '0', m[3]);
       const currency = CURRENCY[(m[1] ?? '').toLowerCase()];
-      if (Number.isFinite(value) && currency) out.push({ metric: 'cost', value, currency, outcome, sentence });
+      if (Number.isFinite(value) && currency)
+        out.push({ metric: 'cost', value, currency, outcome, sentence, ...place });
     }
     for (const m of sentence.matchAll(MONEY_AFTER)) {
       const value = parseAmount(m[1] ?? '0', m[2]);
       const currency = CURRENCY[(m[3] ?? '').toLowerCase()];
-      if (Number.isFinite(value) && currency) out.push({ metric: 'cost', value, currency, outcome, sentence });
+      if (Number.isFinite(value) && currency)
+        out.push({ metric: 'cost', value, currency, outcome, sentence, ...place });
     }
     for (const m of sentence.matchAll(DURATION)) {
       const days = Number(m[1]) * (UNIT_DAYS[(m[2] ?? '').toLowerCase()] ?? 1);
-      out.push({ metric: 'duration', value: days, days, outcome, sentence });
+      out.push({ metric: 'duration', value: days, days, outcome, sentence, ...place });
     }
   }
   return out;

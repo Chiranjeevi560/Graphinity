@@ -193,11 +193,24 @@ describe('who can read', () => {
        ON CONFLICT (cohort_week, week_offset) DO UPDATE SET cohort_size = 100, active = 100`,
       [week],
     );
+    const product = (
+      await h.t.owner.query<{ id: string }>(
+        `INSERT INTO app.products (key, brand, label, k_reached) VALUES ('forecast-probe', 'probe', 'Probe', true) RETURNING id::text`,
+      )
+    ).rows[0]?.id;
+    await h.t.owner.query(
+      `INSERT INTO app.olap_daily_commerce_cube (day, field_id, product_entity_id, k_distinct_contributors, dp_noisy_intent_count, holt_winters_forecast_30d, holt_winters_forecast_90d)
+       VALUES (now()::date, 'travel', $1, 30, 30, 100, 300)`,
+      [product],
+    );
     // Other months, earlier and ahead, don't add to this one.
     await h.t.owner.query(
       `INSERT INTO app.acquisition_spend (month, currency, amount_micros) VALUES ('2020-01-01', 'INR', 999000000000), ('2099-01-01', 'INR', 999000000000)`,
     );
     const res = await h.call('GET', '/owner/dashboard/summary', owner.token);
+    expect(
+      res.json<{ commerce: Array<{ label: string; forecast: number; forecast90: number }> }>().commerce,
+    ).toContainEqual(expect.objectContaining({ label: 'Probe', forecast: 100, forecast90: 300 }));
     const row = res
       .json<{
         economics: Array<{ currency: string; costPerJoinMicros: number | null; lifetimeValueMicros: number | null }>;

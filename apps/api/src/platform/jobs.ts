@@ -133,15 +133,17 @@ export async function commerceRollup(db: Pick<Database, 'asSystem'>, secret: Buf
             [product, field, day],
           )
         ).rows.map(r => r.mentions);
-        const forecast = history.length >= 28 ? forecastWithIntervals(history, 30) : [];
-        const total = forecast.reduce((a, p) => a + p.value, 0);
+        const forecast = history.length >= 28 ? forecastWithIntervals(history, 90) : [];
+        const total = forecast.slice(0, 30).reduce((a, p) => a + p.value, 0);
+        const total90 = forecast.reduce((a, p) => a + p.value, 0);
         const noise = laplace(1 / 0.2, cellUniform(secret, `commerce|${day}|${field}|${String(product)}`));
         await q.query(
-          `INSERT INTO app.olap_daily_commerce_cube (day, field_id, product_entity_id, k_distinct_contributors, dp_noisy_intent_count, holt_winters_forecast_30d, conformal_interval_90)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
+          `INSERT INTO app.olap_daily_commerce_cube (day, field_id, product_entity_id, k_distinct_contributors, dp_noisy_intent_count, holt_winters_forecast_30d, conformal_interval_90, holt_winters_forecast_90d)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
            ON CONFLICT (day, field_id, product_entity_id) DO UPDATE SET dp_noisy_intent_count = excluded.dp_noisy_intent_count,
              k_distinct_contributors = excluded.k_distinct_contributors,
-             holt_winters_forecast_30d = excluded.holt_winters_forecast_30d, conformal_interval_90 = excluded.conformal_interval_90`,
+             holt_winters_forecast_30d = excluded.holt_winters_forecast_30d, conformal_interval_90 = excluded.conformal_interval_90,
+             holt_winters_forecast_90d = excluded.holt_winters_forecast_90d`,
           [
             day,
             field,
@@ -151,6 +153,7 @@ export async function commerceRollup(db: Pick<Database, 'asSystem'>, secret: Buf
             Math.max(0, Math.round(contributors + noise)),
             forecast.length ? total : null,
             forecast[0] ? (forecast[0].high - forecast[0].low) / 2 : null,
+            forecast.length ? total90 : null,
           ],
         );
         written += 1;

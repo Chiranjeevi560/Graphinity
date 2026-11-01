@@ -188,9 +188,10 @@ export function registerPlatformRoutes(
           field: string;
           count: number;
           forecast: number | null;
+          forecast90: number | null;
           interval: number | null;
         }>(
-          `SELECT p.label, c.field_id AS field, c.dp_noisy_intent_count AS count, c.holt_winters_forecast_30d AS forecast, c.conformal_interval_90 AS interval
+          `SELECT p.label, c.field_id AS field, c.dp_noisy_intent_count AS count, c.holt_winters_forecast_30d AS forecast, c.holt_winters_forecast_90d AS forecast90, c.conformal_interval_90 AS interval
            FROM app.olap_daily_commerce_cube c JOIN app.products p ON p.id = c.product_entity_id
            WHERE c.day > now()::date - 7 ORDER BY c.dp_noisy_intent_count DESC LIMIT 20`,
         )

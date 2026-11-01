@@ -23,6 +23,13 @@ import { inRing, RINGS, shouldTrip } from '../src/governance/rollback.ts';
 import { grievanceDeadlines, RESOLVE_MS, URGENT_MS, validStatement } from '../src/governance/legal.ts';
 
 describe('session graph', () => {
+  it('names the port or airport a claim was about, and only a name written as one', () => {
+    const [named] = extractClaims('It cost ₹5000 through Chennai port last year.');
+    expect(named?.port).toBe('Chennai');
+    expect(extractClaims('It took 3 days at Nhava Sheva port.')[0]?.port).toBe('Nhava Sheva');
+    expect(extractClaims('It cost ₹5000 at the sea port.')[0]).not.toHaveProperty('port');
+  });
+
   it('predicts by second order where it has seen enough, else first', () => {
     const t = emptyTransitions();
     for (let i = 0; i < 10; i++) {
