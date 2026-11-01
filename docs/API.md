@@ -575,7 +575,7 @@ transfer.
 
 Returns at most 20 public questions with their field, answer count, ranking score, algorithm version
 and a reason in words. `feed_personalization` is independently opt-in and defaults off. When it is on,
-`feed-rrf-v3` (ADR 0016) builds the list in tiers, each filling only what the one before left:
+`feed-rrf-v4` (ADR 0016, plus topics a person's memory keeps, in the last tier, only while memory is on) builds the list in tiers, each filling only what the one before left:
 
 1. **The person's own recent searches,** from the Search screen and the Ask check, run through the
    search engine, only while `search_history` is on. **Questions answered by the same people** as

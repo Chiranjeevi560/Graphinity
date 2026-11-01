@@ -19,7 +19,7 @@ import type { Database, Queryable } from '../db.ts';
 import type { SearchEngine } from '../search/engine.ts';
 import { RRF_K } from '../precheck.ts';
 
-export const FEED_VERSION = 'feed-rrf-v3';
+export const FEED_VERSION = 'feed-rrf-v4';
 export const FEED_SIZE = 20;
 /** Own signals read per request, newest first: bounds the work whatever the history. */
 export const RECENT_SEARCHES = 5;
@@ -29,8 +29,8 @@ const SOURCE_CAP = 100;
 /** Discovery is of current questions. */
 export const MAX_AGE_DAYS = 180;
 
-export type Source = 'search' | 'reading' | 'co_answer' | 'field' | 'recent';
-export const ALL_SOURCES: readonly Source[] = ['search', 'reading', 'co_answer', 'field', 'recent'];
+export type Source = 'search' | 'reading' | 'co_answer' | 'memory' | 'field' | 'recent';
+export const ALL_SOURCES: readonly Source[] = ['search', 'reading', 'co_answer', 'memory', 'field', 'recent'];
 /**
  * Tiers, each filling only what the one before left, in order of measured
  * strength (ADR 0016, scripts/benchmark-recommendations-v3.mjs):
@@ -41,12 +41,17 @@ export const ALL_SOURCES: readonly Source[] = ['search', 'reading', 'co_answer',
  *    the personal sources (0.088 against 0.152), and still give someone with no
  *    history a full list.
  */
-export const TIERS: ReadonlyArray<readonly Source[]> = [['search', 'co_answer'], ['reading'], ['field', 'recent']];
+export const TIERS: ReadonlyArray<readonly Source[]> = [
+  ['search', 'co_answer'],
+  ['reading'],
+  ['memory', 'field', 'recent'],
+];
 
 export const REASONS: Record<Source, string> = {
   search: 'Related to your recent Graphinity searches',
   reading: 'Similar to a question you opened',
   co_answer: 'Answered by people who answered one you opened',
+  memory: 'In a topic you keep coming back to',
   field: 'In one of your selected topics',
   recent: 'Recently asked in Graphinity',
 };
@@ -74,6 +79,7 @@ const TRACE: Record<Source, { signals: readonly string[]; consent: string | null
   search: { signals: ['search', 'question_precheck'], consent: 'search_history' },
   reading: { signals: ['question_viewed'], consent: 'reading_history' },
   co_answer: { signals: ['question_viewed'], consent: 'reading_history' },
+  memory: { signals: ['memory_semantic'], consent: 'memory_personalization' },
   field: { signals: ['field_selected'], consent: null },
   recent: { signals: [], consent: null },
 };
@@ -203,6 +209,7 @@ export async function recommend(
   await deps.db.withUser(userId, async q => {
     if (want.has('reading') && seeds.length) ranked.reading = await similarTo(q, seeds, model);
     if (want.has('co_answer') && seeds.length) ranked.co_answer = await answeredTogether(q, seeds);
+    if (want.has('memory')) ranked.memory = await inRememberedTopics(q, userId);
     if (want.has('field')) ranked.field = await inFields(q, userId);
     if (want.has('recent')) ranked.recent = await recent(q);
   });
@@ -308,6 +315,21 @@ async function answeredTogether(q: Queryable, seeds: readonly string[]): Promise
      ORDER BY count(DISTINCT other.answerer_id) DESC, other.question_id DESC
      LIMIT ${String(SOURCE_CAP)}`,
     [seeds],
+  );
+  return rows.map(r => r.id);
+}
+
+/**
+ * Topics someone keeps returning to. Rows exist only while they allow memory: withdrawing deletes them (migration
+ * 0044), so there's nothing further to check here. Row-level security limits this to their own.
+ */
+async function inRememberedTopics(q: Queryable, userId: string): Promise<string[]> {
+  const { rows } = await q.query<{ id: string }>(
+    `SELECT q.id::text AS id FROM app.questions q
+     JOIN app.memory_entries m ON m.user_id = $1 AND m.tier = 'semantic' AND m.key = q.field
+     WHERE q.created_at > now() - make_interval(days => $2)
+     ORDER BY m.reviews DESC, q.created_at DESC, q.id DESC LIMIT ${String(SOURCE_CAP)}`,
+    [userId, MAX_AGE_DAYS],
   );
   return rows.map(r => r.id);
 }

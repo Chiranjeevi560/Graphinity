@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { evaluateRanking } from '../src/ranking-evaluation.ts';
 import { fuseSources, interleaveLists, REASONS } from '../src/recommendations/feed.ts';
 
-describe('fusing recommendation sources (feed-rrf-v3)', () => {
+describe('fusing recommendation sources (feed-rrf-v4)', () => {
   it('fuses each source’s rank with no hand-picked weights, and explains by the strongest', () => {
     const fused = fuseSources({
       search: ['joint', 'searched'],
