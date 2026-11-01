@@ -195,19 +195,64 @@ describe('the knowledge graph', () => {
       ).d,
     ).toBe(64);
   });
-  it('pools steps with no person, shows nothing until several are seen, and refuses made-up topics', async () => {
-    const step = (body: object) => h.call('POST', '/knowledge-graph/transitions', undefined, body);
+  it('pools steps with no person, only with consent, shows nothing until several are seen, and refuses made-up topics', async () => {
+    const p = await member();
+    const stepBy = (token: string | undefined, body: object) =>
+      h.call('POST', '/knowledge-graph/transitions', token, body);
+    const next = async () =>
+      (await h.call('GET', '/knowledge-graph/next?current=travel')).json<{
+        next: Array<{ field: string; name: string; probability: number | null; because: string }>;
+      }>().next;
+    const stored = async () =>
+      (await h.t.owner.query("SELECT 1 FROM app.kg_session_transitions WHERE from_key = 'travel'")).rowCount;
+    // Signed out, without agreeing, or with Global Privacy Control: the same answer, and nothing kept.
+    expect((await stepBy(undefined, { from: 'travel', to: 'visas-immigration' })).statusCode).toBe(204);
+    expect((await stepBy(p.token, { from: 'travel', to: 'visas-immigration' })).statusCode).toBe(204);
+    expect(await stored()).toBe(0);
+    await h.call('PUT', '/me/consents', p.token, { choices: [{ category: 'anonymous_analytics', enabled: true }] });
+    const gpc = await h.app.inject({
+      method: 'POST',
+      url: '/knowledge-graph/transitions',
+      headers: { authorization: `Bearer ${p.token}`, 'sec-gpc': '1' },
+      payload: { from: 'travel', to: 'visas-immigration' },
+    });
+    expect(gpc.statusCode).toBe(204);
+    expect(await stored()).toBe(0);
+
+    const step = (body: object) => stepBy(p.token, body);
     expect((await step({ from: 'travel', to: 'visas-immigration' })).statusCode).toBe(204);
-    expect((await h.call('GET', '/knowledge-graph/next?current=travel')).json()).toEqual({ next: [] });
+    expect((await next()).filter(n => n.because === 'journeys')).toEqual([]);
     for (let i = 0; i < 5; i++) await step({ from: 'travel', to: 'visas-immigration' });
-    expect(
-      (await h.call('GET', '/knowledge-graph/next?current=travel')).json<{ next: Array<{ field: string }> }>().next[0]
-        ?.field,
-    ).toBe('visas-immigration');
+    expect(must((await next())[0])).toMatchObject({ field: 'visas-immigration', because: 'journeys' });
+    expect(must((await next())[0]).name).not.toBe('visas-immigration');
     await step({ from: 'travel', to: 'made-up-topic' });
     expect(
       (await h.t.owner.query("SELECT 1 FROM app.kg_session_transitions WHERE to_key = 'made-up-topic'")).rows,
     ).toEqual([]);
+  });
+
+  it('fills in from graph embeddings when journeys are thin, and only close ones', async () => {
+    const node = async (key: string, embedding: number[]) => {
+      const { rows } = await h.t.owner.query<{ id: string }>(
+        `INSERT INTO app.kg_nodes (kind, key) VALUES ('field', $1)
+         ON CONFLICT (kind, key) DO UPDATE SET key = excluded.key RETURNING id::text`,
+        [key],
+      );
+      await h.t.owner.query(
+        `INSERT INTO app.kg_node_embeddings (node_id, embedding) VALUES ($1, $2)
+         ON CONFLICT (node_id) DO UPDATE SET embedding = excluded.embedding`,
+        [must(rows[0]).id, embedding],
+      );
+    };
+    const axis = (i: number) => Array.from({ length: 64 }, (_, k) => (k === i ? 1 : 0));
+    await node('food-cooking', axis(0));
+    await node('money-tax', [0.9, 0.1, ...Array<number>(62).fill(0)]);
+    await node('imports-customs', axis(5));
+    const { next } = (await h.call('GET', '/knowledge-graph/next?current=food-cooking')).json<{
+      next: Array<{ field: string; because: string; probability: number | null }>;
+    }>();
+    expect(next.map(n => n.field)).toEqual(['money-tax']);
+    expect(next[0]).toMatchObject({ because: 'related', probability: null });
   });
 });
 

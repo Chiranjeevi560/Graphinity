@@ -31,7 +31,9 @@ describe('holdouts', () => {
     const q = await w.question();
     let shown = 0;
     let ghost = 0;
-    for (let i = 0; i < 60; i++) {
+    // No one landing in the tenth is about one run in 13,000 at this size (60 was one in 500). More hits the test
+    // address's request limit, which the rest of this file shares.
+    for (let i = 0; i < 90; i++) {
       const p = await w.member();
       await allow(p.token, 'ads_personalization');
       const ads = await w.select(p.token, { placement: 'question', questionId: q });

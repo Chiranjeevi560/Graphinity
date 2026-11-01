@@ -8,6 +8,7 @@ import { Standing, useStanding } from '../components/Standing.tsx';
 import { turnPushOff } from '../lib/push.ts';
 import { ApiError } from '../lib/api.ts';
 import { drafts } from '../lib/drafts.ts';
+import { journey } from '../lib/journey.ts';
 import { forgetSearch } from '../lib/search.ts';
 import { navigate } from '../lib/router.ts';
 import { api, auth, type Profile } from '../session.tsx';
@@ -28,6 +29,7 @@ export default function Me({ profile }: { profile: Profile }) {
       auth.clear();
       drafts.clear();
       forgetSearch();
+      journey.forget();
       navigate('/goodbye', { replace: true });
     } catch (err) {
       setDeleteError(err instanceof ApiError ? err.message : 'Something went wrong. Try again in a minute.');
@@ -96,6 +98,7 @@ export default function Me({ profile }: { profile: Profile }) {
               .then(() => {
                 drafts.clear();
                 forgetSearch();
+                journey.forget();
                 navigate('/', { replace: true });
               });
           }}

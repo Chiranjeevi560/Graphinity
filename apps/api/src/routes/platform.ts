@@ -23,6 +23,22 @@ import { isModerator } from './moderation.ts';
 import { fail, pgCode, signedIn } from './common.ts';
 
 const slug = { type: 'string', pattern: '^[a-z0-9]+(-[a-z0-9]+)*$', maxLength: 80 };
+const MAX_NEXT = 5;
+/** Below this, "related" would be noise: the embeddings of two unrelated topics are near zero. */
+const MIN_SIMILARITY = 0.3;
+
+function cosine(a: readonly number[], b: readonly number[]): number {
+  let dot = 0;
+  let na = 0;
+  let nb = 0;
+  for (const [i, x] of a.entries()) {
+    const y = b[i] ?? 0;
+    dot += x * y;
+    na += x * x;
+    nb += y * y;
+  }
+  return na && nb ? dot / Math.sqrt(na * nb) : 0;
+}
 const digits = { type: 'string', pattern: '^[1-9][0-9]{0,15}$' };
 
 async function isOwner(q: Queryable): Promise<boolean> {
@@ -265,6 +281,20 @@ export function registerPlatformRoutes(
       }
       const b = req.body as { from: string; to: string; previous?: string };
       if (b.from === b.to) return reply.code(204).send();
+      // Pooled with no person, and still only from someone who agreed to anonymous measurement. The same answer
+      // either way: a page doesn't need to know, and shouldn't have to ask.
+      if (!req.user || req.headers['sec-gpc'] === '1') return reply.code(204).send();
+      const agreed = await db.withUser(
+        req.user.id,
+        async q =>
+          (
+            await q.query(
+              `SELECT 1 FROM app.user_consent_settings
+               WHERE user_id = app.current_user_id() AND category = 'anonymous_analytics' AND enabled`,
+            )
+          ).rowCount,
+      );
+      if (!agreed) return reply.code(204).send();
       await db.asSystem(async q => {
         // Only topics we know: an open address must not fill the table with made-up keys.
         const known = await q.query('SELECT 1 FROM app.fields WHERE slug = ANY($1)', [
@@ -299,31 +329,55 @@ export function registerPlatformRoutes(
     },
     async req => {
       const { current, previous } = req.query as { current: string; previous?: string };
-      const rows = await db.asSystem(
-        async q =>
-          (
-            await q.query<{ item: string; c: number; prior_key: string }>(
-              `SELECT to_key AS item, decayed_transition_count AS c, prior_key FROM app.kg_session_transitions
-               WHERE from_key = $1 AND prior_key IN ('', $2)`,
-              [current, previous ?? ''],
-            )
-          ).rows,
-      );
+      const { rows, similar, names } = await db.asSystem(async q => {
+        const steps = (
+          await q.query<{ item: string; c: number; prior_key: string }>(
+            `SELECT to_key AS item, decayed_transition_count AS c, prior_key FROM app.kg_session_transitions
+             WHERE from_key = $1 AND prior_key IN ('', $2)`,
+            [current, previous ?? ''],
+          )
+        ).rows;
+        // Topics near this one in the knowledge graph: what a new topic with no journeys yet can offer.
+        const near = (
+          await q.query<{ item: string; e: number[]; mine: number[] }>(
+            `SELECT n.key AS item, e.embedding AS e, me.embedding AS mine
+             FROM app.kg_nodes self JOIN app.kg_node_embeddings me ON me.node_id = self.id
+             JOIN app.kg_nodes n ON n.kind = 'field' AND n.id <> self.id
+             JOIN app.kg_node_embeddings e ON e.node_id = n.id
+             WHERE self.kind = 'field' AND self.key = $1`,
+            [current],
+          )
+        ).rows;
+        const fields = (await q.query<{ slug: string; name: string }>('SELECT slug, name FROM app.fields')).rows;
+        return { rows: steps, similar: near, names: new Map(fields.map(f => [f.slug, f.name])) };
+      });
       const second = rows.filter(r => r.prior_key !== '');
       // Pooled counts, shown from five steps up. Steps aren't per person: someone repeating one can reach
-      // five; nothing depends on this for ranking yet.
+      // five; nothing depends on this for ranking.
       const base = second.reduce((a, r) => a + r.c, 0) >= 5 ? second : rows.filter(r => r.prior_key === '');
       const total = base.reduce((a, r) => a + r.c, 0);
-      return {
-        next:
-          total < 5
-            ? []
-            : base
-                .filter(r => r.item !== previous)
-                .map(r => ({ field: r.item, probability: r.c / total }))
-                .sort((a, b) => b.probability - a.probability)
-                .slice(0, 5),
-      };
+      const journeys =
+        total < 5
+          ? []
+          : base
+              .filter(r => r.item !== previous && names.has(r.item))
+              .map(r => ({
+                field: r.item,
+                name: names.get(r.item) ?? r.item,
+                probability: r.c / total,
+                because: 'journeys' as const,
+              }))
+              .sort((a, b) => b.probability - a.probability)
+              .slice(0, 5);
+      const shown = new Set([current, previous, ...journeys.map(j => j.field)]);
+      const related = similar
+        .filter(r => !shown.has(r.item) && names.has(r.item))
+        .map(r => ({ field: r.item, name: names.get(r.item) ?? r.item, score: cosine(r.mine, r.e) }))
+        .filter(r => r.score >= MIN_SIMILARITY)
+        .sort((a, b) => b.score - a.score || a.field.localeCompare(b.field))
+        .slice(0, Math.max(0, MAX_NEXT - journeys.length))
+        .map(r => ({ field: r.field, name: r.name, probability: null, because: 'related' as const }));
+      return { next: [...journeys, ...related] };
     },
   );
 

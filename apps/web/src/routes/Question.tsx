@@ -23,9 +23,11 @@ import {
 } from '../lib/questions.ts';
 import { AnswerActions, AnswerLabels } from '../components/AnswerActions.tsx';
 import { ConsensusBar } from '../components/ConsensusBar.tsx';
+import { NextTopics } from '../components/NextTopics.tsx';
 import { RoutingGraph } from '../components/RoutingGraph.tsx';
 import { SquircleLayers } from '../components/Squircle.tsx';
 import { routingLine } from '../lib/graph-words.ts';
+import { journey } from '../lib/journey.ts';
 import { takeJustAsked } from '../lib/just-asked.ts';
 import { finishReading, readingVisible } from '../lib/search.ts';
 import { Link } from '../lib/router.ts';
@@ -107,6 +109,18 @@ export default function Question({ id }: { id: string }) {
   const [now, setNow] = useState(Date.now);
   // Asked from this tab moments ago: its first wave is shown leaving.
   const [fresh] = useState(() => takeJustAsked(id));
+
+  // One step of a journey between topics. The server keeps it only with this person's consent.
+  const fieldSlug = page?.question.field.slug;
+  const signedIn = state.status === 'ready';
+  useEffect(() => {
+    if (!fieldSlug || !signedIn) return;
+    const step = journey.note(fieldSlug);
+    if (step)
+      void api('/knowledge-graph/transitions', { method: 'POST', signedIn: true, body: step }).catch(() => {
+        // A step that doesn't reach the server costs nothing worth telling anyone.
+      });
+  }, [fieldSlug, signedIn]);
 
   // Fix the address and the tab title once the question is here.
   useEffect(() => {
@@ -312,6 +326,8 @@ export default function Question({ id }: { id: string }) {
           </ol>
         )}
       </section>
+
+      <NextTopics field={question.field.slug} />
 
       {state.status === 'signedOut' && (
         <section className="answer-cta">
