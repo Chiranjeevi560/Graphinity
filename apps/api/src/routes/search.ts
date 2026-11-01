@@ -48,6 +48,8 @@ export function reasonsFor(f: Found): Reason[] | null {
 /** The experiment that shows diversified results to its treatment arm. Without it running, nobody's results change. */
 export const DIVERSITY_EXPERIMENT = 'search_diversity';
 const EXPERIMENT_CHECK_MS = 60_000;
+/** Below this a topic's journeys could be one reader's, as on the related-topics route. */
+const MIN_JOURNEY_STEPS = 5;
 /** Topics a session can name as where it has been. */
 const MAX_CONTEXT = 5;
 
@@ -161,8 +163,11 @@ export function registerSearchRoutes(
         const { rows } = await db.asSystem(q =>
           q.query<{ to_key: string; share: number }>(
             `SELECT to_key, sum(decayed_transition_count) / sum(sum(decayed_transition_count)) OVER () AS share
-             FROM app.kg_session_transitions WHERE from_key = ANY($1) AND prior_key = '' GROUP BY to_key`,
-            [context],
+             FROM app.kg_session_transitions t WHERE t.from_key = ANY($1) AND t.prior_key = ''
+               AND (SELECT sum(o.decayed_transition_count) FROM app.kg_session_transitions o
+                    WHERE o.from_key = t.from_key AND o.prior_key = '') >= $2
+             GROUP BY to_key`,
+            [context, MIN_JOURNEY_STEPS],
           ),
         );
         for (const r of rows) next.set(r.to_key, r.share);

@@ -196,6 +196,7 @@ interface Summary {
     lifetimeValueMicros: number | null;
     costPerJoinMicros: number | null;
   }>;
+  failedPushes: number;
   health: {
     objectives: Array<{ name: string; budgetRemaining: number; burn: { hour: number; day: number } }>;
   };
@@ -385,7 +386,7 @@ export function OwnerPage() {
         empty="Shown once there’s ad income, or you’ve recorded what you spent bringing people in."
         rows={data.economics.map(e => [
           e.currency,
-          `Worth ${money(e.lifetimeValueMicros, e.currency)} over about ${e.lifetimeWeeks.toFixed(1)} weeks · costs ${money(e.costPerJoinMicros, e.currency)} to bring in`,
+          `Roughly worth ${money(e.lifetimeValueMicros, e.currency)} over about ${e.lifetimeWeeks.toFixed(1)} weeks · costs ${money(e.costPerJoinMicros, e.currency)} to bring in`,
         ])}
       />
       <SpendForm onSaved={retry} />
@@ -436,6 +437,9 @@ export function OwnerPage() {
         empty="Not enough data yet. Each needs a few hundred real events first."
         rows={data.evaluations.map(e => [e.name, describeEvaluation(e.metrics)])}
       />
+      {data.failedPushes > 0 && (
+        <Section title="Partner lists" empty="" rows={[['Not delivered in 7 days', n(data.failedPushes), true]]} />
+      )}
       <Section
         title="Audit log"
         empty=""

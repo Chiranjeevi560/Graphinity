@@ -132,13 +132,17 @@ export function createSearchEngine({
   return {
     async vectors(ids, model) {
       if (!model || !ids.length) return new Map();
-      const { rows } = await db.withUser(null, q =>
-        q.query<{ id: string; vector: string }>(
-          'SELECT id::text AS id, vector FROM app.question_vectors($1::bigint[], $2)',
-          [ids, model],
-        ),
-      );
-      return new Map(rows.map(r => [r.id, JSON.parse(r.vector) as number[]]));
+      try {
+        const { rows } = await db.withUser(null, q =>
+          q.query<{ id: string; vector: string }>(
+            'SELECT id::text AS id, vector FROM app.question_vectors($1::bigint[], $2)',
+            [ids, model],
+          ),
+        );
+        return new Map(rows.map(r => [r.id, JSON.parse(r.vector) as number[]]));
+      } catch {
+        return new Map();
+      }
     },
     async retrieve({ text, meaningText = text, field, pool, typing = false }) {
       const timings: Timings = { embed: 0, words: 0, meaning: 0, fetch: 0 };

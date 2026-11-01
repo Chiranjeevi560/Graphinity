@@ -211,9 +211,8 @@ export function registerPlatformRoutes(
       ).rows;
       const retention = retentionRates(cohorts);
       const recent = (
-        await q.query<{ person_weeks: string; joined: string }>(
-          `SELECT coalesce(sum(active), 0)::text AS person_weeks,
-                  coalesce(sum(cohort_size) FILTER (WHERE week_offset = 0 AND cohort_week > now()::date - 28), 0)::text AS joined
+        await q.query<{ person_weeks: string }>(
+          `SELECT coalesce(sum(active), 0)::text AS person_weeks
            FROM app.olap_cohort_retention WHERE cohort_week + week_offset * 7 > now()::date - 28`,
         )
       ).rows[0];
@@ -227,13 +226,25 @@ export function registerPlatformRoutes(
             )
           ).rows,
       );
+      // The latest month with a figure, against who joined in that same month: the two sides must cover one period.
       const spends = (
-        await q.query<{ currency: string; micros: string }>(
-          `SELECT currency, sum(amount_micros)::text AS micros FROM app.acquisition_spend
-           WHERE month >= date_trunc('month', now() - interval '28 days') GROUP BY currency`,
+        await q.query<{ currency: string; micros: string; joined: string }>(
+          `SELECT DISTINCT ON (s.currency) s.currency, s.amount_micros::text AS micros,
+                  (SELECT coalesce(sum(r.cohort_size), 0) FROM app.olap_cohort_retention r
+                   WHERE r.week_offset = 0 AND r.cohort_week >= s.month AND r.cohort_week < s.month + interval '1 month')::text AS joined
+           FROM app.acquisition_spend s WHERE s.month <= now() ORDER BY s.currency, s.month DESC`,
         )
       ).rows;
-      const lifetimeWeeks = expectedWeeks(cohorts);
+      const failedPushes = await db.asSystem(async s =>
+        Number(
+          (
+            await s.query<{ n: string }>(
+              `SELECT count(*)::text AS n FROM app.ad_partner_pushes WHERE NOT delivered AND day > now()::date - 7`,
+            )
+          ).rows[0]?.n,
+        ),
+      );
+      const lifetimeWeeks = expectedWeeks(cohorts, deps.clock.now());
       const economics = [...new Set([...income, ...spends].map(r => r.currency))].sort().map(currency => {
         const spend = spends.find(r => r.currency === currency);
         return {
@@ -244,7 +255,7 @@ export function registerPlatformRoutes(
             personWeeks: Number(recent?.person_weeks ?? 0),
             lifetimeWeeks,
             spendMicros: spend ? Number(spend.micros) : null,
-            joined: Number(recent?.joined ?? 0),
+            joined: Number(spend?.joined ?? 0),
           }),
         };
       });
@@ -265,6 +276,7 @@ export function registerPlatformRoutes(
         },
         retention,
         economics,
+        failedPushes,
         together,
         totals: { day: within(1), week: within(7), month: within(28) },
         daily: [...series].sort().map(([day, events]) => ({ day, events })),
@@ -702,13 +714,17 @@ export function registerPlatformRoutes(
       if (!validPreference(name, value))
         return fail(reply, 400, 'invalid_preference', 'That isn’t one of the choices.');
       try {
-        await db.withUser(user.id, q =>
+        const saved = await db.withUser(user.id, q =>
           q.query(
-            `INSERT INTO app.memory_entries (user_id, tier, key, value) VALUES ($1, 'procedural', $2, $3)
+            `INSERT INTO app.memory_entries (user_id, tier, key, value)
+             SELECT $1, 'procedural', $2, $3 WHERE app.memory_allowed_locked($1)
              ON CONFLICT (user_id, tier, key) DO UPDATE SET value = excluded.value, seen_at = now()`,
             [user.id, name, value],
           ),
         );
+        // Memory was off, or was being turned off this instant: the lock settles which came first.
+        if (!saved.rowCount)
+          return await fail(reply, 403, 'consent_required', 'Turn on remembering in Privacy settings first.');
       } catch (err) {
         if ((err as { code?: string }).code === '42501')
           return fail(reply, 403, 'consent_required', 'Turn on remembering in Privacy settings first.');
@@ -914,7 +930,7 @@ export function registerPlatformRoutes(
                 await q.query(
                   `SELECT public_id AS id, reference, kind, body, received_at AS "receivedAt", acknowledge_by AS "acknowledgeBy",
                         resolve_by AS "resolveBy", acknowledged_at AS "acknowledgedAt"
-                 FROM app.grievances WHERE resolved_at IS NULL ORDER BY resolve_by LIMIT 100 OFFSET $1`,
+                 FROM app.grievances WHERE resolved_at IS NULL ORDER BY resolve_by, id LIMIT 100 OFFSET $1`,
                   [page * 100],
                 )
               ).rows,

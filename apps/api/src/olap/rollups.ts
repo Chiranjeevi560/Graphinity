@@ -139,28 +139,29 @@ export const retentionRates = (
 };
 
 /**
- * How many weeks a new person stays, from retention: the sum over weeks since joining of the share still active, each
- * week's share weighted by how many people it covers. Only 13 weeks are kept, so this understates a long stay, and
- * lifetime value with it: better than guessing at people who haven't had time to leave.
+ * How many weeks a new person stays, from retention: over weeks since joining, the share still active, each week counting
+ * every cohort old enough to have reached it. The rollup writes no row for a week nobody was active, and leaving those
+ * out would read as everyone having stayed. Only 13 weeks are kept, which understates a long stay.
  */
 export function expectedWeeks(
-  rows: ReadonlyArray<{ week_offset: number; cohort_size: number; active: number }>,
+  rows: ReadonlyArray<{ cohort_week: string; week_offset: number; cohort_size: number; active: number }>,
+  now: number,
 ): number {
-  const byWeek = new Map<number, { size: number; active: number }>();
-  for (const r of rows) {
-    const w = byWeek.get(r.week_offset) ?? { size: 0, active: 0 };
-    w.size += r.cohort_size;
-    w.active += r.active;
-    byWeek.set(r.week_offset, w);
-  }
+  const sizes = new Map(rows.map(r => [r.cohort_week, r.cohort_size]));
   let weeks = 0;
-  for (const w of byWeek.values()) if (w.size) weeks += w.active / w.size;
+  for (let offset = 0; offset <= 12; offset++) {
+    let size = 0;
+    for (const [week, n] of sizes) if (Date.parse(week) + offset * 7 * 86_400_000 <= now) size += n;
+    const active = rows.filter(r => r.week_offset === offset).reduce((sum, r) => sum + r.active, 0);
+    if (size) weeks += active / size;
+  }
   return weeks;
 }
 
 /**
- * Income per active person-week times expected weeks, against spend per person who joined. Null where a part is
- * missing, never zero: "no figure yet" and "it costs nothing" are different answers.
+ * Income per active person-week times expected weeks, against spend per person who joined. Rough, and the page says so:
+ * income comes from everyone while activity counts recent joiners who asked or answered, so this can run high, and the
+ * short stay window pulls it low. Null where a part is missing, never zero: "no figure yet" and "it costs nothing" differ.
  */
 export function unitEconomics(input: {
   revenueMicros: number;
