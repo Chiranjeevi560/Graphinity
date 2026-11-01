@@ -227,13 +227,15 @@ export function registerPlatformRoutes(
             )
           ).rows,
       );
-      // The latest month with a figure, against who joined in that same month: the two sides must cover one period.
+      // The latest finished month with a figure, against who joined in it: the two sides must cover one whole period.
       const spends = (
         await q.query<{ currency: string; micros: string; joined: string }>(
           `SELECT DISTINCT ON (s.currency) s.currency, s.amount_micros::text AS micros,
-                  (SELECT coalesce(sum(r.cohort_size), 0) FROM app.olap_cohort_retention r
-                   WHERE r.week_offset = 0 AND r.cohort_week >= s.month AND r.cohort_week < s.month + interval '1 month')::text AS joined
-           FROM app.acquisition_spend s WHERE s.month <= now() ORDER BY s.currency, s.month DESC`,
+                  (SELECT coalesce(sum(c.size), 0) FROM (
+                     SELECT max(r.cohort_size) AS size FROM app.olap_cohort_retention r
+                     WHERE r.cohort_week >= s.month AND r.cohort_week < s.month + interval '1 month' GROUP BY r.cohort_week
+                   ) c)::text AS joined
+           FROM app.acquisition_spend s WHERE s.month < date_trunc('month', now()) ORDER BY s.currency, s.month DESC`,
         )
       ).rows;
       const failedPushes = await db.asSystem(async s =>
@@ -574,7 +576,7 @@ export function registerPlatformRoutes(
         products: (
           await q.query(
             `SELECT p.label, c.day::text AS day, c.dp_noisy_intent_count AS "noisyCount", c.holt_winters_forecast_30d AS "forecast30d",
-                    c.conformal_interval_90 AS "interval90"
+                    c.holt_winters_forecast_90d AS "forecast90", c.conformal_interval_90 AS "interval90"
              FROM app.olap_daily_commerce_cube c JOIN app.products p ON p.id = c.product_entity_id
              WHERE c.field_id = $1 AND c.day > now()::date - 7 ORDER BY c.dp_noisy_intent_count DESC LIMIT 50`,
             [fieldSlug],
@@ -670,6 +672,7 @@ export function registerPlatformRoutes(
             metric: x.metric,
             value: x.value,
             currency: x.currency ?? null,
+            port: x.port ?? null,
             outcome: x.outcome,
             quote: x.sentence,
             answerId: x.answer,

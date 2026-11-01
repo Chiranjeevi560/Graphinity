@@ -180,7 +180,9 @@ describe('who can read', () => {
     await h.t.owner.query('INSERT INTO app.platform_owners (profile_id) VALUES ($1)', [owner.id]);
     const bad = await h.call('PUT', '/owner/acquisition-spend', owner.token, { ...spend, amountMicros: -1 });
     expect(bad.statusCode).toBe(400);
-    const month = new Date().toISOString().slice(0, 7);
+    const lastMonth = new Date();
+    lastMonth.setUTCDate(0);
+    const month = lastMonth.toISOString().slice(0, 7);
     expect((await h.call('PUT', '/owner/acquisition-spend', owner.token, { ...spend, month })).statusCode).toBe(200);
     // Correcting a month replaces it rather than adding to it.
     expect(
@@ -203,9 +205,10 @@ describe('who can read', () => {
        VALUES (now()::date, 'travel', $1, 30, 30, 100, 300)`,
       [product],
     );
-    // Other months, earlier and ahead, don't add to this one.
+    // An earlier month, and the unfinished current one, don't add to this one.
     await h.t.owner.query(
-      `INSERT INTO app.acquisition_spend (month, currency, amount_micros) VALUES ('2020-01-01', 'INR', 999000000000), ('2099-01-01', 'INR', 999000000000)`,
+      `INSERT INTO app.acquisition_spend (month, currency, amount_micros) VALUES ('2020-01-01', 'INR', 999000000000), ($1, 'INR', 999000000000)`,
+      [new Date().toISOString().slice(0, 7) + '-01'],
     );
     const res = await h.call('GET', '/owner/dashboard/summary', owner.token);
     expect(
@@ -217,7 +220,12 @@ describe('who can read', () => {
       }>()
       .economics.find(e => e.currency === 'INR');
     // The month's spend over that month's joiners, and not the month before's too.
-    expect(row?.costPerJoinMicros).toBe(10_000_000);
+    const joined = await h.t.owner.query<{ n: string }>(
+      `SELECT sum(c.size)::text AS n FROM (SELECT max(cohort_size) AS size FROM app.olap_cohort_retention
+         WHERE cohort_week >= $1::date AND cohort_week < $1::date + interval '1 month' GROUP BY cohort_week) c`,
+      [week],
+    );
+    expect(row?.costPerJoinMicros).toBeCloseTo(1_000_000_000 / Number(joined.rows[0]?.n));
     // No ad income in this world: value is zero income over real weeks, not a guess.
     expect(row?.lifetimeValueMicros).toBe(0);
     await h.t.owner.query('DELETE FROM app.platform_owners WHERE profile_id = $1', [owner.id]);

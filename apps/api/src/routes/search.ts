@@ -281,17 +281,18 @@ export function registerSearchRoutes(
       } else {
         // Only people who chose to help improve search can be in the comparison at all.
         diversity = recorded && userId ? await diversityArm(userId) : null;
-        const inOrder =
+        const vectors =
           diversity === 'treatment'
-            ? diversify(
-                byProduction,
-                await engine.vectors(
-                  byProduction.map(f => f.id),
-                  meaningModel,
-                ),
-                SEARCH_RESULTS,
+            ? await engine.vectors(
+                byProduction.map(f => f.id),
+                meaningModel,
               )
-            : byProduction.slice(0, SEARCH_RESULTS);
+            : null;
+        // The arm still counts as treatment, so a long failure dulls the comparison: this is how anyone would know.
+        if (vectors?.size === 0 && byProduction.length) req.log.warn('diversity had no vectors');
+        const inOrder = vectors
+          ? diversify(byProduction, vectors, SEARCH_RESULTS)
+          : byProduction.slice(0, SEARCH_RESULTS);
         const ranked = inOrder.map((f, i) => ({ f, reasons: reasonOf.get(f.id) ?? [], rankedPosition: i + 1 }));
         // One intervention to a search: both arms alike, so a swap can't muddy the comparison.
         swap = recorded && !diversity ? chooseSwap(random, ranked.length) : null;

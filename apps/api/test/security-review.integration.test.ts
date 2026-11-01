@@ -197,6 +197,7 @@ describe('finding 6: account deletion', () => {
       "INSERT INTO app.exp_definitions (layer_id, name, bucket_start, bucket_end, status) VALUES ($1, 'all', 0, 10000, 'running')",
       [layer],
     );
+    await h.call('PUT', '/me/consents', p.token, { choices: [{ category: 'search_improvement', enabled: true }] });
     await enrol(h.t.database, p.id, 'all');
     expect((await o.query('SELECT 1 FROM app.exp_unit_metrics WHERE subject = $1', [p.id])).rows).toHaveLength(1);
     await o.query('DELETE FROM app.profiles WHERE id = $1', [p.id]);
