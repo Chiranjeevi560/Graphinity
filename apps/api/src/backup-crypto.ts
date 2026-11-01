@@ -57,7 +57,7 @@ export async function decryptToFile(path: string, target: string, passphrase: st
   }
   const salt = header.subarray(MAGIC.length, MAGIC.length + SALT);
   const nonce = header.subarray(MAGIC.length + SALT);
-  const decipher = createDecipheriv('aes-256-gcm', keyFrom(passphrase, salt), nonce);
+  const decipher = createDecipheriv('aes-256-gcm', keyFrom(passphrase, salt), nonce, { authTagLength: TAG });
   decipher.setAuthTag(tag);
   const out = createWriteStream(target, { mode: 0o600 });
   // An empty range would make createReadStream read the whole file.
