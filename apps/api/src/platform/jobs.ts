@@ -167,6 +167,27 @@ export async function commerceRollup(db: Pick<Database, 'asSystem'>, secret: Buf
 }
 
 /** Topics, the products asked about under them, and each one's structural embedding. */
+/**
+ * A fixed random projection into the graph's dimensions (Johnson-Lindenstrauss), which roughly keeps which vectors are
+ * near which. Seeded from the position, so the same meaning always lands in the same place.
+ */
+export function projectFeature(vector: readonly number[], dims: number): Float32Array {
+  const out = new Float32Array(dims);
+  vector.forEach((x, i) => {
+    if (x === 0) return;
+    for (let d = 0; d < dims; d++) {
+      let h = Math.imul(i + 1, 0x9e3779b1) ^ Math.imul(d + 1, 0x85ebca77);
+      h ^= h >>> 13;
+      h = Math.imul(h, 0xc2b2ae3d);
+      h ^= h >>> 16;
+      const sign = h & 1 ? 1 : -1;
+      out[d] = (out[d] ?? 0) + sign * x;
+    }
+  });
+  const norm = Math.hypot(...out);
+  return norm ? out.map(x => x / norm) : out;
+}
+
 export async function refreshKnowledgeGraph(db: Pick<Database, 'asSystem'>, now: number): Promise<number> {
   return db.asSystem(async q => {
     await q.query("SELECT pg_advisory_xact_lock(hashtext('kg-refresh'))");
@@ -215,6 +236,18 @@ export async function refreshKnowledgeGraph(db: Pick<Database, 'asSystem'>, now:
     let s = 42;
     const random = () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 2 ** 32;
     const features = Float32Array.from({ length: nodes.length * DIMS }, () => random() - 0.5);
+    // A topic starts from what its questions mean, where there's a model, so two topics about similar things start
+    // close. The rest (and every topic before any embedding) keep their fixed random start.
+    const meanings = (
+      await q.query<{ node: string; vector: string }>(
+        `SELECT n.id::text AS node, m.vector FROM app.field_mean_vectors() m
+         JOIN app.kg_nodes n ON n.kind = 'field' AND n.key = m.field`,
+      )
+    ).rows;
+    for (const m of meanings) {
+      const at = indexOf.get(m.node);
+      if (at !== undefined) features.set(projectFeature(JSON.parse(m.vector) as number[], DIMS), at * DIMS);
+    }
     const h = embed(initSage(DIMS, 2, random), buildGraph(nodes.length, features, DIMS, edges));
     for (const [i, n] of nodes.entries())
       await q.query(
