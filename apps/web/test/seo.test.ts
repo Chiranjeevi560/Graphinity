@@ -102,3 +102,11 @@ describe('setting the tags as people move between screens', () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe('page titles', () => {
+  it('names every working screen, so none reads as "Page not found"', () => {
+    for (const path of ['/me/privacy', '/ops', '/owner', '/legal/complaint', '/ask', '/search', '/review', '/me'])
+      expect(pageMeta(path).title, path).not.toContain('Page not found');
+    expect(pageMeta('/no-such-page').title).toContain('Page not found');
+  });
+});
