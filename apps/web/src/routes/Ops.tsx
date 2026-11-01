@@ -242,8 +242,7 @@ function SpendForm({ onSaved }: { onSaved: () => void }) {
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState<string | null>(null);
   const value = Number(amount);
-  const usable =
-    amount.trim() !== '' && Number.isFinite(value) && value >= 0 && /^20\d{2}-(0[1-9]|1[0-2])$/.test(month);
+  const usable = amount.trim() !== '' && Number.isFinite(value) && value >= 0 && /^\d{4}-\d\d$/.test(month);
 
   async function save() {
     setNote(null);
@@ -254,10 +253,10 @@ function SpendForm({ onSaved }: { onSaved: () => void }) {
         body: { month, currency: 'INR', amountMicros: Math.round(value * 1_000_000) },
       });
       setAmount('');
-      setNote('Saved. Saving the same month again replaces it.');
+      setNote('Saved.');
       onSaved();
     } catch (err) {
-      setNote(err instanceof ApiError ? err.message : 'That didn’t save. Try again.');
+      setNote(err instanceof ApiError ? err.message : 'That didn’t save.');
     }
   }
 
@@ -270,7 +269,7 @@ function SpendForm({ onSaved }: { onSaved: () => void }) {
       }}
     >
       <label htmlFor="spend-month" className="text-subhead">
-        Month (year-month)
+        Month (2026-11)
       </label>
       <input
         id="spend-month"
