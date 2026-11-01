@@ -275,7 +275,7 @@ export async function signIn(page: Page, who: 'Test person A' | 'A brand-new per
   await openHome(page);
   await page.getByRole('button', { name: 'Continue with Google' }).click();
   const answered = answerConsentWhenAsked(page);
-  await page.getByRole('button', { name: who }).click();
+  await page.getByRole('button', { name: who === 'Test person A' ? enginePerson().label : who }).click();
   // The app finishes sign-in by moving to home or to setup; wait for either,
   // or a test's next page.goto collides with that move (seen in WebKit).
   const home = page.getByRole('link', { name: 'Ask a question' });
@@ -336,11 +336,25 @@ export async function readAsOwner<T>(sql: string, values: unknown[]): Promise<T[
   }
 }
 
-export const TEST_PERSON_A = '11111111-1111-4111-8111-111111111111';
+/**
+ * One established person per browser engine. All engines share one server, and the per-person write limit is real
+ * (20, refilling 1 per 30 s), so sharing one person ran the third engine out of allowance part-way through.
+ */
+const ENGINE_PEOPLE: Record<string, { id: string; label: string }> = {
+  chromium: { id: '11111111-1111-4111-8111-111111111111', label: 'Test person A' },
+  webkit: { id: '22222222-2222-4222-8222-222222222222', label: 'Test person B' },
+  firefox: { id: '33333333-3333-4333-8333-333333333333', label: 'Test person C' },
+};
+const enginePerson = () => {
+  const person = ENGINE_PEOPLE[test.info().project.name];
+  if (!person) throw new Error('no test person for this browser project');
+  return person;
+};
+export const testPersonId = () => enginePerson().id;
 
 /** Test person A is reused across runs: an established member, past the new-account limits. */
 export async function establishTestPersonA() {
-  await asOwner("UPDATE app.profiles SET created_at = now() - interval '30 days' WHERE id = $1", [TEST_PERSON_A]);
+  await asOwner("UPDATE app.profiles SET created_at = now() - interval '30 days' WHERE id = $1", [testPersonId()]);
 }
 
 /** Each test starts with no console errors recorded, so one test's errors can't fail another. */

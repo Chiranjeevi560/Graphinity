@@ -212,7 +212,7 @@
   background: var(--scrim);
 }
 .dialog[open] {
-  animation: dialog-in var(--spring-fluid-duration) var(--spring-fluid);
+  animation: dialog-in 280ms var(--spring-fluid);
 }
 .dialog[open]::backdrop {
   animation: fade-in 200ms ease;

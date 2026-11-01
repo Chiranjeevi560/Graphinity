@@ -127,7 +127,6 @@ a {
 }
 /* Links inside sentences are underlined: colour alone can't be the only cue
    (WCAG 1.4.1), and many people can't tell the colours apart. */
-a:hover,
 p a,
 li a {
   text-decoration: underline;

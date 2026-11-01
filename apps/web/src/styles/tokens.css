@@ -63,6 +63,8 @@
   --spring-fluid-duration: 579ms;
   /* Press feedback must land within a frame or two of touch-down. */
   --press-duration: 90ms;
+  /* Seen on every page change, so nearly out of the way. */
+  --route-duration: 200ms;
 
   /* Light: spec §6.1. test/contrast.test.ts checks every text pairing at 4.5:1. */
   --surface-canvas: oklch(0.985 0.003 250);

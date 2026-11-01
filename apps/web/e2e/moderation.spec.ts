@@ -11,7 +11,7 @@ import {
   signIn,
   signOut,
   test,
-  TEST_PERSON_A,
+  testPersonId,
 } from './helpers.ts';
 
 test.beforeEach(clearConsoleErrors);
@@ -44,7 +44,7 @@ test('a moderator removes a reported question', async ({ page, browserName }) =>
   await signIn(page, 'Test person A');
   await setUpIfNeeded(page, `moderator.${run}`);
   await establishTestPersonA();
-  await asOwner('INSERT INTO app.moderators (profile_id) VALUES ($1) ON CONFLICT DO NOTHING', [TEST_PERSON_A]);
+  await asOwner('INSERT INTO app.moderators (profile_id) VALUES ($1) ON CONFLICT DO NOTHING', [testPersonId()]);
   await page.goto(questionUrl);
   await page.getByRole('article').getByRole('button', { name: 'Report' }).click();
   const dialog = page.getByRole('dialog', { name: 'Report this question' });
@@ -85,7 +85,7 @@ test('a moderator reviews a group picking each other, and confirms it', async ({
   await signIn(page, 'Test person A');
   await setUpIfNeeded(page, `moderator.${run}`);
   await establishTestPersonA();
-  await asOwner('INSERT INTO app.moderators (profile_id) VALUES ($1) ON CONFLICT DO NOTHING', [TEST_PERSON_A]);
+  await asOwner('INSERT INTO app.moderators (profile_id) VALUES ($1) ON CONFLICT DO NOTHING', [testPersonId()]);
   // Three people of its own, recorded as a group the way the daily job records one (ADR 0017).
   const people = await readAsOwner<{ id: string; handle: string }>(
     `WITH p AS (
@@ -134,7 +134,7 @@ test('a moderator sees whether Graphinity is working, and what needs attention',
   await signIn(page, 'Test person A');
   await setUpIfNeeded(page, `moderator.${run}`);
   await establishTestPersonA();
-  await asOwner('INSERT INTO app.moderators (profile_id) VALUES ($1) ON CONFLICT DO NOTHING', [TEST_PERSON_A]);
+  await asOwner('INSERT INTO app.moderators (profile_id) VALUES ($1) ON CONFLICT DO NOTHING', [testPersonId()]);
   // Some measured traffic, and every job working, the way the server records them (ADR 0020).
   await asOwner(
     `INSERT INTO app.ops_minutes (minute, method, route, requests, errors, slow, total_ms, buckets)
@@ -172,11 +172,11 @@ test('the owner sees totals, and nobody else does', async ({ page, browserName }
   await signIn(page, 'Test person A');
   await setUpIfNeeded(page, `owner.${run}`);
   await establishTestPersonA();
-  await asOwner('DELETE FROM app.platform_owners WHERE profile_id = $1', [TEST_PERSON_A]);
+  await asOwner('DELETE FROM app.platform_owners WHERE profile_id = $1', [testPersonId()]);
   await page.goto('/owner');
   await expect(page.getByText('This page is for Graphinity’s owner.')).toBeVisible();
   clearConsoleErrors();
-  await asOwner('INSERT INTO app.platform_owners (profile_id) VALUES ($1) ON CONFLICT DO NOTHING', [TEST_PERSON_A]);
+  await asOwner('INSERT INTO app.platform_owners (profile_id) VALUES ($1) ON CONFLICT DO NOTHING', [testPersonId()]);
   await asOwner(
     `INSERT INTO app.olap_cohort_retention (cohort_week, week_offset, cohort_size, active)
      SELECT date_trunc('week', now())::date - 84, n, 40, 40 - n * 3 FROM generate_series(0, 12) n
@@ -186,14 +186,14 @@ test('the owner sees totals, and nobody else does', async ({ page, browserName }
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Owner', level: 1 })).toBeVisible();
   await expect(page.getByText('Week 12')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Audit log', level: 2 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Records', level: 2 })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Measurements', level: 2 })).toBeVisible();
   await page.getByLabel(/Spent bringing people in/).fill('5000');
   await page.getByRole('button', { name: 'Save spend' }).click();
   await expect(page.getByText(/to bring in:/)).toBeVisible();
   await audit(page, 'owner');
   await asOwner('DELETE FROM app.acquisition_spend', []);
-  await asOwner('DELETE FROM app.platform_owners WHERE profile_id = $1', [TEST_PERSON_A]);
+  await asOwner('DELETE FROM app.platform_owners WHERE profile_id = $1', [testPersonId()]);
 });
 
 test('a moderator can reach complaints past the first hundred', async ({ page, browserName }) => {
@@ -201,7 +201,7 @@ test('a moderator can reach complaints past the first hundred', async ({ page, b
   await signIn(page, 'Test person A');
   await setUpIfNeeded(page, `moderator.${run}`);
   await establishTestPersonA();
-  await asOwner('INSERT INTO app.moderators (profile_id) VALUES ($1) ON CONFLICT DO NOTHING', [TEST_PERSON_A]);
+  await asOwner('INSERT INTO app.moderators (profile_id) VALUES ($1) ON CONFLICT DO NOTHING', [testPersonId()]);
   // Far-off deadlines put these after any other test's, so the last of them is always past page one.
   const body = `Paging check ${run}`;
   await asOwner(
@@ -228,7 +228,7 @@ test('a person makes a complaint and gets a reference, and a moderator sees it',
   await signIn(page, 'Test person A');
   await setUpIfNeeded(page, `moderator.${run}`);
   await establishTestPersonA();
-  await asOwner('INSERT INTO app.moderators (profile_id) VALUES ($1) ON CONFLICT DO NOTHING', [TEST_PERSON_A]);
+  await asOwner('INSERT INTO app.moderators (profile_id) VALUES ($1) ON CONFLICT DO NOTHING', [testPersonId()]);
   await page.goto('/terms');
   await page.getByRole('link', { name: 'make a complaint' }).click();
   await expect(page.getByRole('heading', { name: 'Make a complaint', level: 1 })).toBeVisible();

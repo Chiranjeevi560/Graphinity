@@ -88,7 +88,7 @@ code we would run.
   directly (no supabase-js, no Google script). Scope `openid email` only. Access token in
   memory, refresh token in sessionStorage, never localStorage. The API verifies every token.
 - Supabase project `cfwzkjpqpmttqbbnnzch`: Data API off, email sign-in off, Google on.
-- GitHub: `Chiranjeevi560/Graphinity` (private), pushed over SSH.
+- GitHub: `Chiranjeevi560/Graphinity` (public, by the owner's decision), pushed over SSH.
 
 ## Commands
 

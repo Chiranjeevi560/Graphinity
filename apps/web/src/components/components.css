@@ -132,9 +132,6 @@
   font-weight: 600;
   letter-spacing: var(--text-body-tracking);
 }
-.wordmark:hover {
-  text-decoration: none;
-}
 .wordmark svg {
   width: 1.375rem;
   height: 1.375rem;
@@ -143,7 +140,7 @@
 
 /* Route changes cross-fade in; content never slides under a reduced-motion setting. */
 .route {
-  animation: route-in var(--spring-fluid-duration) var(--spring-fluid) both;
+  animation: route-in var(--route-duration) var(--spring-fluid) both;
 }
 @keyframes route-in {
   from {
@@ -179,9 +176,6 @@
   color: var(--label);
   box-shadow: var(--shadow-floating);
   font-weight: 600;
-  text-decoration: none;
-}
-.live-banner:hover {
   text-decoration: none;
 }
 @media (prefers-reduced-motion: no-preference) {
