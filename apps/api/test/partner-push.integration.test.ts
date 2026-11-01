@@ -27,12 +27,12 @@ const run = (fetcher: PushFetcher, at = NOW) => pushCohorts(h.t.database, fetche
 const clear = () => h.t.owner.query('DELETE FROM app.ad_partner_pushes');
 
 /** People who allow partner use, with this interest. */
-async function allowing(n: number, field: string, score = 1) {
+async function allowing(n: number, field: string, score = 9) {
   const { ids, adIds } = await crowd(w, n, { [field]: score });
   await h.t.owner.query(
     `INSERT INTO app.user_consent_settings (user_id, category, enabled, policy_version)
-     SELECT id, 'ads_partner_sites', true, c.policy_version FROM unnest($1::uuid[]) AS t(id)
-     JOIN app.consent_categories c ON c.name = 'ads_partner_sites'`,
+     SELECT id, 'ads_partner_cohorts', true, c.policy_version FROM unnest($1::uuid[]) AS t(id)
+     JOIN app.consent_categories c ON c.name = 'ads_partner_cohorts'`,
     [ids],
   );
   return { ids, adIds };
@@ -53,11 +53,15 @@ beforeAll(async () => {
 
 describe('pushing cohorts to partners', () => {
   it('sends nothing with its switch off, whatever else is ready', async () => {
+    const flag = (on: boolean) =>
+      h.t.owner.query(`UPDATE app.feature_flags SET enabled = $1 WHERE name = 'ads_partner_push'`, [on]);
+    await flag(true);
     await allowing(120, 'travel');
+    await flag(false);
     const { sent, fetcher } = recorder();
     expect(await run(fetcher)).toBe(0);
     expect(sent).toHaveLength(0);
-    await h.t.owner.query(`UPDATE app.feature_flags SET enabled = true WHERE name = 'ads_partner_push'`);
+    await flag(true);
   });
 
   it('sends enabled partners with an address a signed list, scoped to each, naming nobody', async () => {
@@ -106,7 +110,7 @@ describe('pushing cohorts to partners', () => {
   it('leaves out topics under 100, faint or old interest, and anyone who withdrew', async () => {
     await clear();
     await allowing(99, 'imports-customs');
-    await allowing(120, 'study-abroad', 0.5);
+    await allowing(120, 'study-abroad', 2);
     const old = await allowing(120, 'visas-immigration');
     await h.t.owner.query(`UPDATE app.ad_interests SET updated_at = now() - interval '31 days' WHERE ad_id = ANY($1)`, [
       old.adIds,
@@ -123,12 +127,52 @@ describe('pushing cohorts to partners', () => {
       `SELECT i.profile_id::text AS id FROM app.ad_interests a JOIN app.ad_identities i ON i.ad_id = a.ad_id WHERE a.field = 'travel'`,
     );
     await h.t.owner.query(
-      `UPDATE app.user_consent_settings SET enabled = false WHERE category = 'ads_partner_sites' AND user_id = ANY($1)`,
+      `UPDATE app.user_consent_settings SET enabled = false WHERE category = 'ads_partner_cohorts' AND user_id = ANY($1)`,
       [rows.map(r => r.id)],
     );
     const after = recorder();
     await run(after.fetcher);
     expect(after.sent.filter(s => s.body.includes('"travel"'))).toHaveLength(0);
+  });
+
+  it('never sends health, immigration or legal topics, however many people', async () => {
+    await clear();
+    await allowing(120, 'health-hospitals');
+    await allowing(120, 'legal-matters');
+    const { sent, fetcher } = recorder();
+    await run(fetcher);
+    for (const s of sent) {
+      expect(s.body).not.toContain('health-hospitals');
+      expect(s.body).not.toContain('legal-matters');
+    }
+  });
+
+  it("gives one person a different id per topic and per day, so lists can't be joined into a profile", async () => {
+    await clear();
+    await allowing(120, 'cars-vehicles');
+    const ids = (at: number) => async (segment: string) => {
+      await clear();
+      const r = recorder();
+      await run(r.fetcher, at);
+      const body = r.sent.find(s => s.url.includes('one') && s.body.includes(`"${segment}"`));
+      return new Set((JSON.parse(body?.body ?? '{"eids":[]}') as { eids: string[] }).eids);
+    };
+    const today = await ids(NOW)('cars-vehicles');
+    const tomorrow = await ids(NOW + 86_400_000)('cars-vehicles');
+    expect(today.size).toBeGreaterThanOrEqual(100);
+    expect([...today].filter(e => tomorrow.has(e))).toEqual([]);
+  });
+
+  it('asks nobody about this until its switch allows it', async () => {
+    await h.t.owner.query(`UPDATE app.feature_flags SET enabled = false WHERE name = 'ads_partner_push'`);
+    const person = await w.member();
+    const offered = async () =>
+      (await h.call('GET', '/me/consents', person.token))
+        .json<{ categories: Array<{ name: string }> }>()
+        .categories.some(c => c.name === 'ads_partner_cohorts');
+    expect(await offered()).toBe(false);
+    await h.t.owner.query(`UPDATE app.feature_flags SET enabled = true WHERE name = 'ads_partner_push'`);
+    expect(await offered()).toBe(true);
   });
 
   it('refuses a local or plain-text address, and a person can read nothing here', async () => {

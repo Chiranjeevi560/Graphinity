@@ -30,7 +30,7 @@ const choicesSchema = {
   },
 } as const;
 
-const GPC_REFUSES = new Set(['ads_partner_sites', 'ads_cross_device']);
+const GPC_REFUSES = new Set(['ads_partner_sites', 'ads_cross_device', 'ads_partner_cohorts']);
 
 /** Consent is purpose-specific, default-off, and written with an append-only choice history. */
 export function registerConsentRoutes(app: FastifyInstance, deps: ConsentDeps) {
