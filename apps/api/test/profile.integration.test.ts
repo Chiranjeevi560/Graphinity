@@ -57,7 +57,7 @@ describe('creating a profile', () => {
         { slug: 'imports-customs', name: 'Imports & Customs' },
         { slug: 'watches-luxury', name: 'Watches & Luxury' },
       ],
-      joined: '2026-10',
+      joined: new Date().toISOString().slice(0, 7),
       handleChangeAvailableAt: null,
     });
     expect((await call('GET', '/me', p.token)).json<Body>().profile?.handle).toBe('chiru.create');

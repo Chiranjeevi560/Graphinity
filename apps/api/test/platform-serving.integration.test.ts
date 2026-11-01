@@ -122,7 +122,7 @@ describe('pacing', () => {
         .rows[0],
     ).id;
     await o.query(
-      "INSERT INTO app.ad_impressions (campaign_id, creative_id, placement, price_micros, charged_micros, clicked_at) VALUES ($1, $2, 'search', 49000000, 49000000, now())",
+      "INSERT INTO app.ad_impressions (campaign_id, creative_id, placement, price_micros, charged_micros, clicked_at, charged_at) VALUES ($1, $2, 'search', 49000000, 49000000, now(), now())",
       [id, creative],
     );
     // An hour into the day with 98% of the budget gone: far ahead of the curve.

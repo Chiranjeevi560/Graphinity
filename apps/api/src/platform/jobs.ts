@@ -337,7 +337,7 @@ export async function stepPacers(db: Pick<Database, 'asSystem'>, now: number): P
     }>(
       `SELECT c.id::text, c.daily_budget_micros::text AS budget, p.lambda, p.integral, p.last_error, p.day::text AS day,
               coalesce((SELECT sum(i.charged_micros) FROM app.ad_impressions i
-                        WHERE i.campaign_id = c.id AND i.shown_at >= date_trunc('day', now(), 'UTC')), 0)::text AS spent
+                        WHERE i.campaign_id = c.id AND i.charged_at >= date_trunc('day', now(), 'UTC')), 0)::text AS spent
        FROM app.ad_campaigns c LEFT JOIN app.ad_pacing p ON p.campaign_id = c.id WHERE c.status = 'active'`,
     );
     for (const r of rows) {
