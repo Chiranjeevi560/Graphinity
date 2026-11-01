@@ -152,8 +152,8 @@ export async function loadImpressionExamples(db: Pick<Database, 'asSystem'>): Pr
         await q.query<ImpressionExample>(
           `SELECT id::text, campaign_id::text AS campaign, creative_id::text AS creative, placement, field,
                 extract(hour FROM shown_at AT TIME ZONE 'UTC')::int AS hour, clicked_at IS NOT NULL AS clicked
-         FROM app.ad_impressions WHERE shown_at > now() - make_interval(days => $1)
-         ORDER BY shown_at, id`,
+         FROM app.ad_impressions i WHERE shown_at > now() - make_interval(days => $1)
+         ORDER BY shown_at, i.id`,
           [WINDOW_DAYS],
         )
       ).rows,

@@ -311,6 +311,12 @@ describe('experiments', () => {
 });
 
 describe('the audit chain', () => {
+  it('keeps counting past ten entries: sequence numbers sort as numbers, not text', async () => {
+    for (let i = 0; i < 12; i++)
+      await db().asSystem(q => audit(q, { action: 'test.count', actor: 'system', subject: 's', detail: {} }));
+    expect(await db().asSystem(verifyAudit)).toMatchObject({ brokenAt: null });
+  });
+
   it('is append-only in the database, and verification finds a forged row', async () => {
     await db().asSystem(q => audit(q, { action: 'test.one', actor: 'system', subject: 's', detail: { a: 1 } }));
     await db().asSystem(q => audit(q, { action: 'test.two', actor: 'system', subject: 's', detail: {} }));

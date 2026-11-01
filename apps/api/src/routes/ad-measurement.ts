@@ -503,7 +503,7 @@ export async function registerAdMeasurementRoutes(
                       row_number() OVER (PARTITION BY coalesce(i.ad_id::text, i.id::text) ORDER BY c.id) AS nth
                FROM app.ad_conversions c JOIN app.ad_impressions i ON i.id = c.impression_id
                WHERE c.advertiser_id = $1 AND c.received_at >= $2::date - 29 AND c.received_at < $2::date + 1
-             ) x WHERE nth <= $4 ORDER BY id LIMIT $3`,
+             ) x WHERE nth <= $4 ORDER BY x.id LIMIT $3`,
             [found.advertiser_id, yesterday, REPORT_CONVERSIONS, REPORT_PER_PERSON, REPORT_SALE_CLIP_MICROS],
           )
         ).rows;

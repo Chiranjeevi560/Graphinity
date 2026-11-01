@@ -33,7 +33,7 @@ export async function drainJournal(db: Pick<Database, 'asSystem'>, secret: Buffe
       day: string;
     }>(
       `SELECT id::text, kind, field, country, subject::text, to_char(occurred_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day
-       FROM app.analytics_event_journal ORDER BY id LIMIT $1`,
+       FROM app.analytics_event_journal j ORDER BY j.id LIMIT $1`,
       [BATCH],
     );
     const cells = new Map<string, typeof rows>();
@@ -195,7 +195,7 @@ export async function refreshKnowledgeGraph(db: Pick<Database, 'asSystem'>, now:
              AND abs(e.weight - $3::real) < 0.02)`,
         [r.product, r.field, r.share, validFrom],
       );
-    const nodes = (await q.query<{ id: string }>('SELECT id::text FROM app.kg_nodes ORDER BY id')).rows;
+    const nodes = (await q.query<{ id: string }>('SELECT n.id::text FROM app.kg_nodes n ORDER BY n.id')).rows;
     const indexOf = new Map(nodes.map((n, i) => [n.id, i]));
     const edges: GraphEdge[] = [];
     for (const e of (
@@ -404,7 +404,9 @@ export async function audit(
 ): Promise<AuditEntry> {
   await q.query("SELECT pg_advisory_xact_lock(hashtext('audit-chain'))");
   const last = (
-    await q.query<{ seq: string; hash: string }>('SELECT seq::text, hash FROM app.audit_log ORDER BY seq DESC LIMIT 1')
+    await q.query<{ seq: string; hash: string }>(
+      'SELECT l.seq::text, l.hash FROM app.audit_log l ORDER BY l.seq DESC LIMIT 1',
+    )
   ).rows[0];
   const next = appendEntry(last ? { seq: Number(last.seq), hash: last.hash } : null, {
     ...entry,
@@ -429,7 +431,7 @@ export async function verifyAudit(q: Queryable): Promise<{ entries: number; brok
     prev_hash: string;
     hash: string;
   }>(
-    'SELECT seq::text, action, actor, subject, detail, at, prev_hash, hash FROM app.audit_log ORDER BY seq LIMIT 100000',
+    'SELECT l.seq::text, action, actor, subject, detail, at, prev_hash, hash FROM app.audit_log l ORDER BY l.seq LIMIT 100000',
   );
   const entries = rows.map(r => ({
     seq: Number(r.seq),

@@ -351,8 +351,11 @@ export function createAdServer(db: Pick<Database, 'asSystem'>, rtb?: RtbOptions)
     partners = rtb?.enabled()
       ? await db.asSystem(
           async q =>
-            (await q.query<Partner>('SELECT id::text AS id, endpoint FROM app.ad_partners WHERE enabled ORDER BY id'))
-              .rows,
+            (
+              await q.query<Partner>(
+                'SELECT p.id::text AS id, endpoint FROM app.ad_partners p WHERE enabled ORDER BY p.id',
+              )
+            ).rows,
         )
       : [];
     loadedAt = Date.now();
