@@ -93,6 +93,22 @@ describe('lintMigration', () => {
     }
   });
 
+  it('tells a guard against TRUNCATE from a real one', () => {
+    for (const sql of [
+      'CREATE TRIGGER g BEFORE TRUNCATE ON app.a FOR EACH STATEMENT EXECUTE FUNCTION app.f()',
+      'CREATE TRIGGER g BEFORE TRUNCATE OR DELETE ON app.a FOR EACH STATEMENT EXECUTE FUNCTION app.f()',
+      'REVOKE TRUNCATE ON app.a FROM app_api',
+    ])
+      expect(lint(sql), sql).toEqual([]);
+    for (const sql of [
+      'TRUNCATE TABLE app.a',
+      'TRUNCATE app.a, app.b CASCADE',
+      'DO $$ BEGIN TRUNCATE app.a; END $$',
+      "DO $$ BEGIN EXECUTE 'TRUNCATE app.a'; END $$",
+    ])
+      expect(lint(sql), sql).toHaveLength(1);
+  });
+
   it('needs a real reason, and ignores the words inside comments', () => {
     expect(lint('-- contract: ok\nDROP TABLE app.old')).toHaveLength(1);
     expect(lint('-- we never DROP TABLE here\nSELECT 1')).toEqual([]);

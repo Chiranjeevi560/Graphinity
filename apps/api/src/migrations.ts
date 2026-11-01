@@ -158,7 +158,9 @@ const DESTRUCTIVE: ReadonlyArray<[RegExp, string]> = [
     'drops a table or other object',
   ],
   [/\bDROP\s+COLUMN\b/i, 'drops a column'],
-  [/\bTRUNCATE\b/i, 'empties a table'],
+  // Followed by ON or OR it's a privilege or a trigger event, which empties nothing: the audit log's guard
+  // against TRUNCATE (0057) tripped this. A table can't be called "on" or "or" unquoted, so nothing real slips by.
+  [/\bTRUNCATE\b(?!\s+(ON|OR)\b)/i, 'empties a table'],
   [/\bRENAME\b/i, 'renames something the running code still uses'],
   [/\bALTER\s+COLUMN\s+\S+\s+(SET\s+DATA\s+)?TYPE\b/i, 'changes a column’s type'],
 ];
