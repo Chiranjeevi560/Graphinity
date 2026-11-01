@@ -393,6 +393,9 @@ now on: maintenance scripts name the local socket explicitly and never read `mig
 - Advertising rows follow the person (migration 0053): when an advertising id goes, by deletion or by turning personalized ads off, its reported sales go and its
   impressions lose click id, country, topic and audience. What was charged, to which campaign and when stays for billing, with no link to anyone. A merchant's own copy of a
   click id or customer id is beyond our reach. Rate-limit and rollup hashes use their own derived keys; locked-out subject hashes stay on the root key, because moving them would let those people back in.
+- Abuse limits (review of 2026-11-01, migration 0054): one account's reports past ten a day still reach review but stop hiding posts; three accounts over a day old can still hide a post until
+  a moderator looks, so a small ring of aged accounts remains possible. Five open complaints per person. A throwaway member leaving no longer frees a confirmed ring: pairs keep their ban. Overturning
+  an old removal can't undo a newer one. The governor never turns the step-up check off.
 - Awards whose question was deleted can't be named by a guarded take-back row, so they stay.
 - Advertising (ADR 0022) uses a person's data only when `app.ads_permitted()` says so: switches on,
   the country's rule approved by a lawyer (only the owner can change rules) and the person's own

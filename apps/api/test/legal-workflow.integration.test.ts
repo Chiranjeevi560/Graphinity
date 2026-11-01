@@ -258,4 +258,50 @@ describe('the record of processing', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json<{ processing: Record<string, { basis: string }> }>().processing.searches?.basis).toBe('consent');
   });
+
+  it('overturning an old removal does not undo a newer one', async () => {
+    const { author, mod, statement, q } = await removed();
+    await appeal(author.token, statement.id);
+    const second = await moderator();
+    // Put back, then removed again for something new, while the first appeal still waits.
+    for (const decision of ['keep', 'remove'])
+      expect(
+        (
+          await h.call('POST', '/review/decision', mod.token, {
+            kind: 'question',
+            id: q,
+            decision,
+          })
+        ).statusCode,
+      ).toBe(200);
+    expect(
+      (await h.call('POST', `/ops/appeals/${statement.id}`, second.token, { decision: 'overturn' })).statusCode,
+    ).toBe(200);
+    expect((await h.call('GET', `/questions/${q}`)).statusCode).toBe(404);
+  });
+
+  it('one person can have five complaints open, no more; resolved ones free a place', async () => {
+    const p = await member();
+    const send = () =>
+      h.call('POST', '/grievances', p.token, { kind: 'general', body: 'Someone is using my name here.' });
+    for (let i = 0; i < 5; i++) expect((await send()).statusCode).toBe(201);
+    const refused = await send();
+    expect(refused.statusCode).toBe(429);
+    expect(refused.json<Body>().error).toBe('too_many_open');
+    await h.t.database
+      .withUser(p.id, async q => {
+        await expect(
+          q.query(
+            "INSERT INTO app.grievances (user_id, kind, body, acknowledge_by, resolve_by) VALUES ($1, 'general', 'Straight to the database.', now(), now())",
+            [p.id],
+          ),
+        ).rejects.toThrow(/at most 5/);
+      })
+      .catch(() => undefined);
+    await h.t.owner.query(
+      "UPDATE app.grievances SET resolved_at = now(), outcome = 'Answered.' WHERE id = (SELECT min(id) FROM app.grievances WHERE user_id = $1)",
+      [p.id],
+    );
+    expect((await send()).statusCode).toBe(201);
+  });
 });

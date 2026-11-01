@@ -49,6 +49,7 @@ export const PROCESSING: Record<string, Processing> = {
     'Until any member leaves',
   ),
   collusion_members: row('Who is in those groups', 'legitimate_interest', account),
+  collusion_pairs: row('Pairs in a confirmed group, whose picks of each other move no points', 'legitimate_interest', account),
   consent_categories: system('The choices on offer'),
   countries: system('Country list'),
   decisions: row('Moderators’ decisions on posts', 'legitimate_interest', 'With the post'),

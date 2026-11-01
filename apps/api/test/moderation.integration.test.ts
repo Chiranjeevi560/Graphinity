@@ -448,4 +448,14 @@ describe('the database itself', () => {
     );
     expect(rows).toEqual([{ recent: true }]);
   });
+
+  it("past ten a day, one account's reports reach review but stop counting toward hiding", async () => {
+    const [author, reporter] = [await member({ established: true }), await member({ established: true })];
+    for (let i = 0; i < 11; i++) expect((await report(reporter.token, await ask(author.token))).statusCode).toBe(201);
+    const { rows } = await h.t.owner.query<{ counts: boolean }>(
+      'SELECT counts FROM app.reports WHERE reporter_id = $1 ORDER BY id',
+      [reporter.id],
+    );
+    expect(rows.map(r => r.counts)).toEqual([...Array<boolean>(10).fill(true), false]);
+  });
 });

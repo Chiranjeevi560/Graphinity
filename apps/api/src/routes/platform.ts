@@ -20,7 +20,7 @@ import { asOfJoin, audit, loadExperimentArms, verifyAudit } from '../platform/jo
 import { TokenBuckets, visitorAddress, visitorKey, type BucketOptions, type Clock } from '../rate-limit.ts';
 import { loadStatus } from '../ops/store.ts';
 import { isModerator } from './moderation.ts';
-import { fail, signedIn } from './common.ts';
+import { fail, pgCode, signedIn } from './common.ts';
 
 const slug = { type: 'string', pattern: '^[a-z0-9]+(-[a-z0-9]+)*$', maxLength: 80 };
 const digits = { type: 'string', pattern: '^[1-9][0-9]{0,15}$' };
@@ -670,17 +670,29 @@ export function registerPlatformRoutes(
       const b = req.body as { kind: string; body: string; questionId?: string; sworn?: boolean };
       if (b.kind === 'copyright' && !b.sworn)
         return fail(reply, 400, 'sworn_required', 'A copyright notice needs your sworn statement that it is accurate.');
-      const row = await db.withUser(user.id, async q => {
-        const r = (
-          await q.query<{ public_id: string; reference: string; acknowledge_by: Date; resolve_by: Date }>(
-            `INSERT INTO app.grievances (user_id, kind, body, question_id, sworn, acknowledge_by, resolve_by)
+      const row = await db
+        .withUser(user.id, async q => {
+          const r = (
+            await q.query<{ public_id: string; reference: string; acknowledge_by: Date; resolve_by: Date }>(
+              `INSERT INTO app.grievances (user_id, kind, body, question_id, sworn, acknowledge_by, resolve_by)
              VALUES ($1, $2, $3, (SELECT id FROM app.questions WHERE id = $4), $5, now(), now())
              RETURNING public_id::text, reference, acknowledge_by, resolve_by`,
-            [user.id, b.kind, b.body.trim(), b.questionId ?? null, b.sworn === true],
-          )
-        ).rows[0];
-        return r;
-      });
+              [user.id, b.kind, b.body.trim(), b.questionId ?? null, b.sworn === true],
+            )
+          ).rows[0];
+          return r;
+        })
+        .catch((err: unknown) => {
+          if (pgCode(err) === 'GR001') return 'too_many' as const;
+          throw err;
+        });
+      if (row === 'too_many')
+        return fail(
+          reply,
+          429,
+          'too_many_open',
+          'You have 5 complaints still open. We’ll answer those first; you can send another after one is resolved.',
+        );
       await db.asSystem(q =>
         audit(q, {
           action: 'grievance.received',
@@ -821,7 +833,7 @@ export function registerPlatformRoutes(
   app.patch(
     '/ops/grievances/:id',
     {
-      config: { auth: 'required', write: true },
+      config: { auth: 'required', write: true, freshAuth: true },
       schema: {
         params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } }, required: ['id'] },
         body: {

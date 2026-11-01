@@ -99,6 +99,14 @@ describe('the governor', () => {
     expect(await runRolloutGovernor(h.t.database)).toEqual([]);
   });
 
+  it('never switches off the security check, however bad the errors', async () => {
+    await h.t.owner.query("UPDATE app.feature_flags SET enabled = true, ring = 0 WHERE name = 'step_up_auth'");
+    await traffic(1000, 200);
+    expect(await runRolloutGovernor(h.t.database)).not.toContain('step_up_auth');
+    expect(await flag('step_up_auth')).toMatchObject({ enabled: true });
+    await h.t.owner.query("UPDATE app.feature_flags SET enabled = false, ring = NULL WHERE name = 'step_up_auth'");
+  });
+
   it('shows on the status page and reaches moderators', async () => {
     const mod = await member();
     await h.t.owner.query('INSERT INTO app.moderators (profile_id) VALUES ($1)', [mod.id]);
