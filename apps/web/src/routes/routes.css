@@ -737,6 +737,22 @@
 .routing-graph figcaption {
   text-wrap: balance;
 }
+.next-topics {
+  margin: var(--space-6) 0 0;
+}
+.next-topics ul {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+}
+.next-topics a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+}
 .why-you {
   --sq-bg: var(--fill-tertiary);
   margin: 0 0 var(--space-6);
