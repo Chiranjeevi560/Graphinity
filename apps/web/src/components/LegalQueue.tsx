@@ -19,9 +19,14 @@ interface Appeal {
   why: string;
 }
 
+// The API's page size. The soonest deadlines come first, so anything past the first page is still on a clock.
+const PAGE_SIZE = 100;
+
 /** Complaints on their legal clocks, and appeals, for moderators (ADR 0027). */
 export function LegalQueue() {
-  const complaints = useLoad<{ rows: Grievance[] }>('/ops/grievances', true);
+  const [page, setPage] = useState(0);
+  const complaints = useLoad<{ rows: Grievance[]; open: number }>(`/ops/grievances?page=${String(page)}`, true);
+  const pages = Math.ceil((complaints.data?.open ?? 0) / PAGE_SIZE);
   const appeals = useLoad<{ appeals: Appeal[] }>('/ops/appeals', true);
   const [done, setDone] = useState<Record<string, string>>({});
   const [outcome, setOutcome] = useState<Record<string, string>>({});
@@ -120,6 +125,31 @@ export function LegalQueue() {
             )}
           </li>
         ))}
+        {pages > 1 && (
+          <li className="review-actions">
+            <p className="text-footnote secondary" role="status">
+              Complaints page {page + 1} of {pages}
+            </p>
+            <Button
+              variant="secondary"
+              disabled={page === 0}
+              onClick={() => {
+                setPage(p => p - 1);
+              }}
+            >
+              Sooner deadlines
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={page + 1 >= pages}
+              onClick={() => {
+                setPage(p => p + 1);
+              }}
+            >
+              Later deadlines
+            </Button>
+          </li>
+        )}
         {appeals.data?.appeals.map(a => (
           <li key={a.id} className="review-item">
             <p className="text-footnote secondary">Appeal: {a.facts}</p>
