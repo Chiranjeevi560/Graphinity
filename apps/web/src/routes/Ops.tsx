@@ -180,7 +180,7 @@ interface Summary {
   models: Array<{ name: string; version: number; stage: string; algorithm: string }>;
   evaluations: Array<{ name: string; metrics: Record<string, unknown>; at: string }>;
   experiments: Array<{ name: string; status: string; p: number }>;
-  commerce: Array<{ label: string; count: number; forecast: number | null }>;
+  commerce: Array<{ label: string; count: number; forecast: number | null; forecast90: number | null }>;
   together: Array<{ from: string; to: string; people: number; lift: number }>;
   answering: {
     questions: number;
@@ -382,7 +382,7 @@ export function OwnerPage() {
       <RetentionHeatmap cohorts={data.retention} />
       <Section
         title="What a person is worth"
-        empty="Shown once there’s ad income, or you’ve recorded what you spent bringing people in."
+        empty="Shown once there’s ad income or recorded spend."
         rows={data.economics.map(e => [
           e.currency,
           `Roughly worth ${money(e.lifetimeValueMicros, e.currency)} over about ${e.lifetimeWeeks.toFixed(1)} weeks · costs ${money(e.costPerJoinMicros, e.currency)} to bring in`,
@@ -403,7 +403,7 @@ export function OwnerPage() {
         empty="Shown from 25 people."
         rows={data.commerce.map(p => [
           p.label,
-          `About ${n(p.count)} this week${p.forecast === null ? '' : ` · ${n(p.forecast)} in 30 days`}`,
+          `About ${n(p.count)} this week${p.forecast === null ? '' : ` · ${n(p.forecast)} in 30 days`}${p.forecast90 === null ? '' : ` · ${n(p.forecast90)} in 90`}`,
         ])}
       />
       <Section
@@ -433,7 +433,7 @@ export function OwnerPage() {
       />
       <Section
         title="Measurements"
-        empty="Not enough data yet. Each needs a few hundred real events first."
+        empty="Each needs a few hundred real events first."
         rows={data.evaluations.map(e => [e.name, describeEvaluation(e.metrics)])}
       />
       {data.failedPushes > 0 && (

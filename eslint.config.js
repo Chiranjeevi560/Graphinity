@@ -9,6 +9,43 @@ import tseslint from 'typescript-eslint';
 // The ranking firewall (ADR 0025): what decides knowledge, trust, reputation and
 // personalization can't even import advertising or commerce, so money can't
 // reach them by accident. test/invariants proves the same thing by perturbing bids.
+// The math and domain kernel: no database, server, file or network imports, so it stays pure and testable. The named
+// exceptions are the jobs that belong beside it and read data. New files are pure unless listed here.
+const pureKernel = {
+  files: [
+    'apps/api/src/ml/**',
+    'apps/api/src/commerce/**',
+    'apps/api/src/experiments/**',
+    'apps/api/src/intelligence/**',
+    'apps/api/src/olap/sketches.ts',
+  ],
+  ignores: [
+    'apps/api/src/ml/corpus.ts',
+    'apps/api/src/ml/drift-monitor.ts',
+    'apps/api/src/ml/registry.ts',
+    'apps/api/src/ml/routing-data.ts',
+    'apps/api/src/ml/routing-monitor.ts',
+    'apps/api/src/ml/training-worker.ts',
+    'apps/api/src/ml/training.ts',
+    'apps/api/src/ml/train-*.ts',
+    'apps/api/src/experiments/enrol.ts',
+    'apps/api/src/intelligence/memory-job.ts',
+  ],
+  rules: {
+    'no-restricted-imports': [
+      'error',
+      {
+        patterns: [
+          {
+            group: ['pg', 'fastify', 'node:fs', 'node:fs/*', 'node:net', 'node:http', 'node:https', '**/db.ts'],
+            message: 'The math and domain kernel does no I/O. Pass values in, or list a job in eslint.config.js.',
+          },
+        ],
+      },
+    ],
+  },
+};
+
 const firewalled = {
   files: [
     'apps/api/src/search/**',
@@ -93,5 +130,6 @@ export default tseslint.config(
     files: ['apps/api/**/*.ts', 'apps/web/test/**', 'apps/web/e2e/**', 'apps/web/*.ts'],
     languageOptions: { globals: globals.node },
   },
+  pureKernel,
   firewalled,
 );

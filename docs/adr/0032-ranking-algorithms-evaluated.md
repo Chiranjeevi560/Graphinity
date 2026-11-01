@@ -29,3 +29,12 @@ data, so the 0.49 is somewhat flattering.
 
 Two engines exist with no caller, on purpose. They need real data before a comparison can mean anything, and the
 benchmark can be rerun when it exists.
+
+## Cascade timings
+
+Local, on 100 candidates with 128-dimension vectors, p95: pre-rank 0.017 ms and diversity 1.66 ms, against the charter's 8 ms and 5 ms. Retrieval and the learned ranker on a real database aren't timed here, and nothing has been timed on Render or Supabase.
+
+## Left as they are, on purpose
+
+- **An in-memory cache for the feature store:** nothing reads online features while serving, so a cache would sit in front of nothing.
+- **Partitioning the event journal:** it's drained and emptied hourly, so it never grows large enough for partitions to help.

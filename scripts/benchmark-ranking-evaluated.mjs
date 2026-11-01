@@ -10,6 +10,7 @@ import { predictMmoe, trainMmoe } from '../apps/api/src/ml/mmoe.ts';
 import { encodePq, encodeSq8, pqTable, scorePq, scoreSq8, trainPq, trainSq8 } from '../apps/api/src/ml/quantize.ts';
 import { topItems, trainTwoTower } from '../apps/api/src/ml/two-tower.ts';
 import { fitTwoModel } from '../apps/api/src/ml/uplift.ts';
+import { diversify, preRank } from '../apps/api/src/search/cascade.ts';
 
 const time = work => {
   const t = performance.now();
@@ -234,8 +235,28 @@ function causal() {
   return Object.fromEntries(Object.entries(results).map(([k, v]) => [k, round(v)]));
 }
 
+// The cascade's stages after retrieval, on 100 candidates with 128-dimension vectors. Retrieval itself is in the
+// Server-Timing header and benchmark-search: it needs a database.
+function cascade() {
+  const random = seededRandom(6);
+  const found = Array.from({ length: 100 }, (_, i) => ({ id: String(i), field: i % 3 ? 'a' : 'b' }));
+  const vectors = new Map(found.map(f => [f.id, Array.from({ length: 128 }, () => random() - 0.5)]));
+  const next = new Map([['b', 0.5]]);
+  const times = { preRank: [], diversify: [] };
+  for (let t = 0; t < 500; t++) {
+    let start = performance.now();
+    const pre = preRank(found, next);
+    times.preRank.push(performance.now() - start);
+    start = performance.now();
+    diversify(pre, vectors, 20);
+    times.diversify.push(performance.now() - start);
+  }
+  const p95 = list => round(list.sort((a, b) => a - b)[Math.floor(list.length * 0.95)], 3);
+  return { preRankP95Ms: p95(times.preRank), diversifyP95Ms: p95(times.diversify) };
+}
+
 const which = process.argv[2];
-const all = { diversity, causal, multitask, twoTower, quantization };
+const all = { cascade, diversity, causal, multitask, twoTower, quantization };
 for (const [name, run] of Object.entries(all)) {
   if (which && which !== name) continue;
   const [result, ms] = time(run);
