@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TokenBuckets, visitorAddress, visitorKey } from '../src/rate-limit.ts';
+import { purposeKey, TokenBuckets, visitorAddress, visitorKey } from '../src/rate-limit.ts';
 
 function fakeClock(start = 1_000_000) {
   let t = start;
@@ -111,5 +111,14 @@ describe('visitorAddress', () => {
     expect(visitorAddress('2001:db8:abcd:13::1')).not.toBe(visitorAddress('2001:db8:abcd:12::1'));
     expect(visitorAddress('2001:db8::1')).toBe('2001:db8:0:0::/64');
     expect(visitorAddress('::1')).toBe('0:0:0:0::/64');
+  });
+});
+
+describe('purposeKey', () => {
+  it('gives each purpose its own stable key', () => {
+    const root = Buffer.alloc(32, 7);
+    expect(purposeKey(root, 'visitor')).toEqual(purposeKey(Buffer.from(root), 'visitor'));
+    expect(purposeKey(root, 'visitor')).not.toEqual(purposeKey(root, 'rollups'));
+    expect(purposeKey(root, 'visitor')).not.toEqual(root);
   });
 });
