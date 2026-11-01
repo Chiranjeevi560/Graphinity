@@ -19,7 +19,8 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    # The whole gate on one runner: about 12 minutes before the browsers, about 20 in them across three engines.
+    timeout-minutes: 45
 
     services:
       # Supabase runs Postgres 17 with pgvector; test against the same. The
