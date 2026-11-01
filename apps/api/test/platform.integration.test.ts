@@ -201,7 +201,7 @@ describe('the knowledge graph', () => {
       h.call('POST', '/knowledge-graph/transitions', token, body);
     const next = async () =>
       (await h.call('GET', '/knowledge-graph/next?current=travel')).json<{
-        next: Array<{ field: string; name: string; probability: number | null; because: string }>;
+        next: Array<{ field: string; name: string; because: string }>;
       }>().next;
     const stored = async () =>
       (await h.t.owner.query("SELECT 1 FROM app.kg_session_transitions WHERE from_key = 'travel'")).rowCount;
@@ -219,11 +219,20 @@ describe('the knowledge graph', () => {
     expect(gpc.statusCode).toBe(204);
     expect(await stored()).toBe(0);
 
+    const agreeing = async () => {
+      const m = await member();
+      await h.call('PUT', '/me/consents', m.token, { choices: [{ category: 'anonymous_analytics', enabled: true }] });
+      return m;
+    };
     const step = (body: object) => stepBy(p.token, body);
     expect((await step({ from: 'travel', to: 'visas-immigration' })).statusCode).toBe(204);
     expect((await next()).filter(n => n.because === 'journeys')).toEqual([]);
-    for (let i = 0; i < 5; i++) await step({ from: 'travel', to: 'visas-immigration' });
+    // One person repeating a step counts once: they can't put a pair on everyone's pages by themselves.
+    for (let i = 0; i < 6; i++) await step({ from: 'travel', to: 'visas-immigration' });
+    expect((await next()).filter(n => n.because === 'journeys')).toEqual([]);
+    for (let i = 0; i < 5; i++) await stepBy((await agreeing()).token, { from: 'travel', to: 'visas-immigration' });
     expect(must((await next())[0])).toMatchObject({ field: 'visas-immigration', because: 'journeys' });
+    expect(must((await next())[0])).not.toHaveProperty('probability');
     expect(must((await next())[0]).name).not.toBe('visas-immigration');
     await step({ from: 'travel', to: 'made-up-topic' });
     expect(
@@ -249,10 +258,10 @@ describe('the knowledge graph', () => {
     await node('money-tax', [0.9, 0.1, ...Array<number>(62).fill(0)]);
     await node('imports-customs', axis(5));
     const { next } = (await h.call('GET', '/knowledge-graph/next?current=food-cooking')).json<{
-      next: Array<{ field: string; because: string; probability: number | null }>;
+      next: Array<{ field: string; because: string }>;
     }>();
     expect(next.map(n => n.field)).toEqual(['money-tax']);
-    expect(next[0]).toMatchObject({ because: 'related', probability: null });
+    expect(next[0]).toMatchObject({ because: 'related' });
   });
 });
 

@@ -296,10 +296,7 @@ export function registerQuestionRoutes(
         if (viewer)
           await q.query(
             `INSERT INTO app.memory_entries (user_id, tier, key)
-             SELECT $1, 'episodic', $2 WHERE EXISTS (
-               SELECT 1 FROM app.user_consent_settings s
-               WHERE s.user_id = $1 AND s.category = 'memory_personalization' AND s.enabled
-             )
+             SELECT $1, 'episodic', $2 WHERE app.memory_allowed_locked($1)
              ON CONFLICT (user_id, tier, key) DO UPDATE
                SET reviews = app.memory_entries.reviews + 1, strength = 1, seen_at = now()
                WHERE app.memory_entries.seen_at < now() - interval '1 hour'`,

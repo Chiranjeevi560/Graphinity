@@ -6,7 +6,7 @@ interface Next {
   next: Array<{ field: string; name: string }>;
 }
 
-/** A few topics near this one, chosen from everyone's journeys with no person in them. A short list that ends. */
+/** A few topics near this one, from everyone's journeys with no person in them, or the knowledge graph. A short list that ends. */
 export function NextTopics({ field }: { field: string }) {
   const { data } = useLoad<Next>(`/knowledge-graph/next?current=${encodeURIComponent(field)}`);
   const topics = data?.next.slice(0, 3) ?? [];
@@ -14,7 +14,7 @@ export function NextTopics({ field }: { field: string }) {
   return (
     <section className="next-topics" aria-labelledby="next-topics-heading">
       <h2 id="next-topics-heading" className="text-headline">
-        People often look at next
+        Related topics
       </h2>
       <ul>
         {topics.map(t => (

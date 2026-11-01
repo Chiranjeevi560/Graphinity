@@ -29,6 +29,15 @@ test('a moderator removes a reported question', async ({ page, browserName }) =>
   await page.getByRole('button', { name: 'Post question' }).click();
   await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
   const questionUrl = new URL(page.url()).pathname;
+  // Topics people go on to, once there are enough journeys.
+  await asOwner(
+    `INSERT INTO app.kg_session_transitions (from_key, to_key, prior_key, decayed_transition_count)
+     VALUES ('imports-customs', 'travel', '', 9) ON CONFLICT (from_key, to_key, prior_key) DO NOTHING`,
+    [],
+  );
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Related topics' })).toBeVisible();
+  await audit(page, 'question with related topics');
   await signOut(page);
 
   // Test person A (fixed id in the stand-in) is a moderator.
@@ -95,8 +104,14 @@ test('a moderator reviews a group picking each other, and confirms it', async ({
      INSERT INTO app.collusion_members (group_id, profile_id) SELECT g.id, unnest($1::uuid[]) FROM g`,
     [people.map(p => p.id)],
   );
+  await asOwner(
+    `INSERT INTO app.collusion_evidence (group_id, outside_trust, dense_members)
+     SELECT group_id, 12.5, 2 FROM app.collusion_members WHERE profile_id = $1 LIMIT 1`,
+    [people[0]?.id],
+  );
   await page.goto('/review');
   await expect(page.getByRole('heading', { name: 'Groups picking each other' })).toBeVisible();
+  await expect(page.getByText(/Support from people outside the group: 12\.5 per member/)).toBeVisible();
   const handles = people.map(p => p.handle).sort();
   const group = page
     .getByRole('listitem')
@@ -165,6 +180,7 @@ test('the owner sees totals, and nobody else does', async ({ page, browserName }
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Owner', level: 1 })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Audit log', level: 2 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Measurements', level: 2 })).toBeVisible();
   await audit(page, 'owner');
   await asOwner('DELETE FROM app.platform_owners WHERE profile_id = $1', [TEST_PERSON_A]);
 });

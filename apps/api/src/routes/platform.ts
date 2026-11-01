@@ -51,6 +51,7 @@ export function registerPlatformRoutes(
 ) {
   const { db } = deps;
   const buckets = new TokenBuckets(deps.limit, deps.clock);
+  const stepVotes = new TokenBuckets({ capacity: 1, refillPerSecond: 1 / 86_400, maxKeys: 100_000 }, deps.clock);
 
   async function asOwner<T>(userId: string, reply: FastifyReply, work: (q: Queryable) => Promise<T>) {
     const result = await db.withUser(userId, async q =>
@@ -295,6 +296,8 @@ export function registerPlatformRoutes(
           ).rowCount,
       );
       if (!agreed) return reply.code(204).send();
+      // One person's say on a pair of topics, once a day: otherwise a single account could put any pair on everyone's pages.
+      if (!stepVotes.take(`${req.user.id}:${b.from}:${b.to}`).ok) return reply.code(204).send();
       await db.asSystem(async q => {
         // Only topics we know: an open address must not fill the table with made-up keys.
         const known = await q.query('SELECT 1 FROM app.fields WHERE slug = ANY($1)', [
@@ -364,11 +367,13 @@ export function registerPlatformRoutes(
               .map(r => ({
                 field: r.item,
                 name: names.get(r.item) ?? r.item,
-                probability: r.c / total,
+                share: r.c / total,
                 because: 'journeys' as const,
               }))
-              .sort((a, b) => b.probability - a.probability)
-              .slice(0, 5);
+              .sort((a, b) => b.share - a.share)
+              .slice(0, 5)
+              // In order, without the shares: on a rare topic an exact share could give away one reader's step.
+              .map(({ field, name, because }) => ({ field, name, because }));
       const shown = new Set([current, previous, ...journeys.map(j => j.field)]);
       const related = similar
         .filter(r => !shown.has(r.item) && names.has(r.item))
@@ -376,7 +381,7 @@ export function registerPlatformRoutes(
         .filter(r => r.score >= MIN_SIMILARITY)
         .sort((a, b) => b.score - a.score || a.field.localeCompare(b.field))
         .slice(0, Math.max(0, MAX_NEXT - journeys.length))
-        .map(r => ({ field: r.field, name: r.name, probability: null, because: 'related' as const }));
+        .map(r => ({ field: r.field, name: r.name, because: 'related' as const }));
       return { next: [...journeys, ...related] };
     },
   );
