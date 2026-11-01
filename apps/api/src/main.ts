@@ -70,6 +70,7 @@ try {
 // uninitialised variable; until the server exists, warnings go to stderr.
 const logger: { current?: Awaited<ReturnType<typeof buildServer>>['log'] } = {};
 const db = createDatabase(config.databaseUrl, {
+  caPem: config.databaseCaPem,
   onIdleError: err => {
     if (logger.current) logger.current.warn({ kind: err.name }, 'database connection dropped');
     else console.warn('database connection dropped');

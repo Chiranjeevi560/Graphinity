@@ -7,7 +7,7 @@ const key = 'ab'.repeat(32);
 const prod = {
   NODE_ENV: 'production',
   APP_ENV: 'production',
-  DATABASE_URL: 'postgres://u:p@db.example:5432/x',
+  DATABASE_URL: 'postgres://u:p@db.example:5432/x?sslmode=require',
   WEB_ORIGIN: 'https://graphinity.pages.dev',
   TRUST_PROXY_HOPS: '1',
   IP_HASH_KEY: key,

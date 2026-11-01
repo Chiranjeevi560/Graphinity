@@ -250,6 +250,34 @@ SELECT status, count(*) FROM app.collusion_groups GROUP BY status;
 
 `node scripts/benchmark-fraud.mjs [accounts]` re-measures the detector on planted rings (no database).
 
+### Backups
+
+Supabase's free plan keeps no backups. **Before every `npm run db:migrate:remote`:**
+
+```bash
+npm run db:backup
+```
+
+It asks for a passphrase and writes an encrypted file to `~/graphinity-backups` (the newest 7 stay; a deleted account must not live on in old
+copies for long). Keep the passphrase in a password manager, not beside the files. It needs a `pg_dump` at least as new as the database
+(`brew install postgresql@17`, then `PATH="/opt/homebrew/opt/postgresql@17/bin:$PATH"`).
+
+**Nightly copies** (optional, free): `.github/workflows/backup.yml` runs once you add the secrets `BACKUP_DATABASE_URL` and `BACKUP_PASSPHRASE`.
+The encrypted copy is kept 30 days as a private artifact. SETUP-ACCOUNTS.md Part K has the clicks.
+
+**To check a backup is good** (do this once now, and after schema changes): `BACKUP_PASSPHRASE=… node scripts/db-restore.mjs <file> restore_check`, then look at it
+with `psql -h ~/.local/share/graphinity -p 54329 -U graphinity_owner restore_check`. It only ever restores to this computer.
+
+**To recover production:** stop the API on Render, restore with `pg_restore --clean --if-exists --no-owner -d "$MIGRATION_DATABASE_URL"` after decrypting
+with `openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000`, run `npm run db:migrate:remote`, then start the API. Sign-ins are in Supabase's `auth` schema, not in these backups.
+
+### Reaching the database
+
+In production, `DATABASE_URL` and `MIGRATION_DATABASE_URL` must end with `?sslmode=require` or the server refuses to start. If it then fails with a certificate error,
+download the CA from Supabase (**Project Settings**, **Database**, **SSL Configuration**) and set its text as `DATABASE_CA_PEM`. Never use `sslmode=no-verify`.
+
+`db:migrate:remote` now shows the address and needs it typed, and refuses to run without a person at a terminal.
+
 ### What a release carries
 
 `release.yml` keeps, for 90 days: signed SLSA build provenance for the image, SBOMs in SPDX and CycloneDX, a vulnerability

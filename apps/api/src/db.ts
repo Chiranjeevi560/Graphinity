@@ -1,3 +1,4 @@
+import { connectionSettings } from './db-target.ts';
 import pg from 'pg';
 
 export interface Queryable {
@@ -36,11 +37,12 @@ export interface Database {
 
 export interface DatabaseOptions {
   onIdleError?: (err: Error) => void;
+  caPem?: string | null;
 }
 
 export function createDatabase(connectionString: string, options: DatabaseOptions = {}): Database {
   const pool = new pg.Pool({
-    connectionString,
+    ...connectionSettings(connectionString, options.caPem),
     // Supabase's free tier allows few connections; the API rarely needs more.
     max: 5,
     idleTimeoutMillis: 30_000,
