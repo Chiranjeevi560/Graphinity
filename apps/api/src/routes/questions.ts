@@ -292,6 +292,19 @@ export function registerQuestionRoutes(
             [viewer, id],
           );
         }
+        // Episodic memory of the topic, only if they turned memory on. A re-read within the hour isn't a new episode.
+        if (viewer)
+          await q.query(
+            `INSERT INTO app.memory_entries (user_id, tier, key)
+             SELECT $1, 'episodic', $2 WHERE EXISTS (
+               SELECT 1 FROM app.user_consent_settings s
+               WHERE s.user_id = $1 AND s.category = 'memory_personalization' AND s.enabled
+             )
+             ON CONFLICT (user_id, tier, key) DO UPDATE
+               SET reviews = app.memory_entries.reviews + 1, strength = 1, seen_at = now()
+               WHERE app.memory_entries.seen_at < now() - interval '1 hour'`,
+            [viewer, question.field],
+          );
         // A signal for the reader's advertising interests, only if they allow it (ADR 0022) and their browser doesn't object.
         if (viewer && req.headers['sec-gpc'] !== '1')
           await q.query('SELECT app.record_ad_interest($1, $2, $3)', [viewer, question.field, READ_WEIGHT]);
