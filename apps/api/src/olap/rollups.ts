@@ -137,3 +137,41 @@ export const retentionRates = (
   }
   return [...out.values()].sort((a, b) => a.week.localeCompare(b.week));
 };
+
+/**
+ * How many weeks a new person stays, from retention: the sum over weeks since joining of the share still active, each
+ * week's share weighted by how many people it covers. Only 13 weeks are kept, so this understates a long stay, and
+ * lifetime value with it: better than guessing at people who haven't had time to leave.
+ */
+export function expectedWeeks(
+  rows: ReadonlyArray<{ week_offset: number; cohort_size: number; active: number }>,
+): number {
+  const byWeek = new Map<number, { size: number; active: number }>();
+  for (const r of rows) {
+    const w = byWeek.get(r.week_offset) ?? { size: 0, active: 0 };
+    w.size += r.cohort_size;
+    w.active += r.active;
+    byWeek.set(r.week_offset, w);
+  }
+  let weeks = 0;
+  for (const w of byWeek.values()) if (w.size) weeks += w.active / w.size;
+  return weeks;
+}
+
+/**
+ * Income per active person-week times expected weeks, against spend per person who joined. Null where a part is
+ * missing, never zero: "no figure yet" and "it costs nothing" are different answers.
+ */
+export function unitEconomics(input: {
+  revenueMicros: number;
+  personWeeks: number;
+  lifetimeWeeks: number;
+  spendMicros: number | null;
+  joined: number;
+}) {
+  const { revenueMicros, personWeeks, lifetimeWeeks, spendMicros, joined } = input;
+  const lifetimeValueMicros =
+    personWeeks > 0 && lifetimeWeeks > 0 ? (revenueMicros / personWeeks) * lifetimeWeeks : null;
+  const costPerJoinMicros = spendMicros !== null && joined > 0 ? spendMicros / joined : null;
+  return { lifetimeValueMicros, costPerJoinMicros };
+}

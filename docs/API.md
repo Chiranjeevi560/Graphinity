@@ -100,6 +100,8 @@ within the last 5 minutes.
 `POST /ads/pixel` (`text/plain` JSON `{ pixel, eidToken, event, eventId, productSku?, category? }`) → always 202; counts only from a listed
 host, without Sec-GPC, and never carries money.
 
+**Acquisition spend:** `PUT /owner/acquisition-spend` `{ month: "YYYY-MM", currency, amountMicros }` (owner, fresh sign-in): what was spent bringing people in; replaces that month. `GET /owner/dashboard/summary` returns `economics`: per currency, `lifetimeWeeks`, `lifetimeValueMicros` and `costPerJoinMicros`, null where a part is missing.
+
 **Rollouts (ADR 0028):** `POST /owner/rollouts` `{ flag, ring: 0..3 }` (owner) puts a switch on for 1%, 5%, 25% or 100% of people,
 hashed per person. `GET /ops/status` carries `rollouts`. 404 `not_found` for an unknown switch.
 

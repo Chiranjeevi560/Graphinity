@@ -8,7 +8,7 @@ import { assign } from '../experiments/assign.ts';
 import { evaluate } from '../experiments/stats.ts';
 import { GRIEVANCE_KINDS } from '../governance/legal.ts';
 import { RINGS } from '../governance/rollback.ts';
-import { retentionRates } from '../olap/rollups.ts';
+import { expectedWeeks, retentionRates, unitEconomics } from '../olap/rollups.ts';
 import { TDigest } from '../olap/sketches.ts';
 import { PROCESSING } from '../governance/ropa.ts';
 import { extractClaims } from '../intelligence/claims.ts';
@@ -87,6 +87,38 @@ export function registerPlatformRoutes(
         if (!rows[0]?.ok) return fail(reply, 404, 'not_found', 'There’s no switch with that name.');
         await auditWithin(q, { action: 'rollout.moved', actor: 'owner', subject: flag, detail: { ring } });
         return { rollout: { flag, percent: RINGS[ring] } };
+      });
+    },
+  );
+
+  // What the owner spent bringing people in during a month; correcting a month replaces it.
+  app.put(
+    '/owner/acquisition-spend',
+    {
+      config: { auth: 'required', write: true, freshAuth: true },
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['month', 'currency', 'amountMicros'],
+          properties: {
+            month: { type: 'string', pattern: '^20[0-9]{2}-(0[1-9]|1[0-2])$' },
+            currency: { type: 'string', pattern: '^[A-Z]{3}$' },
+            amountMicros: { type: 'integer', minimum: 0, maximum: 1e15 },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      const { month, currency, amountMicros } = req.body as { month: string; currency: string; amountMicros: number };
+      return asOwner(signedIn(req).id, reply, async q => {
+        await q.query(
+          `INSERT INTO app.acquisition_spend (month, currency, amount_micros) VALUES ($1::date, $2, $3)
+           ON CONFLICT (month, currency) DO UPDATE SET amount_micros = EXCLUDED.amount_micros`,
+          [`${month}-01`, currency, amountMicros],
+        );
+        await auditWithin(q, { action: 'acquisition_spend.set', actor: 'owner', subject: month, detail: { currency } });
+        return { saved: true };
       });
     },
   );
@@ -172,14 +204,51 @@ export function registerPlatformRoutes(
       const minutes = new TDigest();
       for (const a of answering) minutes.merge(TDigest.fromBytes(a.tdigest_minutes));
       const asked = answering.reduce((sum, a) => sum + a.questions, 0);
-      const retention = retentionRates(
-        (
-          await q.query<{ cohort_week: string; week_offset: number; cohort_size: number; active: number }>(
-            `SELECT cohort_week::text AS cohort_week, week_offset, cohort_size, active FROM app.olap_cohort_retention
-             WHERE cohort_week > now()::date - 91 AND cohort_size >= 25`,
-          )
-        ).rows,
+      const cohorts = (
+        await q.query<{ cohort_week: string; week_offset: number; cohort_size: number; active: number }>(
+          `SELECT cohort_week::text AS cohort_week, week_offset, cohort_size, active FROM app.olap_cohort_retention
+           WHERE cohort_week > now()::date - 91 AND cohort_size >= 25`,
+        )
+      ).rows;
+      const retention = retentionRates(cohorts);
+      const recent = (
+        await q.query<{ person_weeks: string; joined: string }>(
+          `SELECT coalesce(sum(active), 0)::text AS person_weeks,
+                  coalesce(sum(cohort_size) FILTER (WHERE week_offset = 0 AND cohort_week > now()::date - 28), 0)::text AS joined
+           FROM app.olap_cohort_retention WHERE cohort_week + week_offset * 7 > now()::date - 28`,
+        )
+      ).rows[0];
+      const income = await db.asSystem(
+        async s =>
+          (
+            await s.query<{ currency: string; micros: string }>(
+              `SELECT c.currency, sum(i.charged_micros)::text AS micros FROM app.ad_impressions i
+               JOIN app.ad_campaigns c ON c.id = i.campaign_id
+               WHERE i.shown_at > now() - interval '28 days' AND i.charged_micros > 0 GROUP BY c.currency`,
+            )
+          ).rows,
       );
+      const spends = (
+        await q.query<{ currency: string; micros: string }>(
+          `SELECT currency, sum(amount_micros)::text AS micros FROM app.acquisition_spend
+           WHERE month >= date_trunc('month', now() - interval '28 days') GROUP BY currency`,
+        )
+      ).rows;
+      const lifetimeWeeks = expectedWeeks(cohorts);
+      const economics = [...new Set([...income, ...spends].map(r => r.currency))].sort().map(currency => {
+        const spend = spends.find(r => r.currency === currency);
+        return {
+          currency,
+          lifetimeWeeks,
+          ...unitEconomics({
+            revenueMicros: Number(income.find(r => r.currency === currency)?.micros ?? 0),
+            personWeeks: Number(recent?.person_weeks ?? 0),
+            lifetimeWeeks,
+            spendMicros: spend ? Number(spend.micros) : null,
+            joined: Number(recent?.joined ?? 0),
+          }),
+        };
+      });
       const together = (
         await q.query<{ from: string; to: string; people: number; lift: number }>(
           `SELECT a.label AS from, b.label AS to, r.people, r.lift FROM app.olap_commerce_rules r
@@ -196,6 +265,7 @@ export function registerPlatformRoutes(
           p95Minutes: minutes.total ? minutes.quantile(0.95) : null,
         },
         retention,
+        economics,
         together,
         totals: { day: within(1), week: within(7), month: within(28) },
         daily: [...series].sort().map(([day, events]) => ({ day, events })),
