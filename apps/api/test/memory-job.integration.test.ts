@@ -95,4 +95,40 @@ describe('the daily sweep', () => {
     await h.call('PUT', '/me/consents', p.token, { choices: [{ category: 'memory_personalization', enabled: false }] });
     expect(await rows(p.id)).toEqual([]);
   });
+
+  it('writes nothing for someone who withdrew after the batch was read', async () => {
+    const p = await member(true);
+    await h.t.owner.query(
+      `INSERT INTO app.memory_entries (user_id, tier, key, reviews) VALUES ($1, 'episodic', 'visas', 3)`,
+      [p.id],
+    );
+    await h.t.owner.query(
+      `UPDATE app.user_consent_settings SET enabled = false WHERE user_id = $1 AND category = 'memory_personalization'`,
+      [p.id],
+    );
+    await h.t.owner.query(
+      `INSERT INTO app.memory_entries (user_id, tier, key, reviews) VALUES ($1, 'episodic', 'visas', 3)`,
+      [p.id],
+    );
+    await sweepMemory(h.t.database, Date.now());
+    expect((await rows(p.id)).map(r => r.tier)).toEqual(['episodic']);
+  });
+
+  it('a person can check only their own consent', async () => {
+    const [a, b] = [await member(true), await member(true)];
+    await expect(
+      h.t.database.withUser(a.id, q => q.query('SELECT app.memory_allowed_locked($1)', [b.id])),
+    ).rejects.toThrow(/only for yourself/);
+  });
+
+  it('counts a lasting topic once a day, though the sweep runs hourly', async () => {
+    const p = await member(true);
+    await h.t.owner.query(
+      `INSERT INTO app.memory_entries (user_id, tier, key, reviews) VALUES ($1, 'episodic', 'visas', 3)`,
+      [p.id],
+    );
+    await sweepMemory(h.t.database, Date.now());
+    await sweepMemory(h.t.database, Date.now());
+    expect(must((await rows(p.id)).find(r => r.tier === 'semantic')).reviews).toBe(0);
+  });
 });

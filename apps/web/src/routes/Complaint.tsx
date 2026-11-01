@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Button } from '../components/Button.tsx';
+import { SelectField } from '../components/Form.tsx';
 import { ApiError } from '../lib/api.ts';
 import { api } from '../session.tsx';
 
@@ -61,25 +62,12 @@ export default function Complaint() {
     <main className="page legal">
       <h1 className="text-title1">Make a complaint</h1>
       <p className="text-body secondary">Tell us what’s wrong. A person reads every complaint.</p>
-      <div className="field">
-        <label htmlFor="complaint-kind" className="text-subhead">
-          What is it about?
-        </label>
-        <select
-          id="complaint-kind"
-          className="input"
-          value={kind}
-          onChange={e => {
-            setKind(e.target.value);
-          }}
-        >
-          {KINDS.map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </div>
+      <SelectField
+        label="What is it about?"
+        value={kind}
+        onChange={setKind}
+        options={KINDS.map(([value, label]) => ({ value, label }))}
+      />
       <div className="field">
         <label htmlFor="complaint-body" className="text-subhead">
           What happened? Link the post if there is one.

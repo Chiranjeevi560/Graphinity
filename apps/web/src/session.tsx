@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react';
 import { createApi, type Api } from './lib/api.ts';
 import { createAuth, type Auth } from './lib/auth.ts';
+import { journey } from './lib/journey.ts';
 import { useRetryWhenOnline } from './lib/retry.ts';
 import { createSessionStore, type Profile, type SessionState } from './lib/session-store.ts';
 import { site } from './site-settings.ts';
@@ -49,6 +50,10 @@ export const auth: Auth = createAuth({
     location.assign(url);
   },
   now: () => Math.floor(Date.now() / 1000),
+});
+// However a session ends, expiry included: the next person in this tab mustn't continue someone else's journey.
+auth.subscribe(() => {
+  if (!auth.hasSession()) journey.forget();
 });
 
 export const api: Api = createApi({
