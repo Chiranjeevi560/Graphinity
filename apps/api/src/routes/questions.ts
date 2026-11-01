@@ -115,6 +115,9 @@ export function questionText(title: string, details: string): string {
 /** Candidates from each ranking before fusing (spec §12.1 reranks the top 25). */
 const PRECHECK_POOL = 25;
 
+const SITEMAP_FRESH_MS = 5 * 60_000;
+type SitemapRow = { id: string; title: string; created_at: Date; last_answered_at: Date };
+
 export function registerQuestionRoutes(
   app: FastifyInstance,
   { db, events, embedder, engine }: { db: Database; events: Events; embedder: Embedder | null; engine: SearchEngine },
@@ -156,8 +159,10 @@ export function registerQuestionRoutes(
   // For the sitemap (built by the website's host): the newest questions anyone may see.
   // Spec §19.2: only questions with an answer anyone can see go to search
   // engines (no thin, unanswered pages), dated by their latest answer.
-  app.get('/sitemap/questions', async (_req, reply) => {
-    const rows = await db.withUser(
+  // Anyone can ask for this, and it reads every answered question: one read per few minutes, shared.
+  let sitemap: { at: number; rows: Promise<SitemapRow[]> } | null = null;
+  const readSitemap = () =>
+    db.withUser(
       null,
       async q =>
         (
@@ -170,6 +175,17 @@ export function registerQuestionRoutes(
           )
         ).rows,
     );
+  app.get('/sitemap/questions', async (_req, reply) => {
+    const now = Date.now();
+    if (!sitemap || now - sitemap.at > SITEMAP_FRESH_MS) {
+      const rows = readSitemap();
+      sitemap = { at: now, rows };
+      // A failure isn't kept: the next request tries again.
+      rows.catch(() => {
+        sitemap = null;
+      });
+    }
+    const rows = await sitemap.rows;
     reply.header('cache-control', 'public, max-age=3600');
     return {
       questions: rows.map(r => ({

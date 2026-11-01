@@ -168,6 +168,9 @@ describe('the sitemap list', () => {
     // Spec §19.2: nothing thin goes to search engines.
     expect(questions.map(q => q.id)).not.toContain(unanswered);
     expect(res.body).not.toMatch(UUID);
+    // Anyone may ask: for a few minutes the same read is shared, not repeated.
+    await h.t.owner.query('DELETE FROM app.answers WHERE question_id = $1', [answered]);
+    expect((await h.call('GET', '/sitemap/questions')).body).toBe(res.body);
   });
 });
 

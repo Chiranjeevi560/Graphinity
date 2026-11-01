@@ -455,7 +455,7 @@ export function registerAdvertiserRoutes(
   app.post(
     '/ads/review/advertiser',
     {
-      config: { auth: 'required', write: true },
+      config: { auth: 'required', write: true, freshAuth: true },
       schema: {
         body: {
           type: 'object',
@@ -486,7 +486,7 @@ export function registerAdvertiserRoutes(
   app.post(
     '/ads/review/creative',
     {
-      config: { auth: 'required', write: true },
+      config: { auth: 'required', write: true, freshAuth: true },
       schema: {
         body: {
           type: 'object',

@@ -292,4 +292,28 @@ describe('learning', () => {
     await decide(mod.token, must((await groupOf(must(ring[0]).id))[0]).public_id, 'dismiss');
     expect(await under(must(ring[0]).id)).toBe(false);
   });
+
+  it('a member leaving a confirmed ring frees nobody; the pair goes only with one of the pair', async () => {
+    const { ring } = await world();
+    await detectCollusion(h.t.database);
+    const mod = await moderator();
+    const group = must((await groupOf(must(ring[0]).id))[0]);
+    const paired = async (x: { id: string }, y: { id: string }) =>
+      must((await h.t.owner.query<{ p: boolean }>('SELECT app.confirmed_collusion($1, $2) AS p', [x.id, y.id])).rows[0])
+        .p;
+    const [a, b, c] = [must(ring[0]), must(ring[1]), must(ring[2])];
+    expect(await paired(a, b)).toBe(false);
+    expect((await decide(mod.token, group.public_id, 'confirm')).statusCode).toBe(200);
+    expect(await paired(a, b)).toBe(true);
+    expect(await paired(b, a)).toBe(true);
+    expect((await h.call('DELETE', '/me', c.token, { confirm: true })).statusCode).toBeLessThan(300);
+    expect(await groupOf(a.id)).toEqual([]);
+    expect(await paired(a, b)).toBe(true);
+    expect((await h.call('DELETE', '/me', b.token, { confirm: true })).statusCode).toBeLessThan(300);
+    expect(await paired(a, b)).toBe(false);
+    // Members can't read the pairs themselves.
+    expect(
+      await h.t.database.withUser(a.id, async q => (await q.query('SELECT 1 FROM app.collusion_pairs')).rowCount),
+    ).toBe(0);
+  });
 });

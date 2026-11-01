@@ -373,7 +373,7 @@ export function registerModerationRoutes(app: FastifyInstance, { db }: { db: Dat
 
   app.delete(
     '/review/block',
-    { config: { auth: 'required', write: true }, schema: { body: blockBody } },
+    { config: { auth: 'required', write: true, freshAuth: true }, schema: { body: blockBody } },
     async (req, reply) => {
       const user = signedIn(req);
       const handle = normalizeHandle((req.body as { handle: string }).handle);
