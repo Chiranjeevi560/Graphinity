@@ -66,6 +66,15 @@ describe('assertNoInlineScripts', () => {
     }).toThrow(/inline script/);
   });
 
+  it('rejects an inline script whose end tag has a space or attributes, which browsers still accept', () => {
+    expect(() => {
+      assertNoInlineScripts('<script>window.x = 1</script >');
+    }).toThrow(/inline script/);
+    expect(() => {
+      assertNoInlineScripts('<script>window.x = 1</script foo="bar">');
+    }).toThrow(/inline script/);
+  });
+
   it('accepts structured data, which browsers never run, and nothing dressed up as it', () => {
     expect(() => {
       assertNoInlineScripts('<script type="application/ld+json">{"@type":"WebSite"}</script>');

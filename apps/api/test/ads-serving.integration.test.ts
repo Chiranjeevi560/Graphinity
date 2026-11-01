@@ -305,10 +305,10 @@ describe('knowledge results stay apart from ads', () => {
       }
     };
     walk(src);
-    const knowledge = files.filter(f =>
-      /[/\\](search|recommendations)[/\\]|[/\\](routing|routing-score|consensus|reputation|precheck|graph-.*|personal-graph-algorithms)\.ts$/.test(
-        f,
-      ),
+    const knowledge = files.filter(
+      f =>
+        /[/\\](search|recommendations)[/\\]/.test(f) ||
+        /[/\\](routing|routing-score|consensus|reputation|precheck|graph-.*|personal-graph-algorithms)\.ts$/.test(f),
     );
     expect(knowledge.length).toBeGreaterThan(10);
     for (const f of knowledge) expect(readFileSync(f, 'utf8'), f).not.toMatch(/from '\.{1,2}\/(\.\.\/)?ads\//);
