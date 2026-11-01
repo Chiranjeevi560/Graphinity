@@ -72,9 +72,6 @@
   min-height: var(--tap);
   margin-right: calc(-1 * (var(--tap) - 2rem) / 2);
 }
-.bar-avatar:hover {
-  text-decoration: none;
-}
 
 /* Onboarding and edit forms: one column, one primary action at the end. */
 .onboarding,
@@ -213,9 +210,6 @@
   gap: 0;
   margin-top: var(--space-4);
 }
-.link-button:hover {
-  text-decoration: none;
-}
 
 /* Questions: lists, the question page, answers. */
 .recommended {
@@ -271,9 +265,15 @@
   background: var(--fill-tertiary);
 }
 /* Whole-row links, not links inside a sentence: no underline (base.css underlines those). */
-.question-link,
-.question-link:hover {
+.question-link {
   text-decoration: none;
+}
+.question-link {
+  transition: transform var(--spring-snappy-duration) var(--spring-snappy);
+}
+.question-link:active {
+  transform: scale(0.98);
+  transition-duration: var(--press-duration);
 }
 @media (hover: hover) {
   .question-link:hover .question-title {

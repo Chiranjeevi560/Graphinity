@@ -367,10 +367,10 @@ export function OwnerPage() {
       <RetentionHeatmap cohorts={data.retention} />
       <Section
         title="What a person is worth"
-        empty="Shown once there’s income or a finished month’s spend."
+        empty="Shown once there’s income or spend."
         rows={data.economics.map(e => [
           e.currency,
-          `Roughly worth ${money(e.lifetimeValueMicros, e.currency)} over about ${e.lifetimeWeeks.toFixed(1)} weeks · to bring in: ${money(e.costPerJoinMicros, e.currency)}`,
+          `About ${money(e.lifetimeValueMicros, e.currency)} over ${e.lifetimeWeeks.toFixed(1)} weeks · to bring in: ${money(e.costPerJoinMicros, e.currency)}`,
         ])}
       />
       <SpendForm onSaved={retry} />
@@ -421,16 +421,14 @@ export function OwnerPage() {
         empty="Each needs a few hundred real events first."
         rows={data.evaluations.map(e => [e.name, describeEvaluation(e.metrics)])}
       />
-      {data.failedPushes > 0 && (
-        <Section title="Partners" empty="" rows={[['Undelivered, 7 days', n(data.failedPushes), true]]} />
-      )}
       <Section
-        title="Audit log"
+        title="Records"
         empty=""
         rows={[
           brokenAt === null
             ? ['Unchanged', entries === 1 ? '1 entry' : `${n(entries)} entries`]
             : [`Entry ${String(brokenAt)} was changed`, 'Untrusted from here', true],
+          ...(data.failedPushes ? ([['Pushes undelivered', n(data.failedPushes), true]] as Row[]) : []),
         ]}
       />
     </main>
