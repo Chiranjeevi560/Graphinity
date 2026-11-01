@@ -573,8 +573,8 @@ export function createAdServer(db: Pick<Database, 'asSystem'>, rtb?: RtbOptions)
           const audience = [...(byId.get(w.campaignId)?.targets.get('audience') ?? [])].find(a => audiences?.has(a));
           const token = (
             await q.query<{ token: string }>(
-              `INSERT INTO app.ad_impressions (campaign_id, creative_id, ad_id, placement, price_micros, field, country, audience_id)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, (SELECT id FROM app.ad_audiences WHERE public_id = $8))
+              `INSERT INTO app.ad_impressions (campaign_id, creative_id, ad_id, placement, price_micros, field, country, audience_id, personal)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, (SELECT id FROM app.ad_audiences WHERE public_id = $8), $9)
                RETURNING token::text`,
               [
                 w.campaignId,
@@ -585,6 +585,7 @@ export function createAdServer(db: Pick<Database, 'asSystem'>, rtb?: RtbOptions)
                 fields[0] ?? null,
                 person?.country ?? null,
                 audience ?? null,
+                adId !== null && person?.personalized === true,
               ],
             )
           ).rows[0]?.token;

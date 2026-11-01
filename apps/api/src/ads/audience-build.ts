@@ -67,7 +67,7 @@ async function membersOf(
     // People who tapped the campaign's ads recently, each with their latest tap.
     const { rows } = await q.query<{ ad_id: string; at: Date }>(
       `SELECT i.ad_id::text, max(i.clicked_at) AS at FROM app.ad_impressions i
-       WHERE i.campaign_id = $1 AND i.ad_id IS NOT NULL AND i.clicked_at > $2
+       WHERE i.campaign_id = $1 AND i.ad_id IS NOT NULL AND i.personal AND i.clicked_at > $2
        GROUP BY i.ad_id`,
       [a.source_campaign_id, new Date(now.getTime() - RETARGET_WINDOW_MS)],
     );

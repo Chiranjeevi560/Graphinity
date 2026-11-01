@@ -7,7 +7,7 @@
 import { createHash } from 'node:crypto';
 import type { Database, Queryable } from './db.ts';
 import { findRings, type PickEdge, type Ring } from './ml/collusion.ts';
-import { denseBlocks, type BipartiteEdge } from './ml/fraudar.ts';
+import { denseBlocks, implicated, type BipartiteEdge } from './ml/fraudar.ts';
 import { trustInto } from './kg/trust-flow.ts';
 
 export const WINDOW_DAYS = 180;
@@ -17,6 +17,9 @@ export const MAX_GROUPS = 200;
 export const MAX_EVIDENCE = 20;
 /** Trust starts at the people who've picked answers from the most different people: costly to fake at scale. */
 const TRUST_SEEDS = 20;
+const MIN_SEED_REACH = 5;
+/** The heaviest picks only: each ring's max-flow runs in the API's process, so its size is capped. */
+const MAX_EVIDENCE_EDGES = 20_000;
 
 /**
  * A SQL condition true when `column` (a profile id expression) is in a group
@@ -75,10 +78,11 @@ export async function recordRings(q: Queryable, rings: readonly Ring<string>[]):
  * For each ring: trust reaching its members from outside it, per member, and how many members fall in a dense block
  * of picks. Picks inside a ring don't count as trust into it: that's the thing being questioned.
  */
-export function ringEvidence(
-  picks: readonly PickEdge<string>[],
+export async function ringEvidence(
+  allPicks: readonly PickEdge<string>[],
   rings: readonly Pick<Ring<string>, 'members'>[],
-): Array<{ outsideTrust: number; denseMembers: number }> {
+): Promise<Array<{ outsideTrust: number; denseMembers: number }>> {
+  const picks = [...allPicks].sort((a, b) => (b.count ?? 1) - (a.count ?? 1)).slice(0, MAX_EVIDENCE_EDGES);
   const index = new Map<string, number>();
   const id = (who: string) => {
     let i = index.get(who);
@@ -88,15 +92,24 @@ export function ringEvidence(
   const edges: BipartiteEdge[] = picks.map(p => ({ source: id(p.source), target: id(p.target), count: p.count ?? 1 }));
   const reach = new Map<number, Set<number>>();
   for (const e of edges) reach.set(e.source, (reach.get(e.source) ?? new Set()).add(e.target));
-  const dense = new Set(denseBlocks(edges, 5, { weighted: true }).flatMap(b => [...b.sources, ...b.targets]));
-  return rings.map(ring => {
+  // Who the block implicates, not everyone in it: a dense block's popular targets are mostly honest.
+  const dense = new Set(
+    denseBlocks(edges, 5, { weighted: true }).flatMap(b => {
+      const { sources, targets } = implicated(b, edges);
+      return [...sources, ...targets];
+    }),
+  );
+  const out: Array<{ outsideTrust: number; denseMembers: number }> = [];
+  for (const ring of rings) {
+    // A turn for waiting requests between rings.
+    await new Promise(resolve => setImmediate(resolve));
     const members = ring.members.flatMap(m => {
       const i = index.get(m);
       return i === undefined ? [] : [i];
     });
     const inRing = new Set(members);
     const seeds = [...reach]
-      .filter(([who]) => !inRing.has(who))
+      .filter(([who, reached]) => !inRing.has(who) && reached.size >= MIN_SEED_REACH)
       .sort((a, b) => b[1].size - a[1].size || a[0] - b[0])
       .slice(0, TRUST_SEEDS)
       .map(([who]) => who);
@@ -104,11 +117,12 @@ export function ringEvidence(
       .filter(e => !(inRing.has(e.source) && inRing.has(e.target)))
       .map(e => [e.source, e.target] as const);
     const trust = seeds.length ? trustInto(index.size, outside, seeds, members) : 0;
-    return {
+    out.push({
       outsideTrust: members.length ? trust / members.length : 0,
       denseMembers: members.filter(m => dense.has(m)).length,
-    };
-  });
+    });
+  }
+  return out;
 }
 
 export async function detectCollusion(db: Pick<Database, 'asSystem'>): Promise<{ found: number; added: number }> {
@@ -119,8 +133,14 @@ export async function detectCollusion(db: Pick<Database, 'asSystem'>): Promise<{
   });
   // Outside the transaction that recorded the rings: this is the slow part, and rings mustn't wait on it.
   const top = rings.slice(0, MAX_EVIDENCE);
-  const evidence = ringEvidence(picks, top);
+  const evidence = await ringEvidence(picks, top);
   await db.asSystem(async q => {
+    // Evidence for a ring no longer in the top would be shown as if it were current.
+    await q.query(
+      `DELETE FROM app.collusion_evidence e USING app.collusion_groups g
+       WHERE g.id = e.group_id AND NOT g.member_key = ANY($1)`,
+      [top.map(r => memberKey(r.members))],
+    );
     for (const [i, ring] of top.entries()) {
       const e = evidence[i];
       if (!e) continue;

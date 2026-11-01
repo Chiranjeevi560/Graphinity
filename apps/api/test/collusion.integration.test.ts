@@ -341,7 +341,7 @@ describe('moderator evidence', () => {
 describe('ring evidence', () => {
   // Ten people pick three experts; a ring of three only picks each other.
   const honest = ['h0', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'h7', 'h8', 'h9'];
-  const experts = ['e0', 'e1', 'e2'];
+  const experts = ['e0', 'e1', 'e2', 'e3', 'e4', 'e5'];
   const ringOf = ['r0', 'r1', 'r2'];
   const picks = [
     ...honest.flatMap(source => experts.map(target => ({ source, target, count: 1 }))),
@@ -350,18 +350,18 @@ describe('ring evidence', () => {
     { source: 'r2', target: 'r0', count: 9 },
   ];
 
-  it('finds no outside support for a closed ring, and some for people others chose', () => {
-    const [closed, widelyPicked] = ringEvidence(picks, [{ members: ringOf }, { members: experts }]);
+  it('finds no outside support for a closed ring, and some for people others chose', async () => {
+    const [closed, widelyPicked] = await ringEvidence(picks, [{ members: ringOf }, { members: experts }]);
     expect(must(closed).outsideTrust).toBe(0);
     expect(must(widelyPicked).outsideTrust).toBeGreaterThan(0);
   });
 
-  it('counts a tight ring in a dense block', () => {
-    const [closed] = ringEvidence(picks, [{ members: ringOf }]);
+  it('counts a tight ring in a dense block', async () => {
+    const [closed] = await ringEvidence(picks, [{ members: ringOf }]);
     expect(must(closed).denseMembers).toBeGreaterThan(0);
   });
 
-  it('copes with a member who has no picks, and an empty graph', () => {
-    expect(ringEvidence([], [{ members: ['nobody'] }])).toEqual([{ outsideTrust: 0, denseMembers: 0 }]);
+  it('copes with a member who has no picks, and an empty graph', async () => {
+    expect(await ringEvidence([], [{ members: ['nobody'] }])).toEqual([{ outsideTrust: 0, denseMembers: 0 }]);
   });
 });
