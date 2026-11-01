@@ -57,6 +57,8 @@ export interface SearchEngine {
     /** Still being typed (the Ask check): the last word may be unfinished. */
     typing?: boolean;
   }): Promise<Retrieval>;
+  /** Meaning vectors by question id, for diversity. Empty when none serve or reading them failed: order still works. */
+  vectors(ids: readonly string[], model: string | null): Promise<Map<string, number[]>>;
 }
 
 const since = (start: number) => Math.round((performance.now() - start) * 10) / 10;
@@ -128,6 +130,16 @@ export function createSearchEngine({
   }
 
   return {
+    async vectors(ids, model) {
+      if (!model || !ids.length) return new Map();
+      const { rows } = await db.withUser(null, q =>
+        q.query<{ id: string; vector: string }>(
+          'SELECT id::text AS id, vector FROM app.question_vectors($1::bigint[], $2)',
+          [ids, model],
+        ),
+      );
+      return new Map(rows.map(r => [r.id, JSON.parse(r.vector) as number[]]));
+    },
     async retrieve({ text, meaningText = text, field, pool, typing = false }) {
       const timings: Timings = { embed: 0, words: 0, meaning: 0, fetch: 0 };
       let start = performance.now();

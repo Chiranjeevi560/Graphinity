@@ -102,6 +102,8 @@ host, without Sec-GPC, and never carries money.
 
 **Acquisition spend:** `PUT /owner/acquisition-spend` `{ month: "YYYY-MM", currency, amountMicros }` (owner, fresh sign-in): what was spent bringing people in; replaces that month. `GET /owner/dashboard/summary` returns `economics`: per currency, `lifetimeWeeks`, `lifetimeValueMicros` and `costPerJoinMicros`, null where a part is missing.
 
+**Search cascade (ADR 0032):** `POST /search/retrieve-and-rank` `{ query, fieldSlug?, sessionGraphContext?: up to 5 topics }` returns `results` with `propensity` and a `trace` of each result's place at each stage, and `stages` with counts. It records nothing. The spec's `countryIso` is refused, because questions aren't stored by country. `POST /search` shows diversified results only to people who turned on search improvement and are in the treatment arm of a running `search_diversity` experiment.
+
 **Rollouts (ADR 0028):** `POST /owner/rollouts` `{ flag, ring: 0..3 }` (owner) puts a switch on for 1%, 5%, 25% or 100% of people,
 hashed per person. `GET /ops/status` carries `rollouts`. 404 `not_found` for an unknown switch.
 

@@ -51,12 +51,18 @@ export function trainTwoTower(
       [order[i], order[j]] = [at(order, j), at(order, i)];
     }
     for (let start = 0; start + batch <= order.length; start += batch) {
-      const members = order.slice(start, start + batch).map(i => pairs[i] ?? ([0, 0] as const));
+      const memberUser = new Int32Array(batch);
+      const memberItem = new Int32Array(batch);
+      for (let m = 0; m < batch; m++) {
+        const pair = pairs[at(order, start + m)];
+        memberUser[m] = pair ? pair[0] : 0;
+        memberItem[m] = pair ? pair[1] : 0;
+      }
       for (let a = 0; a < batch; a++) {
-        const user = members[a]?.[0] ?? 0;
+        const user = at(memberUser, a);
         let top = -Infinity;
         for (let b = 0; b < batch; b++) {
-          const item = members[b]?.[1] ?? 0;
+          const item = at(memberItem, b);
           let s = 0;
           for (let i = 0; i < dims; i++) s += at(users, user * dims + i) * at(items, item * dims + i);
           const logit = s / temperature - at(logQ, item);
@@ -71,7 +77,7 @@ export function trainTwoTower(
         }
         // Softmax gradient: towards this row's own item, away from each by how likely it looked.
         for (let b = 0; b < batch; b++) {
-          const item = members[b]?.[1] ?? 0;
+          const item = at(memberItem, b);
           const g = ((b === a ? 1 : 0) - at(probabilities, b) / total) * rate;
           if (!g) continue;
           for (let i = 0; i < dims; i++) {

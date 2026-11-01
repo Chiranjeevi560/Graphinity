@@ -1,10 +1,9 @@
 // The platform's addresses (API specification v2): the owner's dashboard and tools, which only
 // people in app.platform_owners may reach, and the handful anyone may use. The database repeats
 // every rule (migrations 0040-0044). Owner answers are aggregates: nothing here names a person.
-import { createHmac } from 'node:crypto';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Database, Queryable } from '../db.ts';
-import { assign } from '../experiments/assign.ts';
+import { enrol } from '../experiments/enrol.ts';
 import { evaluate } from '../experiments/stats.ts';
 import { GRIEVANCE_KINDS } from '../governance/legal.ts';
 import { RINGS } from '../governance/rollback.ts';
@@ -541,58 +540,7 @@ export function registerPlatformRoutes(
   );
 
   // A signed-in person's experiment arms. The unit is a keyed hash, per layer.
-  app.get('/me/experiments', { config: { auth: 'required' } }, async req => {
-    const user = signedIn(req);
-    return db.asSystem(async q => {
-      const layers = (
-        await q.query<{ id: string; salt: Buffer }>(
-          'SELECT layer_id::text AS id, salt_secret AS salt FROM app.exp_layers',
-        )
-      ).rows;
-      const out: Array<{ experiment: string; arm: string }> = [];
-      for (const layer of layers) {
-        const running = (
-          await q.query<{ id: string; name: string; bucket_start: number; bucket_end: number; share: number }>(
-            `SELECT exp_id::text AS id, name, bucket_start, bucket_end, control_share AS share
-             FROM app.exp_definitions WHERE layer_id = $1 AND status = 'running'`,
-            [layer.id],
-          )
-        ).rows;
-        const salt = layer.salt.toString('base64url');
-        const unit = createHmac('sha256', layer.salt).update(user.id).digest('base64url');
-        const a = assign(
-          unit,
-          salt,
-          running.map(e => ({
-            id: e.id,
-            bucketStart: e.bucket_start,
-            bucketEnd: e.bucket_end,
-            arms: [
-              { name: 'control', weight: e.share },
-              { name: 'treatment', weight: 1 - e.share },
-            ],
-          })),
-        );
-        if (!a) continue;
-        const entered = running.find(e => e.id === a.experiment);
-        // The metric: answers given since entering, and in the 14 days before (CUPED's covariate).
-        await q.query(
-          `INSERT INTO app.exp_unit_metrics (exp_id, unit_id, arm, subject, pre_experiment_covariate_x)
-           VALUES ($1, $2, $3, $4, (SELECT count(*) FROM app.answers WHERE answerer_id = $4 AND created_at > now() - interval '14 days' AND created_at <= now()))
-           ON CONFLICT (exp_id, unit_id) DO NOTHING`,
-          [a.experiment, unit, a.arm, user.id],
-        );
-        await q.query(
-          `UPDATE app.exp_unit_metrics m SET post_metric_y = (SELECT count(*) FROM app.answers a WHERE a.answerer_id = $3
-             AND a.created_at > (SELECT created_at FROM app.exp_definitions WHERE exp_id = $1)), updated_at = now()
-           WHERE m.exp_id = $1 AND m.unit_id = $2`,
-          [a.experiment, unit, user.id],
-        );
-        if (entered) out.push({ experiment: entered.name, arm: a.arm });
-      }
-      return { experiments: out };
-    });
-  });
+  app.get('/me/experiments', { config: { auth: 'required' } }, async req => enrol(db, signedIn(req).id));
 
   app.get(
     '/commerce/intelligence/forecast',

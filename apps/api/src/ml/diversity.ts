@@ -15,6 +15,10 @@ const dot = (a: ArrayLike<number>, b: ArrayLike<number>) => {
   return sum;
 };
 
+const none: readonly number[] = [];
+const relevance = (items: readonly Candidate[], i: number) => items[i]?.relevance ?? 0;
+const vectorOf = (items: readonly Candidate[], i: number) => items[i]?.vector ?? none;
+
 /** Indexes in picked order. `lambda` 1 is pure relevance; 0 is pure variety. Vectors are unit length. */
 export function mmr(items: readonly Candidate[], k: number, lambda: number): number[] {
   const picked: number[] = [];
@@ -26,7 +30,7 @@ export function mmr(items: readonly Candidate[], k: number, lambda: number): num
     let bestScore = -Infinity;
     for (const i of left) {
       const like = picked.length ? at(nearest, i) : 0;
-      const s = lambda * (items[i]?.relevance ?? 0) - (1 - lambda) * like;
+      const s = lambda * relevance(items, i) - (1 - lambda) * like;
       if (s > bestScore) {
         bestScore = s;
         best = i;
@@ -36,7 +40,7 @@ export function mmr(items: readonly Candidate[], k: number, lambda: number): num
     if (!chosen) break;
     picked.push(best);
     left.delete(best);
-    for (const i of left) nearest[i] = Math.max(at(nearest, i), dot(items[i]?.vector ?? [], chosen.vector));
+    for (const i of left) nearest[i] = Math.max(at(nearest, i), dot(vectorOf(items, i), chosen.vector));
   }
   return picked;
 }
@@ -64,9 +68,9 @@ export function dppGreedy(items: readonly Candidate[], k: number, theta: number)
     if (best < 0 || bestGain <= 1e-12) break;
     const row = new Float64Array(n);
     const root = Math.sqrt(bestGain);
-    const chosen = items[best]?.vector ?? [];
+    const chosen = vectorOf(items, best);
     for (const i of left) {
-      let l = at(q, i) * at(q, best) * Math.max(dot(items[i]?.vector ?? [], chosen), 0);
+      let l = at(q, i) * at(q, best) * Math.max(dot(vectorOf(items, i), chosen), 0);
       for (const f of factors) l -= at(f, i) * at(f, best);
       const v = l / root;
       row[i] = v;

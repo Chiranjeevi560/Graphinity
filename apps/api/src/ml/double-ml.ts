@@ -3,6 +3,7 @@
 // over on the other: what the covariates explain can't be mistaken for the treatment. Complements the X-learner
 // (uplift.ts), which estimates per-person effects; this gives one number with a confidence interval.
 import { seededRandom } from './linalg.ts';
+import { at } from './num.ts';
 import { fitRidge, predictRidge } from './ridge.ts';
 
 export interface EffectRow {
@@ -50,15 +51,15 @@ export function doubleMl(
   let top = 0;
   let bottom = 0;
   for (let i = 0; i < rows.length; i++) {
-    top += (treatmentLeft[i] ?? 0) * (outcomeLeft[i] ?? 0);
-    bottom += (treatmentLeft[i] ?? 0) ** 2;
+    top += at(treatmentLeft, i) * at(outcomeLeft, i);
+    bottom += at(treatmentLeft, i) ** 2;
   }
   if (bottom < 1e-9) return null;
   const effect = top / bottom;
   let meat = 0;
   for (let i = 0; i < rows.length; i++) {
-    const t = treatmentLeft[i] ?? 0;
-    meat += (t * ((outcomeLeft[i] ?? 0) - effect * t)) ** 2;
+    const t = at(treatmentLeft, i);
+    meat += (t * (at(outcomeLeft, i) - effect * t)) ** 2;
   }
   // Heteroskedasticity-robust: nothing here promises every person's noise is the same.
   const standardError = Math.sqrt(meat) / bottom;

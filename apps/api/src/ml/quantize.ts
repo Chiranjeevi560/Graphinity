@@ -27,14 +27,14 @@ export function trainSq8(vectors: readonly Float32Array[]): Sq8 {
 export function encodeSq8(m: Sq8, v: Float32Array): Uint8Array {
   const out = new Uint8Array(v.length);
   for (let i = 0; i < v.length; i++)
-    out[i] = Math.max(0, Math.min(255, Math.round((at(v, i) - at(m.low, i)) / (m.step[i] ?? 1))));
+    out[i] = Math.max(0, Math.min(255, Math.round((at(v, i) - at(m.low, i)) / at(m.step, i))));
   return out;
 }
 
 /** Inner product of a query with an encoded vector. */
 export function scoreSq8(m: Sq8, query: Float32Array, code: Uint8Array): number {
   let sum = 0;
-  for (let i = 0; i < query.length; i++) sum += at(query, i) * (at(m.low, i) + at(code, i) * (m.step[i] ?? 1));
+  for (let i = 0; i < query.length; i++) sum += at(query, i) * (at(m.low, i) + at(code, i) * at(m.step, i));
   return sum;
 }
 

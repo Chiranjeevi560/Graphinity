@@ -12,6 +12,8 @@ import { recordOwnSearch } from '../search/history.ts';
 import { improvementSince, recordOpen, recordSearch } from '../search/log.ts';
 import { applySwap, chooseSwap } from '../search/interventions.ts';
 import { INTERLEAVE_SHARE, NO_RANKERS, ordered, teamDraft, type Rankers } from '../search/rankers.ts';
+import { enrol } from '../experiments/enrol.ts';
+import { diversify, preRank, PRE_RANK_KEEP } from '../search/cascade.ts';
 import { cleanLine, textProblem } from '../text.ts';
 import { fail } from './common.ts';
 
@@ -43,6 +45,12 @@ export function reasonsFor(f: Found): Reason[] | null {
   return reasons.length ? reasons : null;
 }
 
+/** The experiment that shows diversified results to its treatment arm. Without it running, nobody's results change. */
+export const DIVERSITY_EXPERIMENT = 'search_diversity';
+const EXPERIMENT_CHECK_MS = 60_000;
+/** Topics a session can name as where it has been. */
+const MAX_CONTEXT = 5;
+
 const messages = {
   tooLong: `Searches can be up to ${String(QUERY_MAX)} characters. Shorten it and try again.`,
   invalid: 'That search has characters that can’t be searched. Remove them and try again.',
@@ -64,7 +72,7 @@ export function registerSearchRoutes(
     random = Math.random,
     rankers = () => NO_RANKERS,
   }: {
-    db: Pick<Database, 'withUser'>;
+    db: Pick<Database, 'withUser' | 'asSystem'>;
     engine: SearchEngine;
     /** The `search` kill switch. */
     enabled: () => boolean;
@@ -84,6 +92,114 @@ export function registerSearchRoutes(
   // the general one is sized for page views, which cost far less.
   const buckets = new TokenBuckets(limit, clock);
   const eventBuckets = new TokenBuckets(eventLimit, clock);
+
+  // Read at most once a minute: every signed-in search would otherwise pay for a question that's almost always no.
+  let diversityChecked = -Infinity;
+  let diversityRunning = false;
+  async function inDiversityArm(userId: string): Promise<boolean> {
+    if (clock.now() - diversityChecked >= EXPERIMENT_CHECK_MS) {
+      diversityChecked = clock.now();
+      diversityRunning =
+        (
+          await db.asSystem(q =>
+            q.query(`SELECT 1 FROM app.exp_definitions WHERE name = $1 AND status = 'running'`, [DIVERSITY_EXPERIMENT]),
+          )
+        ).rowCount === 1;
+    }
+    if (!diversityRunning) return false;
+    const { experiments } = await enrol(db, userId);
+    return experiments.some(e => e.experiment === DIVERSITY_EXPERIMENT && e.arm === 'treatment');
+  }
+
+  // The whole cascade in one answer, each result saying how it got there. Reads only: this records nothing about anyone.
+  app.post(
+    '/search/retrieve-and-rank',
+    {
+      config: { auth: 'optional' },
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['query'],
+          properties: {
+            query: { type: 'string', maxLength: QUERY_MAX * 3 },
+            fieldSlug: { type: 'string', pattern: '^[a-z]+(-[a-z]+)*$', maxLength: 40 },
+            sessionGraphContext: {
+              type: 'array',
+              maxItems: MAX_CONTEXT,
+              items: { type: 'string', pattern: '^[a-z]+(-[a-z]+)*$', maxLength: 40 },
+            },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!enabled()) return fail(reply, 503, 'search_off', messages.off);
+      const userId = req.user?.id ?? null;
+      const allowed = buckets.take(userId ? `u:${userId}` : visitorKey(visitorAddress(req.ip), keySecret));
+      if (!allowed.ok) {
+        reply.header('retry-after', String(allowed.retryAfterSeconds));
+        return fail(reply, 429, 'rate_limited', messages.tooMany);
+      }
+      const body = req.body as { query: string; fieldSlug?: string; sessionGraphContext?: string[] };
+      const query = cleanLine(body.query);
+      const problem = textProblem(query, QUERY_MIN, QUERY_MAX);
+      if (problem === 'too_short') return { results: [], stages: { retrieved: 0, preRanked: 0, ranked: 0, shown: 0 } };
+      if (problem) {
+        const message = problem === 'too_long' ? messages.tooLong : messages.invalid;
+        return fail(reply, 400, 'invalid_query', message, { reason: problem });
+      }
+      const { found, meaningModel, timings } = await engine.retrieve({
+        text: query,
+        field: body.fieldSlug ?? null,
+        pool: PRE_RANK_KEEP,
+      });
+      reply.header('server-timing', serverTiming(timings));
+      const eligible = found.filter(f => reasonsFor(f));
+      // Pooled journeys only (ADR 0029): where people go next from these topics, as a share of leaving them.
+      const context = body.sessionGraphContext ?? [];
+      const next = new Map<string, number>();
+      if (context.length) {
+        const { rows } = await db.asSystem(q =>
+          q.query<{ to_key: string; share: number }>(
+            `SELECT to_key, sum(decayed_transition_count) / sum(sum(decayed_transition_count)) OVER () AS share
+             FROM app.kg_session_transitions WHERE from_key = ANY($1) AND prior_key = '' GROUP BY to_key`,
+            [context],
+          ),
+        );
+        for (const r of rows) next.set(r.to_key, r.share);
+      }
+      const pre = preRank(eligible, next);
+      const ranked = ordered(rankers().production, pre, clock.now());
+      const shown = diversify(
+        ranked,
+        await engine.vectors(
+          ranked.map(f => f.id),
+          meaningModel,
+        ),
+        SEARCH_RESULTS,
+      );
+      const placeIn = (list: readonly Found[], f: Found) => list.indexOf(f) + 1;
+      return {
+        results: shown.map((f, i) => ({
+          id: f.id,
+          title: f.title,
+          field: { slug: f.field, name: f.fieldName },
+          answerCount: f.answerCount,
+          reasons: reasonsFor(f) ?? [],
+          // This route explores nothing, so each result's chance of its place is 1: what off-policy evaluation needs.
+          propensity: 1,
+          trace: {
+            retrieved: placeIn(eligible, f),
+            preRanked: placeIn(pre, f),
+            ranked: placeIn(ranked, f),
+            shown: i + 1,
+          },
+        })),
+        stages: { retrieved: eligible.length, preRanked: pre.length, ranked: ranked.length, shown: shown.length },
+      };
+    },
+  );
 
   app.post(
     '/search',
@@ -159,9 +275,19 @@ export function registerSearchRoutes(
           team,
         }));
       } else {
-        const ranked = byProduction
-          .slice(0, SEARCH_RESULTS)
-          .map((f, i) => ({ f, reasons: reasonOf.get(f.id) ?? [], rankedPosition: i + 1 }));
+        // Only people who chose to help improve search can be in the comparison at all.
+        const diverse = recorded && userId ? await inDiversityArm(userId) : false;
+        const inOrder = diverse
+          ? diversify(
+              byProduction,
+              await engine.vectors(
+                byProduction.map(f => f.id),
+                meaningModel,
+              ),
+              SEARCH_RESULTS,
+            )
+          : byProduction.slice(0, SEARCH_RESULTS);
+        const ranked = inOrder.map((f, i) => ({ f, reasons: reasonOf.get(f.id) ?? [], rankedPosition: i + 1 }));
         swap = recorded ? chooseSwap(random, ranked.length) : null;
         shown = applySwap(ranked, swap);
       }
