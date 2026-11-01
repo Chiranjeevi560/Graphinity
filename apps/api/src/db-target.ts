@@ -16,8 +16,9 @@ function parse(url: string): URL | null {
 export function targetHost(url: string): string {
   const u = parse(url);
   if (!u) return 'unknown';
-  const socket = u.searchParams.get('host');
-  return socket?.startsWith('/') || LOCAL_HOSTS.has(u.hostname) ? 'local' : u.hostname;
+  // A `host` parameter wins over the address's own host, as it does for pg and libpq: `@localhost/db?host=prod` is prod.
+  const host = u.searchParams.get('host') ?? u.hostname;
+  return host.startsWith('/') || LOCAL_HOSTS.has(host) ? 'local' : host;
 }
 
 export const isLocal = (url: string) => targetHost(url) === 'local';

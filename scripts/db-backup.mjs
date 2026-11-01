@@ -13,10 +13,19 @@ import { chmodSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
+import { Writable } from 'node:stream';
+import { tlsProblem, isLocal } from '../apps/api/src/db-target.ts';
+import { encryptToFile } from '../apps/api/src/backup-crypto.ts';
 
 const url = process.env.BACKUP_DATABASE_URL ?? process.env.MIGRATION_DATABASE_URL;
 if (!url) {
   console.error('No database: MIGRATION_DATABASE_URL (or BACKUP_DATABASE_URL) is not set.');
+  process.exit(1);
+}
+// Never let libpq fall back to plain text: the password and the whole dump would cross the internet.
+const tls = tlsProblem(url);
+if (tls) {
+  console.error(`The database address ${tls}`);
   process.exit(1);
 }
 const KEEP = Number(process.env.BACKUP_KEEP ?? 7);
@@ -29,8 +38,19 @@ if (!passphrase) {
     console.error('Set BACKUP_PASSPHRASE, or run this in a terminal to type one.');
     process.exit(1);
   }
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  passphrase = await rl.question('A passphrase for this backup (you need it to restore; keep it somewhere safe): ');
+  // Not shown as it's typed: readline echoes through this, and it stays silent once the question is printed.
+  let silent = false;
+  const output = new Writable({
+    write(chunk, encoding, done) {
+      if (!silent) process.stdout.write(chunk, encoding);
+      done();
+    },
+  });
+  const rl = createInterface({ input: process.stdin, output, terminal: true });
+  const asked = rl.question('A passphrase for this backup (you need it to restore; keep it somewhere safe): ');
+  silent = true;
+  passphrase = await asked;
+  process.stdout.write('\n');
   rl.close();
 }
 if (passphrase.length < 12) {
@@ -47,8 +67,7 @@ const env = {
   PGUSER: decodeURIComponent(u.username || u.searchParams.get('user') || ''),
   PGPASSWORD: decodeURIComponent(u.password || u.searchParams.get('password') || ''),
   PGDATABASE: u.pathname.slice(1),
-  PGSSLMODE: u.searchParams.get('sslmode') ?? 'prefer',
-  BACKUP_PASSPHRASE: passphrase,
+  PGSSLMODE: u.searchParams.get('sslmode') ?? (isLocal(url) ? 'prefer' : 'require'),
 };
 
 mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -58,15 +77,13 @@ const dump = spawn(pgDump[0], [...pgDump.slice(1), '--format=custom', '--schema=
   env,
   stdio: ['ignore', 'pipe', 'inherit'],
 });
-const enc = spawn(
-  'openssl',
-  ['enc', '-aes-256-cbc', '-pbkdf2', '-iter', '200000', '-salt', '-pass', 'env:BACKUP_PASSPHRASE', '-out', out],
-  { env, stdio: ['pipe', 'inherit', 'inherit'] },
+const exited = new Promise(resolve => dump.on('close', resolve));
+const encrypted = await encryptToFile(dump.stdout, out, passphrase).then(
+  () => true,
+  () => false,
 );
-dump.stdout.pipe(enc.stdin);
-const done = p => new Promise(resolve => p.on('close', resolve));
-const [a, b] = await Promise.all([done(dump), done(enc)]);
-if (a !== 0 || b !== 0) {
+const dumped = await exited;
+if (dumped !== 0 || !encrypted) {
   rmSync(out, { force: true });
   console.error('The backup failed, and nothing was kept. pg_dump must be at least as new as the database.');
   process.exit(1);

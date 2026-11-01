@@ -16,7 +16,7 @@ import { verifyFaithfulness } from '../intelligence/faithfulness.ts';
 import { runPlan, type Tool } from '../intelligence/orchestrator.ts';
 import { validPreference } from '../intelligence/memory.ts';
 import { HyperLogLog } from '../olap/sketches.ts';
-import { asOfJoin, audit, loadExperimentArms, verifyAudit } from '../platform/jobs.ts';
+import { asOfJoin, auditWithin, loadExperimentArms, verifyAudit } from '../platform/jobs.ts';
 import { TokenBuckets, visitorAddress, visitorKey, type BucketOptions, type Clock } from '../rate-limit.ts';
 import { loadStatus } from '../ops/store.ts';
 import { isModerator } from './moderation.ts';
@@ -68,9 +68,7 @@ export function registerPlatformRoutes(
           ring,
         ]);
         if (!rows[0]?.ok) return fail(reply, 404, 'not_found', 'There’s no switch with that name.');
-        await db.asSystem(sq =>
-          audit(sq, { action: 'rollout.moved', actor: 'owner', subject: flag, detail: { ring } }),
-        );
+        await auditWithin(q, { action: 'rollout.moved', actor: 'owner', subject: flag, detail: { ring } });
         return { rollout: { flag, percent: RINGS[ring] } };
       });
     },
@@ -685,6 +683,12 @@ export function registerPlatformRoutes(
               [user.id, b.kind, b.body.trim(), b.questionId ?? null, b.sworn === true],
             )
           ).rows[0];
+          await auditWithin(q, {
+            action: 'grievance.received',
+            actor: 'person',
+            subject: r?.public_id ?? '',
+            detail: { kind: b.kind },
+          });
           return r;
         })
         .catch((err: unknown) => {
@@ -698,14 +702,6 @@ export function registerPlatformRoutes(
           'too_many_open',
           'You have 5 complaints still open. We’ll answer those first; you can send another after one is resolved.',
         );
-      await db.asSystem(q =>
-        audit(q, {
-          action: 'grievance.received',
-          actor: 'person',
-          subject: row?.public_id ?? '',
-          detail: { kind: b.kind },
-        }),
-      );
       return reply.code(201).send({
         grievance: {
           id: row?.public_id,
@@ -753,7 +749,9 @@ export function registerPlatformRoutes(
       const { why } = req.body as { why: string };
       const done = await db.withUser(user.id, async q => {
         const { rows } = await q.query<{ ok: boolean }>('SELECT app.appeal_statement($1, $2) AS ok', [id, why.trim()]);
-        return rows[0]?.ok === true;
+        const ok = rows[0]?.ok === true;
+        if (ok) await auditWithin(q, { action: 'statement.appealed', actor: 'person', subject: id, detail: {} });
+        return ok;
       });
       if (!done)
         return fail(
@@ -762,11 +760,10 @@ export function registerPlatformRoutes(
           'cannot_appeal',
           'This can’t be appealed: it was already appealed, or the 14 days have passed.',
         );
-      await db.asSystem(q => audit(q, { action: 'statement.appealed', actor: 'person', subject: id, detail: {} }));
       return reply.code(201).send({ appeal: { received: true } });
     },
   );
-  app.get('/ops/appeals', { config: { auth: 'required' } }, async (req, reply) => {
+  app.get('/ops/appeals', { config: { auth: 'required', freshAuth: true } }, async (req, reply) => {
     const user = signedIn(req);
     const result = await db.withUser(user.id, async q =>
       (await isModerator(q))
@@ -806,35 +803,54 @@ export function registerPlatformRoutes(
           id,
           decision === 'uphold',
         ]);
-        return rows[0]?.r ?? 'not_open';
+        const result = rows[0]?.r ?? 'not_open';
+        if (result === 'decided')
+          await auditWithin(q, { action: `statement.${decision}`, actor: 'moderator', subject: id, detail: {} });
+        return result;
       });
       if (outcome === 'forbidden') return fail(reply, 403, 'not_a_moderator', 'This page is for moderators.');
       if (outcome === 'same_person')
         return fail(reply, 403, 'same_person', 'Another moderator has to decide this appeal.');
       if (outcome !== 'decided') return fail(reply, 404, 'not_found', 'There’s no open appeal with that id.');
-      await db.asSystem(q =>
-        audit(q, { action: `statement.${decision}`, actor: 'moderator', subject: id, detail: {} }),
-      );
       return { appeal: { id, decision } };
     },
   );
-  app.get('/ops/grievances', { config: { auth: 'required' } }, async (req, reply) => {
-    const user = signedIn(req);
-    const result = await db.withUser(user.id, async q =>
-      (await isModerator(q))
-        ? {
-            rows: (
-              await q.query(
-                `SELECT public_id AS id, reference, kind, body, received_at AS "receivedAt", acknowledge_by AS "acknowledgeBy",
+  app.get(
+    '/ops/grievances',
+    {
+      config: { auth: 'required', freshAuth: true },
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { page: { type: 'string', pattern: '^[0-9]{1,4}$' } },
+        },
+      },
+    },
+    async (req, reply) => {
+      const user = signedIn(req);
+      const page = Number((req.query as { page?: string }).page ?? 0);
+      const result = await db.withUser(user.id, async q =>
+        (await isModerator(q))
+          ? {
+              rows: (
+                await q.query(
+                  `SELECT public_id AS id, reference, kind, body, received_at AS "receivedAt", acknowledge_by AS "acknowledgeBy",
                         resolve_by AS "resolveBy", acknowledged_at AS "acknowledgedAt"
-                 FROM app.grievances WHERE resolved_at IS NULL ORDER BY resolve_by LIMIT 100`,
-              )
-            ).rows,
-          }
-        : null,
-    );
-    return result ?? fail(reply, 403, 'not_a_moderator', 'This page is for moderators.');
-  });
+                 FROM app.grievances WHERE resolved_at IS NULL ORDER BY resolve_by LIMIT 100 OFFSET $1`,
+                  [page * 100],
+                )
+              ).rows,
+              open: Number(
+                (await q.query<{ n: string }>('SELECT count(*) AS n FROM app.grievances WHERE resolved_at IS NULL'))
+                  .rows[0]?.n ?? 0,
+              ),
+            }
+          : null,
+      );
+      return result ?? fail(reply, 403, 'not_a_moderator', 'This page is for moderators.');
+    },
+  );
   app.patch(
     '/ops/grievances/:id',
     {
@@ -859,21 +875,19 @@ export function registerPlatformRoutes(
       if (b.action === 'resolve' && !b.outcome) return fail(reply, 400, 'outcome_required', 'Say what was decided.');
       const changed = await db.withUser(user.id, async q => {
         if (!(await isModerator(q))) return null;
-        return (
-          await q.query(
-            b.action === 'acknowledge'
-              ? `UPDATE app.grievances SET acknowledged_at = coalesce(acknowledged_at, clock_timestamp()) WHERE public_id = $1 AND resolved_at IS NULL`
-              : `UPDATE app.grievances SET resolved_at = clock_timestamp(), outcome = $2,
+        const { rowCount } = await q.query(
+          b.action === 'acknowledge'
+            ? `UPDATE app.grievances SET acknowledged_at = coalesce(acknowledged_at, clock_timestamp()) WHERE public_id = $1 AND resolved_at IS NULL`
+            : `UPDATE app.grievances SET resolved_at = clock_timestamp(), outcome = $2,
                    acknowledged_at = coalesce(acknowledged_at, clock_timestamp()) WHERE public_id = $1 AND resolved_at IS NULL`,
-            b.action === 'acknowledge' ? [id] : [id, b.outcome],
-          )
-        ).rowCount;
+          b.action === 'acknowledge' ? [id] : [id, b.outcome],
+        );
+        if (rowCount)
+          await auditWithin(q, { action: `grievance.${b.action}`, actor: 'moderator', subject: id, detail: {} });
+        return rowCount;
       });
       if (changed === null) return fail(reply, 403, 'not_a_moderator', 'This page is for moderators.');
       if (!changed) return fail(reply, 404, 'not_found', 'There’s no open complaint with that id.');
-      await db.asSystem(q =>
-        audit(q, { action: `grievance.${b.action}`, actor: 'moderator', subject: id, detail: {} }),
-      );
       return { ok: true };
     },
   );

@@ -458,4 +458,14 @@ describe('the database itself', () => {
     );
     expect(rows.map(r => r.counts)).toEqual([...Array<boolean>(10).fill(true), false]);
   });
+
+  it('keeps hidden posts at the top of review, however many newer reports arrive', async () => {
+    const [author, mod] = [await member({ established: true }), await moderator()];
+    const hidden = await ask(author.token);
+    for (let i = 0; i < 3; i++) await report((await member({ established: true })).token, hidden);
+    const flooder = await member({ established: true });
+    for (let i = 0; i < 12; i++) await report(flooder.token, await ask(author.token));
+    const { items } = (await h.call('GET', '/review', mod.token)).json<{ items: Array<{ id: string }> }>();
+    expect(must(items[0]).id).toBe(hidden);
+  });
 });

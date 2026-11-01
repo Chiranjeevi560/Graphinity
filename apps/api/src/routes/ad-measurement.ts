@@ -314,7 +314,7 @@ export async function registerAdMeasurementRoutes(
   app.post(
     '/ads/advertisers/:id/keys',
     {
-      config: { auth: 'required', write: true },
+      config: { auth: 'required', write: true, freshAuth: true },
       schema: { params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } }, required: ['id'] } },
     },
     async (req, reply) => {
@@ -354,7 +354,7 @@ export async function registerAdMeasurementRoutes(
   app.delete(
     '/ads/advertisers/:id/keys/:prefix',
     {
-      config: { auth: 'required', write: true },
+      config: { auth: 'required', write: true, freshAuth: true },
       schema: {
         params: {
           type: 'object',
