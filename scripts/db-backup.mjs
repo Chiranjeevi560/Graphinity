@@ -77,7 +77,11 @@ const dump = spawn(pgDump[0], [...pgDump.slice(1), '--format=custom', '--schema=
   env,
   stdio: ['ignore', 'pipe', 'inherit'],
 });
-const exited = new Promise(resolve => dump.on('close', resolve));
+// A missing pg_dump emits 'error', and otherwise crashes before the half-made file is removed.
+const exited = new Promise(resolve => {
+  dump.on('error', () => resolve(1));
+  dump.on('close', resolve);
+});
 const encrypted = await encryptToFile(dump.stdout, out, passphrase).then(
   () => true,
   () => false,

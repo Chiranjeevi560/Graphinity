@@ -238,8 +238,8 @@ describe('campaign reports', () => {
          WHERE advertiser_id = (SELECT advertiser_id FROM app.ad_campaigns WHERE public_id = $1)`,
         [live.campaign],
       );
-      // 30 tracked people, seen yesterday: complete days only.
-      const { adIds } = await crowd(w, 30, {});
+      // 60 tracked people, seen yesterday: past the floor and its margin. Complete days only.
+      const { adIds } = await crowd(w, 60, {});
       await w.h.t.owner.query(
         `INSERT INTO app.ad_impressions (campaign_id, creative_id, ad_id, placement, price_micros, shown_at)
          SELECT c.id, cr.id, a, 'search', 1000, now() - interval '1 day' FROM app.ad_campaigns c JOIN app.ad_creatives cr ON cr.campaign_id = c.id,

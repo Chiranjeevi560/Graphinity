@@ -57,7 +57,7 @@ export function registerAdAudienceRoutes(
   app.post(
     '/ads/advertisers/:id/audiences',
     {
-      config: { auth: 'required', write: true },
+      config: { auth: 'required', write: true, freshAuth: true },
       schema: {
         params: { type: 'object', properties: { id: uuid }, required: ['id'] },
         body: {
@@ -182,7 +182,7 @@ export function registerAdAudienceRoutes(
   app.delete(
     '/ads/audiences/:id',
     {
-      config: { auth: 'required', write: true },
+      config: { auth: 'required', write: true, freshAuth: true },
       schema: { params: { type: 'object', properties: { id: uuid }, required: ['id'] } },
     },
     async (req, reply) => {

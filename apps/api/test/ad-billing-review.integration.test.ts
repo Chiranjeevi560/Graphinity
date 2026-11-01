@@ -87,6 +87,18 @@ describe('clicks and budgets', () => {
     expect(await charged(live.token)).toBe(0);
   });
 
+  it('a campaign that has spent its total isn’t shown, even after its impressions age out', async () => {
+    const word = 'ferrywordspent';
+    const live = await w.liveCampaign([{ kind: 'keyword', value: word }]);
+    await h.t.owner.query(
+      'UPDATE app.ad_campaigns SET total_budget_micros = daily_budget_micros, spent_total_micros = daily_budget_micros WHERE public_id = $1',
+      [live.campaign],
+    );
+    await w.server().refresh();
+    const ads = await w.select(undefined, { placement: 'search', query: `${word} timetable` });
+    expect(ads.map(ad => ad.headline)).not.toContain(live.headline);
+  });
+
   it('a charged click adds to the campaign’s running total', async () => {
     const live = await shown({ dailyBudgetMicros: 10_000_000, maxCpcMicros: 10_000_000 });
     await h.call('POST', `/ads/click/${live.token}`);

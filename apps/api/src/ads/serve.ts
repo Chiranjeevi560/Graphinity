@@ -230,8 +230,7 @@ export async function loadIndex(q: Queryable): Promise<IndexedCampaign[]> {
      FROM app.ad_campaigns c JOIN app.ad_advertisers a ON a.id = c.advertiser_id
      WHERE c.status = 'active' AND a.status = 'active' AND c.starts_at <= now() AND (c.ends_at IS NULL OR c.ends_at > now())
        AND EXISTS (SELECT 1 FROM app.ad_creatives cr WHERE cr.campaign_id = c.id AND cr.status = 'approved')
-       AND (c.total_budget_micros IS NULL OR c.total_budget_micros >
-            (SELECT coalesce(sum(i.charged_micros), 0) FROM app.ad_impressions i WHERE i.campaign_id = c.id))`,
+       AND (c.total_budget_micros IS NULL OR c.total_budget_micros > c.spent_total_micros)`,
   );
   return rows.map(r => {
     const targets = new Map<string, Set<string>>();
@@ -372,7 +371,8 @@ export function createAdServer(db: Pick<Database, 'asSystem'>, rtb?: RtbOptions)
              FROM app.ad_identities i
              JOIN app.ad_impressions imp ON imp.token = $2
              JOIN app.ad_campaigns c ON c.id = imp.campaign_id
-             WHERE i.profile_id = $1 AND app.ads_permitted(i.profile_id, 'ads_partner_sites')`,
+             WHERE i.profile_id = $1 AND app.ads_permitted(i.profile_id, 'ads_personalization')
+               AND app.ads_permitted(i.profile_id, 'ads_partner_sites')`,
             [viewer, token],
           )
         ).rows[0];
@@ -461,8 +461,10 @@ export function createAdServer(db: Pick<Database, 'asSystem'>, rtb?: RtbOptions)
         return { person, adId, interests, audiences, seenToday, seenThisWeek };
       });
       const { person, adId, interests, audiences, seenToday, seenThisWeek } = context;
-      // Outside signals count only with this reader's partner-sites permission, and are never stored.
-      const inbound = adId !== null && person?.partnerSites === true ? input.inbound : undefined;
+      // Outside signals count only with this reader's partner-sites permission, and are never stored. An identity alone
+      // isn't enough: someone who allows only measurement has one too, and didn't ask for personal ads.
+      const shared = adId !== null && person?.personalized === true && person.partnerSites;
+      const inbound = shared ? input.inbound : undefined;
       const { wins, creatives } = choose(
         index,
         {
@@ -505,7 +507,7 @@ export function createAdServer(db: Pick<Database, 'asSystem'>, rtb?: RtbOptions)
         const slots = SLOTS[placement];
         const reserveCpm = RESERVE_MICROS / 1000;
         const slotFloors = floors(visible, slots, reserveCpm);
-        const shares = adId !== null && person?.partnerSites === true;
+        const shares = shared;
         const crossDevice = person?.crossDevice === true;
         const offerTo = (scope: string) =>
           buildBidRequest({

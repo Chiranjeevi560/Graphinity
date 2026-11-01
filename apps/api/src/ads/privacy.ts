@@ -10,7 +10,8 @@
 //   every day of a report, so its days share the charge rather than each having it.
 // - Every read costs and draws fresh noise (a per-read value in the seed). Reusing noise
 //   would let a business subtract two reads and see exactly who withdrew between them.
-// - A cell is shown only with 25 people and 50 impressions after noise. Hidden cells aren't
+// - A cell is shown only with a noised count past 25 people plus a margin for its noise, and 50
+//   impressions after noise. Hidden cells aren't
 //   counted: an exact count would say whether anyone at all saw the ad.
 // - A business has 2.0 of ε each UTC day and 12.0 in any 30 days.
 import { createHmac } from 'node:crypto';
@@ -88,6 +89,14 @@ export interface ShownCell {
 export const cellKey = (campaign: string, breakdown: Breakdown, day: string, value: string) =>
   ['v1', campaign, breakdown, day, value].join('\u0000');
 
+/** Chance a cell far below the floor gets past it on noise alone. */
+export const FLOOR_DELTA = 1e-6;
+/**
+ * The noised count a floor must clear: the floor plus a margin that grows with the noise. Without it, noise wide enough
+ * for a long report would let a one-person cell through, and an empty cell never exists, so its row proves someone was there.
+ */
+export const noisyFloor = (scale: number) => MIN_PEOPLE + scale * Math.log(1 / (2 * FLOOR_DELTA));
+
 /** Noised cells that clear the floors. `read` is new for every read, `days` is how many the report covers. */
 export function privateCells(
   campaign: string,
@@ -101,8 +110,9 @@ export function privateCells(
   for (const c of cells) {
     const key = `${cellKey(campaign, breakdown, c.day, c.value)}\u0000${read}`;
     const impressions = noisyCount(c.impressions, 'impressions', secret, key, days);
-    const people = c.people + laplace(days / EPSILON_FLOOR, cellUniform(secret, `${key}\u0000people`));
-    if (people < MIN_PEOPLE || impressions < MIN_IMPRESSIONS) continue;
+    const scale = days / EPSILON_FLOOR;
+    const people = c.people + laplace(scale, cellUniform(secret, `${key}\u0000people`));
+    if (people < noisyFloor(scale) || impressions < MIN_IMPRESSIONS) continue;
     shown.push({
       value: c.value,
       day: c.day,

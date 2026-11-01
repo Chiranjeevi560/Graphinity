@@ -48,4 +48,16 @@ describe('which database an address reaches', () => {
     expect(isLocal('postgres:///db?host=/tmp/sockets')).toBe(true);
     expect(isLocal('postgres://u@localhost/db')).toBe(true);
   });
+
+  it('treats an address libraries could read differently as remote and unencrypted', () => {
+    for (const url of [
+      'postgres://u:p@localhost/db?host=',
+      'postgres://u:p@localhost/db?host=localhost&host=prod.example.com',
+      'postgres://u:p@localhost/db?host=/tmp,prod.example.com',
+      'postgres://u:p@prod.example.com/db?sslmode=require&sslmode=disable',
+    ]) {
+      expect(isLocal(url), url).toBe(false);
+      expect(tlsProblem(url), url).not.toBeNull();
+    }
+  });
 });

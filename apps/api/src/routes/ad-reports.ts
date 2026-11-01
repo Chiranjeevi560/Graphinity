@@ -98,7 +98,7 @@ export function registerAdReportRoutes(
   app.post(
     '/ads/reports/private',
     {
-      config: { auth: 'required' },
+      config: { auth: 'required', freshAuth: true },
       schema: {
         body: {
           type: 'object',
@@ -136,9 +136,14 @@ export function registerAdReportRoutes(
         async q =>
           (
             await q.query<{ id: string; audiences: number }>(
-              `SELECT c.id::text, (SELECT count(*)::int FROM app.ad_targeting t WHERE t.campaign_id = c.id AND t.kind = 'audience') AS audiences
+              `SELECT c.id::text, greatest(
+                 (SELECT count(*)::int FROM app.ad_targeting t WHERE t.campaign_id = c.id AND t.kind = 'audience'),
+                 -- What was actually shown in the range, not today's targeting: it can be emptied just before asking.
+                 (SELECT count(DISTINCT i.audience_id)::int + (bool_or(i.audience_id IS NULL))::int
+                  FROM app.ad_impressions i WHERE i.campaign_id = c.id AND i.shown_at >= $2 AND i.shown_at < $3)
+               ) AS audiences
                FROM app.ad_campaigns c WHERE c.public_id = $1 AND app.is_ad_member(c.advertiser_id)`,
-              [b.campaignId],
+              [b.campaignId, from, new Date(to.getTime() + DAY_MS)],
             )
           ).rows[0],
       );

@@ -8,7 +8,7 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Database } from '../db.ts';
 import { RULE_MODELS, ruleCredit, type Path, type Touch } from '../ads/attribution.ts';
 import { lift } from '../ads/lift.ts';
-import { cellUniform, laplace, MIN_PEOPLE } from '../ads/privacy.ts';
+import { cellUniform, laplace, MIN_PEOPLE, noisyFloor } from '../ads/privacy.ts';
 import { reportSecret } from './ad-reports.ts';
 import { TokenBuckets, visitorAddress, visitorKey, type BucketOptions, type Clock } from '../rate-limit.ts';
 import { fail, pgCode, signedIn } from './common.ts';
@@ -215,7 +215,7 @@ export async function registerAdMeasurementRoutes(
   app.get(
     '/ads/campaigns/:id/lift',
     {
-      config: { auth: 'required' },
+      config: { auth: 'required', freshAuth: true },
       schema: { params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } }, required: ['id'] } },
     },
     async (req, reply) => {
@@ -450,7 +450,7 @@ export async function registerAdMeasurementRoutes(
   app.get(
     '/ads/campaigns/:id/report',
     {
-      config: { auth: 'required' },
+      config: { auth: 'required', freshAuth: true },
       schema: { params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } }, required: ['id'] } },
     },
     async (req, reply) => {
@@ -542,7 +542,7 @@ export async function registerAdMeasurementRoutes(
           value + laplace(sensitivity / epsilon, cellUniform(data.secret, `attribution|${found.id}|${read}|${name}`)),
         );
       // The floor itself is noised, or a business could add viewers one at a time and watch it flip.
-      if (noisy('people', data.totals.people, 1, REPORT_EPSILON / 2) < MIN_PEOPLE)
+      if (noisy('people', data.totals.people, 1, REPORT_EPSILON / 2) < noisyFloor(2 / REPORT_EPSILON))
         return { report: { days: 30, belowMinimum: true, minimumPeople: MIN_PEOPLE } };
       return {
         report: {
