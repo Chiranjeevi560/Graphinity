@@ -3,6 +3,7 @@ import { ApiError } from '../lib/api.ts';
 import { api } from '../session.tsx';
 import { useLoad } from '../use-load.ts';
 import { Button } from './Button.tsx';
+import { TextArea } from './Form.tsx';
 
 interface Grievance {
   id: string;
@@ -94,16 +95,12 @@ export function LegalQueue() {
                     Acknowledge
                   </Button>
                 )}
-                <label htmlFor={`outcome-${g.id}`} className="text-subhead">
-                  What was decided?
-                </label>
-                <textarea
-                  id={`outcome-${g.id}`}
-                  className="input"
+                <TextArea
+                  label="What was decided?"
                   rows={2}
                   value={outcome[g.id] ?? ''}
-                  onChange={e => {
-                    setOutcome(o => ({ ...o, [g.id]: e.target.value }));
+                  onChange={value => {
+                    setOutcome(o => ({ ...o, [g.id]: value }));
                   }}
                 />
                 <Button

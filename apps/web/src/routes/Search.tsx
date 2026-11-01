@@ -19,7 +19,7 @@ import {
   type SearchResponse,
 } from '../lib/search.ts';
 import { charCount } from '../lib/questions.ts';
-import { api, useSession } from '../session.tsx';
+import { api } from '../session.tsx';
 
 type State =
   | { status: 'idle' }
@@ -32,7 +32,6 @@ const sendOpen = (path: string, body: { dwellMs?: number }, keepalive: boolean) 
 
 /** Searching every question asked so far (ADR 0015 part 4). Reading needs no account. */
 export default function Search() {
-  const { state: session } = useSession();
   // Back from a question: the same search, as it was.
   const [restored] = useState(lastSearch);
   const [pending] = useState(pendingSearch);
@@ -88,22 +87,12 @@ export default function Search() {
         focusFirst={!restored && !pending}
         busy={state.status === 'searching'}
       />
-      <Results state={state} now={now} signedIn={session.status === 'ready'} onRetry={q => void run(q)} />
+      <Results state={state} now={now} onRetry={q => void run(q)} />
     </main>
   );
 }
 
-function Results({
-  state,
-  now,
-  signedIn,
-  onRetry,
-}: {
-  state: State;
-  now: number;
-  signedIn: boolean;
-  onRetry: (query: string) => void;
-}) {
+function Results({ state, now, onRetry }: { state: State; now: number; onRetry: (query: string) => void }) {
   if (state.status === 'idle')
     return (
       <p className="text-body secondary">
@@ -156,7 +145,7 @@ function Results({
           <p className="text-body secondary">
             Someone has probably lived it. Ask, and it goes to people with that experience.
           </p>
-          {signedIn && <LinkButton to="/ask">Ask a question</LinkButton>}
+          <LinkButton to="/ask">Ask a question</LinkButton>
         </div>
       ) : (
         <ul className="question-list">

@@ -230,7 +230,7 @@ export default function PrivacySettings() {
       )}
       <p className="text-body secondary">
         Optional uses start off. Choose separately what Graphinity may use to personalize your experience or support
-        commercial programs. Your choices are saved with a history you can review below.
+        commercial programs. Your choices are saved with a history below.
       </p>
       {loading && (
         <p className="text-body" role="status">
@@ -251,20 +251,23 @@ export default function PrivacySettings() {
             <article className="profile-section" key={category.name}>
               <h2 className="text-headline">{category.name.replaceAll('_', ' ')}</h2>
               <p className="text-body">{category.purpose}</p>
-              <dl className="text-subhead">
-                <dt>
-                  <strong>Information</strong>
-                </dt>
-                <dd>{category.dataDescription}</dd>
-                <dt>
-                  <strong>How long</strong>
-                </dt>
-                <dd>{category.retention}</dd>
-                <dt>
-                  <strong>Who receives it</strong>
-                </dt>
-                <dd>{category.recipients}</dd>
-              </dl>
+              <details>
+                <summary className="btn btn-plain">What it uses, who sees it</summary>
+                <dl className="text-subhead">
+                  <dt>
+                    <strong>Information</strong>
+                  </dt>
+                  <dd>{category.dataDescription}</dd>
+                  <dt>
+                    <strong>How long</strong>
+                  </dt>
+                  <dd>{category.retention}</dd>
+                  <dt>
+                    <strong>Who receives it</strong>
+                  </dt>
+                  <dd>{category.recipients}</dd>
+                </dl>
+              </details>
               <label className="text-body consent-choice">
                 <input
                   type="checkbox"
