@@ -186,6 +186,11 @@ export function registerPlatformRoutes(
         daily: [...series].sort().map(([day, events]) => ({ day, events })),
         health: await loadStatus(q),
         models,
+        evaluations: (
+          await q.query<{ name: string; metrics: unknown; at: Date }>(
+            'SELECT name, metrics, evaluated_at AS at FROM app.model_evaluations ORDER BY name LIMIT 50',
+          )
+        ).rows.map(e => ({ name: e.name, metrics: e.metrics, at: e.at.toISOString() })),
         experiments,
         commerce,
         audit: await verifyAudit(q),

@@ -14,6 +14,7 @@ const system = (purpose: string) => row(purpose, 'none_no_personal_data', 'Kept 
 const ads = (purpose: string) => row(purpose, 'consent', 'Until consent is withdrawn; every ad part is off by default');
 
 export const PROCESSING: Record<string, Processing> = {
+  model_evaluations: system('Aggregate numbers on how models and policies are doing'),
   ad_advertiser_members: row('Who may act for an advertiser', 'contract', account),
   ad_advertisers: row('Advertiser accounts', 'contract', 'While the advertiser exists'),
   ad_api_keys: row('Advertiser API keys, stored as hashes', 'contract', 'Until revoked'),
@@ -49,7 +50,11 @@ export const PROCESSING: Record<string, Processing> = {
     'Until any member leaves',
   ),
   collusion_members: row('Who is in those groups', 'legitimate_interest', account),
-  collusion_pairs: row('Pairs in a confirmed group, whose picks of each other move no points', 'legitimate_interest', account),
+  collusion_pairs: row(
+    'Pairs in a confirmed group, whose picks of each other move no points',
+    'legitimate_interest',
+    account,
+  ),
   consent_categories: system('The choices on offer'),
   countries: system('Country list'),
   decisions: row('Moderators’ decisions on posts', 'legitimate_interest', 'With the post'),
