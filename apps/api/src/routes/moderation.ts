@@ -198,16 +198,19 @@ export function registerModerationRoutes(app: FastifyInstance, { db }: { db: Dat
           inside: number;
           expected: number;
           lift: number;
+          outside_trust: number | null;
+          dense_members: number | null;
           found_at: Date;
           seen_at: Date;
         }>(`
         SELECT g.public_id::text AS id, array_agg(p.handle ORDER BY p.handle) AS members,
-               g.inside, g.expected, g.lift, g.found_at, g.seen_at
+               g.inside, g.expected, g.lift, g.found_at, g.seen_at, e.outside_trust, e.dense_members
         FROM app.collusion_groups g
+        LEFT JOIN app.collusion_evidence e ON e.group_id = g.id
         JOIN app.collusion_members m ON m.group_id = g.id
         JOIN app.profiles p ON p.id = m.profile_id
         WHERE g.status = 'open'
-        GROUP BY g.id
+        GROUP BY g.id, e.outside_trust, e.dense_members
         ORDER BY g.lift DESC, g.id LIMIT 50`)
       ).rows;
       return {
@@ -230,6 +233,10 @@ export function registerModerationRoutes(app: FastifyInstance, { db }: { db: Dat
           picks: g.inside,
           expected: Math.round(g.expected * 10) / 10,
           lift: Math.round(g.lift),
+          evidence:
+            g.outside_trust === null || g.dense_members === null
+              ? null
+              : { outsideTrust: Math.round(g.outside_trust * 10) / 10, inDenseBlock: g.dense_members },
           foundAt: g.found_at.toISOString(),
           seenAt: g.seen_at.toISOString(),
         })),

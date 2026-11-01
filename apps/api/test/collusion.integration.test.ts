@@ -3,7 +3,7 @@
 // confirmed group's points are taken back and later picks between its
 // members move none, and every rule holds in the database itself.
 import { beforeAll, describe, expect, it } from 'vitest';
-import { detectCollusion, underCollusionReview } from '../src/collusion.ts';
+import { detectCollusion, ringEvidence, underCollusionReview } from '../src/collusion.ts';
 import { startApp, type TestApp } from './helpers/app.ts';
 import { must, type Body } from './helpers/must.ts';
 
@@ -315,5 +315,53 @@ describe('learning', () => {
     expect(
       await h.t.database.withUser(a.id, async q => (await q.query('SELECT 1 FROM app.collusion_pairs')).rowCount),
     ).toBe(0);
+  });
+});
+
+describe('moderator evidence', () => {
+  it('reaches moderators and nobody else', async () => {
+    const { ring } = await world();
+    await detectCollusion(h.t.database);
+    const mod = await moderator();
+    const body = (await h.call('GET', '/review', mod.token)).json<{
+      collusion: Array<{ evidence: { outsideTrust: number; inDenseBlock: number } | null }>;
+    }>();
+    const seen = must(body.collusion.find(g => g.evidence));
+    expect(must(seen.evidence).inDenseBlock).toBeGreaterThanOrEqual(0);
+    const member = must(ring[0]);
+    expect(
+      await h.t.database.withUser(
+        member.id,
+        async q => (await q.query('SELECT 1 FROM app.collusion_evidence')).rowCount,
+      ),
+    ).toBe(0);
+  });
+});
+
+describe('ring evidence', () => {
+  // Ten people pick three experts; a ring of three only picks each other.
+  const honest = ['h0', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'h7', 'h8', 'h9'];
+  const experts = ['e0', 'e1', 'e2'];
+  const ringOf = ['r0', 'r1', 'r2'];
+  const picks = [
+    ...honest.flatMap(source => experts.map(target => ({ source, target, count: 1 }))),
+    { source: 'r0', target: 'r1', count: 9 },
+    { source: 'r1', target: 'r2', count: 9 },
+    { source: 'r2', target: 'r0', count: 9 },
+  ];
+
+  it('finds no outside support for a closed ring, and some for people others chose', () => {
+    const [closed, widelyPicked] = ringEvidence(picks, [{ members: ringOf }, { members: experts }]);
+    expect(must(closed).outsideTrust).toBe(0);
+    expect(must(widelyPicked).outsideTrust).toBeGreaterThan(0);
+  });
+
+  it('counts a tight ring in a dense block', () => {
+    const [closed] = ringEvidence(picks, [{ members: ringOf }]);
+    expect(must(closed).denseMembers).toBeGreaterThan(0);
+  });
+
+  it('copes with a member who has no picks, and an empty graph', () => {
+    expect(ringEvidence([], [{ members: ['nobody'] }])).toEqual([{ outsideTrust: 0, denseMembers: 0 }]);
   });
 });

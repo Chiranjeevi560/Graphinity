@@ -7,10 +7,16 @@
 import { createHash } from 'node:crypto';
 import type { Database, Queryable } from './db.ts';
 import { findRings, type PickEdge, type Ring } from './ml/collusion.ts';
+import { denseBlocks, type BipartiteEdge } from './ml/fraudar.ts';
+import { trustInto } from './kg/trust-flow.ts';
 
 export const WINDOW_DAYS = 180;
 /** At most this many groups are recorded a run, the most extreme first. */
 export const MAX_GROUPS = 200;
+/** Evidence is computed for this many, strongest first: each needs a max-flow over the whole graph. */
+export const MAX_EVIDENCE = 20;
+/** Trust starts at the people who've picked answers from the most different people: costly to fake at scale. */
+const TRUST_SEEDS = 20;
 
 /**
  * A SQL condition true when `column` (a profile id expression) is in a group
@@ -65,9 +71,67 @@ export async function recordRings(q: Queryable, rings: readonly Ring<string>[]):
   return added;
 }
 
-export async function detectCollusion(db: Pick<Database, 'asSystem'>): Promise<{ found: number; added: number }> {
-  return db.asSystem(async q => {
-    const rings = findRings(await loadPickGraph(q)).slice(0, MAX_GROUPS);
-    return { found: rings.length, added: await recordRings(q, rings) };
+/**
+ * For each ring: trust reaching its members from outside it, per member, and how many members fall in a dense block
+ * of picks. Picks inside a ring don't count as trust into it: that's the thing being questioned.
+ */
+export function ringEvidence(
+  picks: readonly PickEdge<string>[],
+  rings: readonly Pick<Ring<string>, 'members'>[],
+): Array<{ outsideTrust: number; denseMembers: number }> {
+  const index = new Map<string, number>();
+  const id = (who: string) => {
+    let i = index.get(who);
+    if (i === undefined) index.set(who, (i = index.size));
+    return i;
+  };
+  const edges: BipartiteEdge[] = picks.map(p => ({ source: id(p.source), target: id(p.target), count: p.count ?? 1 }));
+  const reach = new Map<number, Set<number>>();
+  for (const e of edges) reach.set(e.source, (reach.get(e.source) ?? new Set()).add(e.target));
+  const dense = new Set(denseBlocks(edges, 5, { weighted: true }).flatMap(b => [...b.sources, ...b.targets]));
+  return rings.map(ring => {
+    const members = ring.members.flatMap(m => {
+      const i = index.get(m);
+      return i === undefined ? [] : [i];
+    });
+    const inRing = new Set(members);
+    const seeds = [...reach]
+      .filter(([who]) => !inRing.has(who))
+      .sort((a, b) => b[1].size - a[1].size || a[0] - b[0])
+      .slice(0, TRUST_SEEDS)
+      .map(([who]) => who);
+    const outside = edges
+      .filter(e => !(inRing.has(e.source) && inRing.has(e.target)))
+      .map(e => [e.source, e.target] as const);
+    const trust = seeds.length ? trustInto(index.size, outside, seeds, members) : 0;
+    return {
+      outsideTrust: members.length ? trust / members.length : 0,
+      denseMembers: members.filter(m => dense.has(m)).length,
+    };
   });
+}
+
+export async function detectCollusion(db: Pick<Database, 'asSystem'>): Promise<{ found: number; added: number }> {
+  const { picks, rings, added } = await db.asSystem(async q => {
+    const picks = await loadPickGraph(q);
+    const rings = findRings(picks).slice(0, MAX_GROUPS);
+    return { picks, rings, added: await recordRings(q, rings) };
+  });
+  // Outside the transaction that recorded the rings: this is the slow part, and rings mustn't wait on it.
+  const top = rings.slice(0, MAX_EVIDENCE);
+  const evidence = ringEvidence(picks, top);
+  await db.asSystem(async q => {
+    for (const [i, ring] of top.entries()) {
+      const e = evidence[i];
+      if (!e) continue;
+      await q.query(
+        `INSERT INTO app.collusion_evidence (group_id, outside_trust, dense_members)
+         SELECT g.id, $2, $3 FROM app.collusion_groups g WHERE g.member_key = $1
+         ON CONFLICT (group_id) DO UPDATE
+           SET outside_trust = excluded.outside_trust, dense_members = excluded.dense_members, updated_at = now()`,
+        [memberKey(ring.members), e.outsideTrust, e.denseMembers],
+      );
+    }
+  });
+  return { found: rings.length, added };
 }
