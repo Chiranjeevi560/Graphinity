@@ -248,7 +248,7 @@ function SpendForm({ onSaved }: { onSaved: () => void }) {
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState<string | null>(null);
   const value = Number(amount);
-  const usable = amount.trim() !== '' && value >= 0 && /^20\d{2}-(0[1-9]|1[0-2])$/.test(month);
+  const usable = amount.trim() !== '' && value >= 0 && /^\d{4}-\d\d$/.test(month);
 
   async function save() {
     setNote(null);
@@ -422,7 +422,7 @@ export function OwnerPage() {
         rows={data.evaluations.map(e => [e.name, describeEvaluation(e.metrics)])}
       />
       {data.failedPushes > 0 && (
-        <Section title="Partners" empty="" rows={[['Not delivered in 7 days', n(data.failedPushes), true]]} />
+        <Section title="Partners" empty="" rows={[['Undelivered, 7 days', n(data.failedPushes), true]]} />
       )}
       <Section
         title="Audit log"

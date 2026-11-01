@@ -872,3 +872,8 @@
   /* At most 40%: the figure on top stays readable in both themes, checked by the browser audit. */
   background: color-mix(in srgb, var(--accent) var(--heat, 0%), transparent);
 }
+summary {
+  /* The native arrow shows it opens; a button's layout would hide it. */
+  line-height: var(--tap);
+  color: var(--accent-text);
+}

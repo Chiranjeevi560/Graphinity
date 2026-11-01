@@ -230,7 +230,7 @@ export default function PrivacySettings() {
       )}
       <p className="text-body secondary">
         Optional uses start off. Choose separately what Graphinity may use to personalize your experience or support
-        commercial programs. Your choices are saved with a history below.
+        commercial programs.
       </p>
       {loading && (
         <p className="text-body" role="status">
@@ -252,7 +252,7 @@ export default function PrivacySettings() {
               <h2 className="text-headline">{category.name.replaceAll('_', ' ')}</h2>
               <p className="text-body">{category.purpose}</p>
               <details>
-                <summary className="btn btn-plain">What it uses, who sees it</summary>
+                <summary>What it uses, who sees it</summary>
                 <dl className="text-subhead">
                   <dt>
                     <strong>Information</strong>
