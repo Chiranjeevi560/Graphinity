@@ -34,6 +34,7 @@ export const PROCESSING: Record<string, Processing> = {
   ad_pacing: system('Campaign budget pacing'),
   ad_partner_events: ads('Events from partners’ sites'),
   ad_partner_impressions: ads('Ads sold through outside exchanges'),
+  ad_partner_pushes: system('Which topic went to which partner on a day, and to how many'),
   ad_partners: row('Outside exchanges and bidders', 'contract', 'While the partner exists'),
   ad_privacy_budget_ledger: system('Differential privacy budget per advertiser'),
   ad_report_releases: system('Which noisy report cells were released'),

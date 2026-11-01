@@ -340,6 +340,9 @@ now on: maintenance scripts name the local socket explicitly and never read `mig
 
 ## Known gaps
 
+- The partner push (`ads/partner-push.ts`) runs with no browser present, so it can't see `Sec-GPC`. A person whose
+  browser starts sending it later stays in cohorts until their interests pass 30 days or they withdraw. It's off, and
+  needs this resolved, and a lawyer, before it's turned on.
 - Until 2026-11-15 the dependency scan skips GHSA-g3hv-75wg-m249 (minimatch, medium, a possible slowdown from
   crafted patterns). Only the linting tools use it, on our own patterns. Exception E2 in `CONSTRAINTS.md`.
 - The daily limit of 3 questions per person is counted without a lock. One server routes one
