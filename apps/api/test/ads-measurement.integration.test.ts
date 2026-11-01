@@ -2,10 +2,16 @@
 // once and stored only as hashes; click ids only for people who allow
 // measurement; conversions counted once, only for a business's own recent
 // clicks, with every refusal looking the same from outside.
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { hashKey } from '../src/routes/ad-measurement.ts';
 import { crowd, startAdWorld } from './helpers/ads.ts';
 import { must, type Body } from './helpers/must.ts';
+
+// No noise in this file: it checks which rows reach a report. ads-reports.integration.test.ts checks the noise.
+vi.mock('../src/ads/privacy.ts', async original => ({
+  ...(await original<typeof import('../src/ads/privacy.ts')>()),
+  laplace: () => 0,
+}));
 
 let w: Awaited<ReturnType<typeof startAdWorld>>;
 
@@ -226,6 +232,12 @@ describe('campaign reports', () => {
       expect((await read(live.owner.token)).json<{ report: { belowMinimum: boolean } }>().report.belowMinimum).toBe(
         true,
       );
+      // A read that says "too few" is charged too, or it would be a free look at the floor.
+      await w.h.t.owner.query(
+        `UPDATE app.ad_privacy_budget_ledger SET epsilon_spent = 0
+         WHERE advertiser_id = (SELECT advertiser_id FROM app.ad_campaigns WHERE public_id = $1)`,
+        [live.campaign],
+      );
       // 30 tracked people, seen yesterday: complete days only.
       const { adIds } = await crowd(w, 30, {});
       await w.h.t.owner.query(
@@ -251,7 +263,7 @@ describe('campaign reports', () => {
       for (const gone of ['impressions', 'clicks', 'businessConversions', 'joinedPaths'])
         expect(body).not.toHaveProperty(gone);
       expect(Object.keys(body.credited).sort()).toEqual(
-        ['data_driven', 'first_touch', 'last_click', 'linear', 'position', 'time_decay'].sort(),
+        ['first_touch', 'last_click', 'linear', 'position', 'time_decay'].sort(),
       );
       // Reporting a sale today and re-reading shows nothing: the attack this report used to allow.
       const clickToday = must(new URL(await click(live, person)).searchParams.get('gr_click'));
@@ -259,12 +271,12 @@ describe('campaign reports', () => {
         (await report(key.value, { clickId: clickToday, externalId: 'r-2', valueMicros: 9_000_000 })).statusCode,
       ).toBe(201);
       expect((await read(live.owner.token)).json<Shown>().report.credited).toEqual(body.credited);
-      // Re-reading draws on the budget once.
+      // Every read draws on the budget.
       const spent = await w.h.t.owner.query<{ e: string }>(
         `SELECT l.epsilon_spent::text AS e FROM app.ad_privacy_budget_ledger l JOIN app.ad_campaigns c ON c.advertiser_id = l.advertiser_id WHERE c.public_id = $1`,
         [live.campaign],
       );
-      expect(Number(must(spent.rows[0]).e)).toBeCloseTo(1, 5);
+      expect(Number(must(spent.rows[0]).e)).toBeCloseTo(2, 5);
       // Nothing about the person who bought.
       expect(res.body).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
       // Another person, and a moderator (who reviews every campaign), get nothing.

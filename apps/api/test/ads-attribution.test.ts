@@ -137,7 +137,12 @@ describe('lift from a holdout', () => {
 });
 
 describe('a campaign’s report', () => {
-  const now = 100 * DAY;
+  it('credits by rule models only: the data-driven one lets one path move everyone’s credit', () => {
+    const { credited } = campaignReport('a', [conversion(null, 'a', 90)], []);
+    expect(Object.keys(credited)).not.toContain('data_driven');
+    expect(Object.keys(credited)).toContain('last_click');
+  });
+
   const at = (day: number) => new Date(day * DAY);
   const conversion = (adId: string | null, campaign: string, clickedDay: number, value = '1000') => ({
     campaign,
@@ -155,64 +160,19 @@ describe('a campaign’s report', () => {
       { ad_id: 'p1', campaign: 'c', at: at(60) },
       { ad_id: 'p1', campaign: 'c', at: at(97) },
     ];
-    const r = campaignReport('a', [conversion('p1', 'b', 95, '2000')], seen, now).credited;
+    const r = campaignReport('a', [conversion('p1', 'b', 95, '2000')], seen).credited;
     expect(r.first_touch).toEqual({ conversions: 1, valueMicros: 2000 });
     expect(r.last_click).toEqual({ conversions: 0, valueMicros: 0 });
     expect(r.linear).toEqual({ conversions: 0.5, valueMicros: 1000 });
-    expect(campaignReport('c', [conversion('p1', 'b', 95)], seen, now).credited.linear?.conversions).toBe(0);
+    expect(campaignReport('c', [conversion('p1', 'b', 95)], seen).credited.linear?.conversions).toBe(0);
   });
 
   it('credits only the click when the person isn’t known, or has no impressions in reach', () => {
     const seen = [{ ad_id: 'p2', campaign: 'a', at: at(10) }];
     for (const c of [conversion(null, 'b', 95), conversion('p2', 'b', 95)]) {
-      const r = campaignReport('b', [c], seen, now);
+      const r = campaignReport('b', [c], seen);
       expect([r.credited.first_touch?.conversions, r.joinedPaths]).toEqual([1, 0]);
     }
-  });
-
-  it('compares converters with recent people who didn’t convert', () => {
-    // "a" alone converts 1 in 6 recently seen people; "b" alone converts every time.
-    const seen = [
-      ...Array.from({ length: 5 }, (_, i) => ({ ad_id: `n${String(i)}`, campaign: 'a', at: at(90) })),
-      // Seen too long ago to count as someone who didn't convert.
-      ...Array.from({ length: 50 }, (_, i) => ({ ad_id: `old${String(i)}`, campaign: 'b', at: at(50) })),
-    ];
-    const conversions = [
-      conversion(null, 'a', 90),
-      ...Array.from({ length: 6 }, () => conversion(null, 'b', 90)),
-      ...Array.from({ length: 6 }, (_, i) => conversion(`ab${String(i)}`, 'b', 90)),
-    ];
-    const both = [
-      ...seen,
-      ...Array.from({ length: 6 }, (_, i) => [
-        { ad_id: `ab${String(i)}`, campaign: 'a', at: at(89) },
-        { ad_id: `ab${String(i)}`, campaign: 'b', at: at(90) },
-      ]).flat(),
-    ];
-    const a = campaignReport('a', conversions, both, now).credited;
-    const b = campaignReport('b', conversions, both, now).credited;
-    // Under linear the pairs split evenly; data-driven gives "b" almost all of them.
-    expect(a.linear?.conversions).toBe(4);
-    expect(a.data_driven?.conversions).toBeLessThan(2);
-    expect(b.data_driven?.conversions).toBeGreaterThan(11);
-  });
-
-  it('doesn’t count a person who converted among those who didn’t', () => {
-    // "a" alone converts half the time, "b" alone never, both together always:
-    // Shapley gives each pair 3/4 to "a" and 1/4 to "b".
-    const seen = [
-      ...Array.from({ length: 3 }, (_, i) => ({ ad_id: `a${String(i)}`, campaign: 'a', at: at(90) })),
-      ...Array.from({ length: 6 }, (_, i) => ({ ad_id: `b${String(i)}`, campaign: 'b', at: at(90) })),
-      ...Array.from({ length: 6 }, (_, i) => [
-        { ad_id: `ab${String(i)}`, campaign: 'a', at: at(89) },
-        { ad_id: `ab${String(i)}`, campaign: 'b', at: at(90) },
-      ]).flat(),
-    ];
-    const conversions = [
-      ...Array.from({ length: 3 }, () => conversion(null, 'a', 90)),
-      ...Array.from({ length: 6 }, (_, i) => conversion(`ab${String(i)}`, 'b', 90)),
-    ];
-    expect(campaignReport('b', conversions, seen, now).credited.data_driven?.conversions).toBe(1.5);
   });
 });
 

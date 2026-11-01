@@ -3,7 +3,7 @@
 // day, country, placement or audience, over complete UTC days only, with
 // per-person contributions clipped, fixed Laplace noise per cell, small
 // cells suppressed, and a daily privacy budget charged once per new release.
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Database, Queryable } from '../db.ts';
 import {
@@ -153,7 +153,7 @@ export function registerAdReportRoutes(
           new Date(from.getTime() + i * DAY_MS).toISOString().slice(0, 10),
         );
         const charge = (
-          await q.query<{ outcome: 'free' | 'charged' | 'exhausted'; remaining: string }>(
+          await q.query<{ outcome: 'charged' | 'exhausted'; remaining: string }>(
             'SELECT outcome, remaining::text FROM app.release_ad_report($1, $2::date[], $3, $4)',
             [campaign.id, dayList, b.breakdown, cost],
           )
@@ -161,14 +161,17 @@ export function registerAdReportRoutes(
         if (!charge || charge.outcome === 'exhausted')
           return { exhausted: true as const, remaining: charge?.remaining ?? '0' };
         const cells = await trueCells(q, campaign.id, b.breakdown, from, to);
-        return { charge, shown: privateCells(campaign.id, b.breakdown, cells, await reportSecret(q)) };
+        return {
+          charge,
+          cells: privateCells(campaign.id, b.breakdown, cells, await reportSecret(q), randomUUID(), days),
+        };
       });
       if ('exhausted' in result)
         return fail(
           reply,
           429,
           'privacy_budget_spent',
-          'Today’s privacy budget for new report details is used up. Reports you’ve already seen stay available; new ones can be asked for tomorrow (UTC).',
+          'This business’s privacy budget for reports is used up for now. It comes back over the coming days.',
         );
       return {
         report: {
@@ -176,11 +179,10 @@ export function registerAdReportRoutes(
           breakdown: b.breakdown,
           startDate: b.startDate,
           endDate: b.endDate,
-          cells: result.shown.cells,
-          suppressed: result.shown.suppressed,
+          cells: result.cells,
           privacy: {
-            epsilonCharged: result.charge.outcome === 'charged' ? cost : 0,
-            epsilonRemainingToday: Number(result.charge.remaining),
+            epsilonCharged: cost,
+            epsilonRemaining: Number(result.charge.remaining),
             epsilonPerMetric: EPSILON_PER_METRIC,
             clipping: CLIP,
             minimumPeople: MIN_PEOPLE,

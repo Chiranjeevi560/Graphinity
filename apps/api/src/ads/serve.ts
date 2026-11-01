@@ -397,10 +397,12 @@ export function createAdServer(db: Pick<Database, 'asSystem'>, rtb?: RtbOptions)
               await q.query<{
                 country: string | null;
                 personalized: boolean;
+                measured: boolean;
                 partnerSites: boolean;
                 crossDevice: boolean;
               }>(
                 `SELECT p.country, app.ads_permitted(p.id, 'ads_personalization') AS personalized,
+                        app.ads_permitted(p.id, 'ads_measurement') AS measured,
                         app.ads_permitted(p.id, 'ads_partner_sites') AS "partnerSites",
                         app.ads_permitted(p.id, 'ads_cross_device') AS "crossDevice"
                  FROM app.profiles p WHERE p.id = $1`,
@@ -413,7 +415,8 @@ export function createAdServer(db: Pick<Database, 'asSystem'>, rtb?: RtbOptions)
         let audiences: Map<string, number> | null = null;
         const seenToday = new Map<string, number>();
         const seenThisWeek = new Map<string, number>();
-        if (viewer && person?.personalized && !gpc) {
+        // An impression that may be measured needs an identity too: it's how the row is found again when they withdraw.
+        if (viewer && (person?.personalized || person?.measured) && !gpc) {
           await q.query('INSERT INTO app.ad_identities (profile_id) VALUES ($1) ON CONFLICT DO NOTHING', [viewer]);
           adId =
             (
@@ -421,6 +424,8 @@ export function createAdServer(db: Pick<Database, 'asSystem'>, rtb?: RtbOptions)
                 viewer,
               ])
             ).rows[0]?.ad_id ?? null;
+        }
+        if (viewer && person?.personalized && !gpc) {
           interests = new Set(
             (
               await q.query<{ field: string }>(

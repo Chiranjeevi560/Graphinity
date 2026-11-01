@@ -393,6 +393,9 @@ now on: maintenance scripts name the local socket explicitly and never read `mig
 - Advertising rows follow the person (migration 0053): when an advertising id goes, by deletion or by turning personalized ads off, its reported sales go and its
   impressions lose click id, country, topic and audience. What was charged, to which campaign and when stays for billing, with no link to anyone. A merchant's own copy of a
   click id or customer id is beyond our reach. Rate-limit and rollup hashes use their own derived keys; locked-out subject hashes stay on the root key, because moving them would let those people back in.
+- Ad reports, second review (migration 0056): every read costs and draws fresh noise, floors are noised and charged, hidden cells aren't counted. Budget is 2.0 a day and 12.0 per 30 days per business, enough
+  for about a dozen reads a month. ε = 12 a month is a real limit, not a strong promise on its own: the clips and floors carry part of the weight. Over a year it adds up, and there's no lifetime bound. Untracked viewers'
+  impressions aren't clipped per person, since they have no identity; they can't convert, because a click id now needs one. Turning measurement off removes click ids, reported sales and partner events.
 - Abuse limits (review of 2026-11-01, migration 0054): one account's reports past ten a day still reach review but stop hiding posts; three accounts over a day old can still hide a post until
   a moderator looks, so a small ring of aged accounts remains possible. Five open complaints per person. A throwaway member leaving no longer frees a confirmed ring: pairs keep their ban. Overturning
   an old removal can't undo a newer one. The governor never turns the step-up check off.

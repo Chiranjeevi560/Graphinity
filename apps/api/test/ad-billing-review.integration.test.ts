@@ -75,9 +75,27 @@ describe('clicks and budgets', () => {
   it('the total budget holds at click time', async () => {
     const live = await shown({ dailyBudgetMicros: 10_000_000, maxCpcMicros: 10_000_000 });
     await pastCharge(live.campaignId, 10_000_000, '2 days');
-    await h.t.owner.query('UPDATE app.ad_campaigns SET total_budget_micros = 10000000 WHERE id = $1', [live.campaignId]);
+    // Counted on the campaign: when old impressions age out, the budget doesn't come back.
+    await h.t.owner.query(
+      'UPDATE app.ad_campaigns SET total_budget_micros = 10000000, spent_total_micros = 10000000 WHERE id = $1',
+      [live.campaignId],
+    );
+    await h.t.owner.query('DELETE FROM app.ad_impressions WHERE campaign_id = $1 AND charged_micros > 0', [
+      live.campaignId,
+    ]);
     await h.call('POST', `/ads/click/${live.token}`);
     expect(await charged(live.token)).toBe(0);
+  });
+
+  it('a charged click adds to the campaign’s running total', async () => {
+    const live = await shown({ dailyBudgetMicros: 10_000_000, maxCpcMicros: 10_000_000 });
+    await h.call('POST', `/ads/click/${live.token}`);
+    const { rows } = await h.t.owner.query<{ s: string }>(
+      'SELECT spent_total_micros::text AS s FROM app.ad_campaigns WHERE id = $1',
+      [live.campaignId],
+    );
+    expect(Number(must(rows[0]).s)).toBe(await charged(live.token));
+    expect(await charged(live.token)).toBeGreaterThan(0);
   });
 
   it('a paused campaign or suspended business is charged nothing, and the tap still works', async () => {
