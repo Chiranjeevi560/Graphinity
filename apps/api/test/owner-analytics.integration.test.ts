@@ -1,4 +1,5 @@
 // The owner's aggregates on real Postgres (ADR 0029).
+import { expectedWeeks, unitEconomics } from '../src/olap/rollups.ts';
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
   answeringRollup,
@@ -164,5 +165,71 @@ describe('who can read', () => {
     expect(body.answering).toBeTruthy();
     expect(Array.isArray(body.retention)).toBe(true);
     expect(Array.isArray(body.together)).toBe(true);
+  });
+
+  it('records acquisition spend for the owner only, and shows cost and value without inventing either', async () => {
+    const stranger = await member();
+    const spend = { month: '2026-11', currency: 'INR', amountMicros: 5_000_000_000 };
+    expect((await h.call('PUT', '/owner/acquisition-spend', stranger.token, spend)).statusCode).toBe(403);
+    await expect(
+      h.t.database.withUser(stranger.id, q =>
+        q.query(`INSERT INTO app.acquisition_spend (month, currency, amount_micros) VALUES ('2026-01-01', 'INR', 1)`),
+      ),
+    ).rejects.toThrow();
+    const owner = await member();
+    await h.t.owner.query('INSERT INTO app.platform_owners (profile_id) VALUES ($1)', [owner.id]);
+    const bad = await h.call('PUT', '/owner/acquisition-spend', owner.token, { ...spend, amountMicros: -1 });
+    expect(bad.statusCode).toBe(400);
+    const month = new Date().toISOString().slice(0, 7);
+    expect((await h.call('PUT', '/owner/acquisition-spend', owner.token, { ...spend, month })).statusCode).toBe(200);
+    // Correcting a month replaces it rather than adding to it.
+    expect(
+      (await h.call('PUT', '/owner/acquisition-spend', owner.token, { ...spend, month, amountMicros: 1_000_000_000 }))
+        .statusCode,
+    ).toBe(200);
+    const week = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
+    await h.t.owner.query(
+      `INSERT INTO app.olap_cohort_retention (cohort_week, week_offset, cohort_size, active) VALUES ($1, 0, 100, 100)
+       ON CONFLICT (cohort_week, week_offset) DO UPDATE SET cohort_size = 100, active = 100`,
+      [week],
+    );
+    const res = await h.call('GET', '/owner/dashboard/summary', owner.token);
+    const row = res
+      .json<{
+        economics: Array<{ currency: string; costPerJoinMicros: number | null; lifetimeValueMicros: number | null }>;
+      }>()
+      .economics.find(e => e.currency === 'INR');
+    expect(row?.costPerJoinMicros).toBeGreaterThan(0);
+    // No ad income in this world: value is zero income over real weeks, not a guess.
+    expect(row?.lifetimeValueMicros).toBe(0);
+    await h.t.owner.query('DELETE FROM app.platform_owners WHERE profile_id = $1', [owner.id]);
+  });
+});
+
+describe('unit economics', () => {
+  it('weights retention by people and stays silent where a part is missing', () => {
+    expect(
+      expectedWeeks([
+        { week_offset: 0, cohort_size: 100, active: 100 },
+        { week_offset: 1, cohort_size: 100, active: 50 },
+        { week_offset: 1, cohort_size: 300, active: 50 },
+      ]),
+    ).toBeCloseTo(1.25);
+    expect(
+      unitEconomics({ revenueMicros: 100, personWeeks: 10, lifetimeWeeks: 2, spendMicros: 40, joined: 4 }),
+    ).toEqual({
+      lifetimeValueMicros: 20,
+      costPerJoinMicros: 10,
+    });
+    expect(
+      unitEconomics({ revenueMicros: 100, personWeeks: 0, lifetimeWeeks: 2, spendMicros: null, joined: 4 }),
+    ).toEqual({
+      lifetimeValueMicros: null,
+      costPerJoinMicros: null,
+    });
+    expect(
+      unitEconomics({ revenueMicros: 0, personWeeks: 1, lifetimeWeeks: 1, spendMicros: 5, joined: 0 })
+        .costPerJoinMicros,
+    ).toBeNull();
   });
 });

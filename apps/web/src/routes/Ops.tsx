@@ -1,5 +1,8 @@
+import { Button } from '../components/Button.tsx';
 import { LegalQueue } from '../components/LegalQueue.tsx';
-import { useState } from 'react';
+import { ApiError } from '../lib/api.ts';
+import { api } from '../session.tsx';
+import { useState, type CSSProperties } from 'react';
 import { LoadFailed } from '../components/Message.tsx';
 import { timeAgo } from '../lib/questions.ts';
 import { useLoad } from '../use-load.ts';
@@ -187,6 +190,12 @@ interface Summary {
     p95Minutes: number | null;
   };
   retention: Array<{ week: string; size: number; weeks: Array<number | null> }>;
+  economics: Array<{
+    currency: string;
+    lifetimeWeeks: number;
+    lifetimeValueMicros: number | null;
+    costPerJoinMicros: number | null;
+  }>;
   health: {
     objectives: Array<{ name: string; budgetRemaining: number; burn: { hour: number; day: number } }>;
   };
@@ -221,6 +230,111 @@ function Section({ title, rows, empty }: { title: string; rows: Row[]; empty: st
   );
 }
 
+const money = (micros: number | null, currency: string) =>
+  micros === null
+    ? 'no figure yet'
+    : new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(micros / 1_000_000);
+
+/** What the owner spent bringing people in. Only the owner knows this, so only the owner can say it. */
+function SpendForm({ onSaved }: { onSaved: () => void }) {
+  const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [amount, setAmount] = useState('');
+  const [note, setNote] = useState<string | null>(null);
+  const value = Number(amount);
+  const usable =
+    amount.trim() !== '' && Number.isFinite(value) && value >= 0 && /^20\d{2}-(0[1-9]|1[0-2])$/.test(month);
+
+  async function save() {
+    setNote(null);
+    try {
+      await api('/owner/acquisition-spend', {
+        method: 'PUT',
+        signedIn: true,
+        body: { month, currency: 'INR', amountMicros: Math.round(value * 1_000_000) },
+      });
+      setAmount('');
+      setNote('Saved. Saving the same month again replaces it.');
+      onSaved();
+    } catch (err) {
+      setNote(err instanceof ApiError ? err.message : 'That didn’t save. Try again.');
+    }
+  }
+
+  return (
+    <form
+      className="review-section"
+      onSubmit={e => {
+        e.preventDefault();
+        void save();
+      }}
+    >
+      <label htmlFor="spend-month" className="text-subhead">
+        Month (year-month)
+      </label>
+      <input
+        id="spend-month"
+        className="input"
+        value={month}
+        onChange={e => {
+          setMonth(e.target.value);
+        }}
+      />
+      <label htmlFor="spend-amount" className="text-subhead">
+        Spent bringing people in, in rupees
+      </label>
+      <input
+        id="spend-amount"
+        className="input"
+        inputMode="decimal"
+        value={amount}
+        onChange={e => {
+          setAmount(e.target.value);
+        }}
+      />
+      <Button type="submit" disabled={!usable}>
+        Save spend
+      </Button>
+      {note && (
+        <p className="text-footnote secondary" role="status">
+          {note}
+        </p>
+      )}
+    </form>
+  );
+}
+
+/** Each joining week, then a cell per week since, deeper where more people came back. Cells wrap, so 13 never overflow a phone. */
+function RetentionHeatmap({ cohorts }: { cohorts: Summary['retention'] }) {
+  return (
+    <section className="review-section">
+      <h2 className="text-title3">Who comes back</h2>
+      {cohorts.length === 0 ? (
+        <p className="text-body secondary">Shown for weeks when at least 25 people joined.</p>
+      ) : (
+        <ul className="standing-list">
+          {cohorts.map(c => (
+            <li key={c.week}>
+              <p className="text-subhead">
+                Joined {c.week} ({n(c.size)})
+              </p>
+              <ul className="standing-list heat text-footnote">
+                {c.weeks.map((w, i) => (
+                  <li
+                    key={i}
+                    style={w === null ? undefined : ({ '--heat': `${String(Math.round(w * 40))}%` } as CSSProperties)}
+                  >
+                    Week {i}: {share(w)}
+                  </li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 /** Numbers as a line of text; lists, like a curve over ranks, say how long they are. */
 function describeEvaluation(metrics: Record<string, unknown>): string {
   return Object.entries(metrics)
@@ -233,7 +347,7 @@ function describeEvaluation(metrics: Record<string, unknown>): string {
 
 /** For Graphinity's owner: how the whole thing is doing. Totals only; nothing here names anyone. */
 export function OwnerPage() {
-  const { data, error } = useLoad<Summary>('/owner/dashboard/summary', true);
+  const { data, error, retry } = useLoad<Summary>('/owner/dashboard/summary', true);
   if (error) return <Note text={error.message} />;
   if (!data) return <Note text="Loading…" />;
   const { brokenAt, entries } = data.audit;
@@ -265,14 +379,16 @@ export function OwnerPage() {
               ]
         }
       />
+      <RetentionHeatmap cohorts={data.retention} />
       <Section
-        title="Who comes back"
-        empty="Shown for weeks when at least 25 people joined."
-        rows={data.retention.map(c => [
-          `Joined ${c.week} (${n(c.size)})`,
-          c.weeks.map((w, i) => `week ${String(i)}: ${share(w)}`).join(' · '),
+        title="What a person is worth"
+        empty="Shown once there’s ad income, or you’ve recorded what you spent bringing people in."
+        rows={data.economics.map(e => [
+          e.currency,
+          `Worth ${money(e.lifetimeValueMicros, e.currency)} over about ${e.lifetimeWeeks.toFixed(1)} weeks · costs ${money(e.costPerJoinMicros, e.currency)} to bring in`,
         ])}
       />
+      <SpendForm onSaved={retry} />
       <Section
         title="Error budget"
         empty=""

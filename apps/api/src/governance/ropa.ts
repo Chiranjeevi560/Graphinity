@@ -26,6 +26,7 @@ export const PROCESSING: Record<string, Processing> = {
   ad_eids: ads('Rotating identifiers for outside bidders'),
   ad_ghost_impressions: ads('Holdout measurement: ads not shown'),
   ad_identities: ads('Rotating advertising identifiers'),
+  acquisition_spend: system('What the owner spent on bringing people in, in totals'),
   ad_impressions: row('Ads shown, without who saw them', 'legitimate_interest', 'Kept for billing'),
   ad_interests: ads('Decaying interest topics'),
   ad_jurisdiction_rules: system('Which ad parts are legal where'),

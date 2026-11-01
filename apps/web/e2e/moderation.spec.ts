@@ -177,11 +177,22 @@ test('the owner sees totals, and nobody else does', async ({ page, browserName }
   await expect(page.getByText('This page is for Graphinity’s owner.')).toBeVisible();
   clearConsoleErrors();
   await asOwner('INSERT INTO app.platform_owners (profile_id) VALUES ($1) ON CONFLICT DO NOTHING', [TEST_PERSON_A]);
+  await asOwner(
+    `INSERT INTO app.olap_cohort_retention (cohort_week, week_offset, cohort_size, active)
+     SELECT date_trunc('week', now())::date - 84, n, 40, 40 - n * 3 FROM generate_series(0, 12) n
+     ON CONFLICT (cohort_week, week_offset) DO NOTHING`,
+    [],
+  );
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Owner', level: 1 })).toBeVisible();
+  await expect(page.getByText('Week 12')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Audit log', level: 2 })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Measurements', level: 2 })).toBeVisible();
+  await page.getByLabel(/Spent bringing people in/).fill('5000');
+  await page.getByRole('button', { name: 'Save spend' }).click();
+  await expect(page.getByText(/to bring in/)).toBeVisible();
   await audit(page, 'owner');
+  await asOwner('DELETE FROM app.acquisition_spend', []);
   await asOwner('DELETE FROM app.platform_owners WHERE profile_id = $1', [TEST_PERSON_A]);
 });
 
