@@ -47,6 +47,8 @@ step() { # name, command...
 }
 step typecheck npm run typecheck
 step lint npm run lint
+# CI runs this too: a migration that broke its lint once passed here and failed there.
+step migrations node scripts/check-migrations.mjs
 step test npm run test:coverage
 step build npm run build
 step size npm run check:size
