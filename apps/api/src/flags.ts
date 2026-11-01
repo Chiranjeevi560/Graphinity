@@ -36,6 +36,8 @@ export const FLAG_DEFAULTS = {
   ads_cross_device: false,
   /** The partner tag and conversion API for advertisers' sites. */
   ads_partner_sites: false,
+  /** Sending partners cohorts of consenting people, 100 or more per topic. */
+  ads_partner_push: false,
   /** Real-time bidding with outside exchanges and bidders. */
   ads_rtb: false,
   /** Audiences, ad reminders and look-alikes (part 7). */

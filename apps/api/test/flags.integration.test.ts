@@ -25,6 +25,7 @@ describe('feature flags', () => {
       { name: 'ads_holdout', enabled: false },
       { name: 'ads_measurement', enabled: false },
       { name: 'ads_pacing', enabled: false },
+      { name: 'ads_partner_push', enabled: false },
       { name: 'ads_partner_sites', enabled: false },
       { name: 'ads_rtb', enabled: false },
       { name: 'embeddings', enabled: true },

@@ -8,6 +8,7 @@ import { AD_CTR, trainAdCtrJob } from './ads/ctr.ts';
 import { buildAudiences } from './ads/audience-build.ts';
 import { createAdServer } from './ads/serve.ts';
 import { createExchange } from './ads/exchange.ts';
+import { pushCohorts } from './ads/partner-push.ts';
 import { createRecorder } from './ops/metrics.ts';
 import { compactMinutes, loadStatus, recordedRun, saveMinute } from './ops/store.ts';
 import { monitorDrift } from './ml/drift-monitor.ts';
@@ -640,6 +641,7 @@ const runRollups = serial(async () => {
     ['experiments', 3600, () => evaluateExperiments(db)],
     ['model-evaluations', 3600, () => runModelEvaluations(db, Date.now())],
     ['memory-sweep', 3600, () => sweepMemory(db, Date.now())],
+    ['partner-push', 3600, () => pushCohorts(db, (url, init) => fetch(url, init), config.ipHashKey, Date.now())],
     [
       'ad-signal-expiry',
       3600,
