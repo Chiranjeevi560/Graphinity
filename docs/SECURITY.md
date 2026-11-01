@@ -387,6 +387,9 @@ now on: maintenance scripts name the local socket explicitly and never read `mig
 - Backups are encrypted, in schema `app` only, made by hand before migrations and optionally nightly. They hold deleted accounts' data until they
   age out (7 local, 30 days nightly). The migration credential is still a file on the owner's disk; a remote migration now needs a person at a terminal
   typing the address, which stops scripts but not someone with shell access.
+- Ad reports (review of 2026-11-01, migration 0052): exact campaign figures and lift's group sizes are gone, the k floors count tracked people only, and a privacy
+  budget charges per new day. Remaining: exact daily spend stays, since a business must see what it's charged, so one click on a quiet complete day can show there. The daily
+  budget resets, so a business that reads for months accumulates more than 2.0 overall; there's no lifetime bound. Lift can't be significant until merchants report sales for both groups.
 - Awards whose question was deleted can't be named by a guarded take-back row, so they stay.
 - Advertising (ADR 0022) uses a person's data only when `app.ads_permitted()` says so: switches on,
   the country's rule approved by a lawyer (only the owner can change rules) and the person's own

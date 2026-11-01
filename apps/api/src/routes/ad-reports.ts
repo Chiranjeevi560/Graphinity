@@ -48,6 +48,7 @@ export async function trueCells(
   to: Date,
 ): Promise<TrueCell[]> {
   const value = (at: string) => VALUE[breakdown].replace('%(at)s', at);
+  // Only tracked people count toward the floor: signed-out requests could otherwise pad it.
   // A person (or, untracked, an impression) counts at most CLIP times per cell; conversions by
   // the day they were received, which never changes once the day is over.
   const { rows } = await q.query<{
@@ -60,9 +61,9 @@ export async function trueCells(
   }>(
     `WITH shown AS (
        SELECT to_char(i.shown_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day, ${value('i.shown_at')} AS value,
-              coalesce(i.ad_id::text, i.token::text) AS who, count(*) AS n
+              coalesce(i.ad_id::text, i.token::text) AS who, i.ad_id IS NOT NULL AS tracked, count(*) AS n
        FROM app.ad_impressions i LEFT JOIN app.ad_audiences au ON au.id = i.audience_id
-       WHERE i.campaign_id = $1 AND i.shown_at >= $2 AND i.shown_at < $3 GROUP BY 1, 2, 3),
+       WHERE i.campaign_id = $1 AND i.shown_at >= $2 AND i.shown_at < $3 GROUP BY 1, 2, 3, 4),
      tapped AS (
        SELECT to_char(i.clicked_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day, ${value('i.clicked_at')} AS value,
               coalesce(i.ad_id::text, i.token::text) AS who, count(*) AS n
@@ -74,7 +75,7 @@ export async function trueCells(
        FROM app.ad_conversions c JOIN app.ad_impressions i ON i.id = c.impression_id
        LEFT JOIN app.ad_audiences au ON au.id = i.audience_id
        WHERE i.campaign_id = $1 AND c.received_at >= $2 AND c.received_at < $3 GROUP BY 1, 2, 3),
-     s AS (SELECT day, value, count(*)::int AS people, sum(least(n, $4))::int AS impressions FROM shown GROUP BY 1, 2),
+     s AS (SELECT day, value, count(*) FILTER (WHERE tracked)::int AS people, sum(least(n, $4))::int AS impressions FROM shown GROUP BY 1, 2),
      t AS (SELECT day, value, sum(least(n, $5))::int AS clicks FROM tapped GROUP BY 1, 2),
      b AS (SELECT day, value, sum(least(n, $6))::int AS conversions FROM bought GROUP BY 1, 2)
      SELECT day, value, coalesce(s.people, 0) AS people, coalesce(s.impressions, 0) AS impressions,

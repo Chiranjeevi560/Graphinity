@@ -105,7 +105,8 @@ describe('holdouts', () => {
     }>();
     expect(res.ready).toBe(true);
     expect(res.lift.absolute).toBeGreaterThan(0.2);
-    expect(res.lift.significant).toBe(true);
+    // Sales can't join for held-out people, who see no ad to tap: never claimed as significant.
+    expect(res.lift.significant).toBe(false);
   });
 });
 

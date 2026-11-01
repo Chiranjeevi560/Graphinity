@@ -86,7 +86,10 @@ describe('private reports', () => {
     expect((await range(yesterday(), utcDay(0))).json<Body>().error).toBe('day_not_over');
     expect((await range(yesterday(), utcDay(-2))).json<Body>().error).toBe('invalid_range');
     expect((await range(utcDay(-100), yesterday())).json<Body>().error).toBe('invalid_range');
-    expect((await range(utcDay(-92), yesterday())).statusCode).toBe(200);
+    // Each new day costs its share of the budget: one person can be on all of them. So a long range is refused at
+    // first; it isn't charged as if the days were strangers.
+    expect((await range(utcDay(-91), yesterday())).json<Body>().error).toBe('privacy_budget_spent');
+    expect((await range(utcDay(-2), yesterday())).statusCode).toBe(200);
     // The database refuses releasing today however it's asked.
     const id = must(
       (
@@ -153,7 +156,8 @@ describe('private reports', () => {
     const from = new Date(`${yesterday()}T00:00:00Z`);
     const to = new Date(from.getTime() + DAY);
     const [cell] = await w.h.t.database.asSystem(q => trueCells(q, id, 'day', from, to));
-    expect(cell).toMatchObject({ people: 32, impressions: 29 + 20 + 2 });
+    // Only the 30 tracked people count toward the floor: signed-out requests could pad it.
+    expect(cell).toMatchObject({ people: 30, impressions: 29 + 20 + 2 });
     // Two conversions by one person, received yesterday though bought three days ago: clipped to
     // one, and counted on the day they arrived (a day already reported can't change later).
     await w.h.t.owner.query(

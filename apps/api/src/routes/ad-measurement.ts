@@ -16,6 +16,11 @@ import { fail, pgCode, signedIn } from './common.ts';
 const keyPattern = /^grk_[A-Za-z0-9_-]{43}$/;
 /** ε for one lift release: four noised numbers. One person's sales count up to this much. */
 const LIFT_EPSILON = 0.8;
+/** A day's attribution report, from the 2.0 a business has daily. */
+const REPORT_EPSILON = 1.0;
+/** One person's most conversions and value in a report: what the noise has to hide. */
+const REPORT_PER_PERSON = 3;
+const REPORT_SALE_CLIP_MICROS = 1_000_000_000;
 const SALE_CLIP_MICROS = 10_000_000_000;
 
 export const hashKey = (key: string) => createHash('sha256').update(key).digest('hex');
@@ -267,31 +272,36 @@ export async function registerAdMeasurementRoutes(
         return fail(reply, 429, 'privacy_budget', 'This business’s reports for today are used up. Try tomorrow.');
       const { secret, counts } = outcome;
       if (!counts) return { ready: false };
+      // Six figures share the charge. Group sizes too: the interval and "incremental" would give them away.
       const noisy = (name: string, value: number, sensitivity: number) =>
         Math.max(
           0,
           value +
-            laplace(sensitivity / (LIFT_EPSILON / 4), cellUniform(secret, `lift|${campaign.id}|${yesterday}|${name}`)),
+            laplace(sensitivity / (LIFT_EPSILON / 6), cellUniform(secret, `lift|${campaign.id}|${yesterday}|${name}`)),
         );
+      const exposedPeople = Math.round(noisy('ep', counts.ep, 1));
+      const holdoutPeople = Math.round(noisy('hp', counts.hp, 1));
       const exposedConversions = Math.round(noisy('ec', counts.ec, 1));
       const holdoutConversions = Math.round(noisy('hc', counts.hc, 1));
       const result = lift({
-        exposedPeople: counts.ep,
-        exposedConversions: Math.min(counts.ep, exposedConversions),
-        holdoutPeople: counts.hp,
-        holdoutConversions: Math.min(counts.hp, holdoutConversions),
+        exposedPeople,
+        exposedConversions: Math.min(exposedPeople, exposedConversions),
+        holdoutPeople,
+        holdoutConversions: Math.min(holdoutPeople, holdoutConversions),
       });
       // Under 100 a side, or under 25 who bought, the answer is "not yet": no number to compare.
-      if (!result || counts.ec + counts.hc < MIN_PEOPLE) return { ready: false };
-      const perExposed = noisy('ev', counts.ev, SALE_CLIP_MICROS) / Math.max(1, counts.ep);
-      const perHeld = noisy('hv', counts.hv, SALE_CLIP_MICROS) / Math.max(1, counts.hp);
+      if (!result || exposedConversions + holdoutConversions < MIN_PEOPLE) return { ready: false };
+      const perExposed = noisy('ev', counts.ev, SALE_CLIP_MICROS) / Math.max(1, exposedPeople);
+      const perHeld = noisy('hv', counts.hv, SALE_CLIP_MICROS) / Math.max(1, holdoutPeople);
       const spend = Number(counts.spend);
       return {
         ready: true,
-        lift: result,
-        // Only sales a partner could report with a rotating id: a held-out person with no prior tap
-        // has none, so this covers joinable sales only.
-        iRoas: spend > 0 ? ((perExposed - perHeld) * counts.ep) / spend : null,
+        // A partner can only report a sale for an id handed over by a tap, and held-out people see no ad to tap. So the
+        // held-out side's sales are undercounted and this overstates lift: it can't be called significant until a merchant
+        // reports sales for both groups alike.
+        lift: { ...result, significant: false },
+        joinableSalesOnly: true,
+        iRoas: spend > 0 ? ((perExposed - perHeld) * exposedPeople) / spend : null,
       };
     },
   );
@@ -454,18 +464,31 @@ export async function registerAdMeasurementRoutes(
           ).rows[0],
       );
       if (!found) return fail(reply, 404, 'not_found', 'There’s no such campaign you run.');
+      // Complete days only, charged to the business's budget, with noise fixed per campaign and day. Exact figures on a
+      // live window let a business report a sale, re-read, and learn whether that person saw the ad (ADR 0022 part 8).
+      const yesterday = new Date(deps.clock.now() - 86_400_000).toISOString().slice(0, 10);
       const data = await db.asSystem(async q => {
-        // Impressions are the system's alone: people's ad identities never reach a business.
         const totals = (
-          await q.query<{ people: number; impressions: number; clicks: number; spent: string }>(
-            // People: identities, and each untracked impression as its own (part 8's count).
-            `SELECT count(DISTINCT coalesce(ad_id::text, token::text))::int AS people, count(*)::int AS impressions,
-                    count(clicked_at)::int AS clicks, coalesce(sum(charged_micros), 0)::text AS spent
-             FROM app.ad_impressions WHERE campaign_id = $1 AND shown_at > now() - interval '30 days'`,
-            [found.id],
+          await q.query<{ people: number; spent: string }>(
+            // Tracked identities only: signed-out requests could otherwise pad the floor.
+            `SELECT count(DISTINCT ad_id)::int AS people, coalesce(sum(charged_micros), 0)::text AS spent
+             FROM app.ad_impressions WHERE campaign_id = $1
+               AND shown_at >= $2::date - 29 AND shown_at < $2::date + 1`,
+            [found.id, yesterday],
           )
-        ).rows[0] ?? { people: 0, impressions: 0, clicks: 0, spent: '0' };
-        // The business's conversions in 30 days, each with the click it came from.
+        ).rows[0] ?? { people: 0, spent: '0' };
+        if (totals.people < MIN_PEOPLE) return null;
+        const release = (
+          await q.query<{ outcome: string }>('SELECT outcome FROM app.release_ad_report($1, $2::date[], $3, $4)', [
+            found.id,
+            [yesterday],
+            'attribution',
+            REPORT_EPSILON,
+          ])
+        ).rows[0];
+        if (release?.outcome === 'exhausted') return { exhausted: true as const };
+        // The business's conversions in the window, at most REPORT_PER_PERSON a person, so one
+        // person's effect on any figure is bounded, as the noise assumes.
         const conversions = (
           await q.query<{
             campaign: string;
@@ -474,11 +497,14 @@ export async function registerAdMeasurementRoutes(
             converted_at: Date;
             value: string;
           }>(
-            `SELECT i.campaign_id::text AS campaign, i.ad_id::text, i.clicked_at, c.converted_at, c.value_micros::text AS value
-             FROM app.ad_conversions c JOIN app.ad_impressions i ON i.id = c.impression_id
-             WHERE c.advertiser_id = $1 AND c.converted_at > now() - interval '30 days'
-             ORDER BY c.id LIMIT $2`,
-            [found.advertiser_id, REPORT_CONVERSIONS],
+            `SELECT campaign, ad_id, clicked_at, converted_at, value FROM (
+               SELECT i.campaign_id::text AS campaign, i.ad_id::text, i.clicked_at, c.converted_at,
+                      least(c.value_micros, $5::bigint)::text AS value, c.id,
+                      row_number() OVER (PARTITION BY coalesce(i.ad_id::text, i.id::text) ORDER BY c.id) AS nth
+               FROM app.ad_conversions c JOIN app.ad_impressions i ON i.id = c.impression_id
+               WHERE c.advertiser_id = $1 AND c.received_at >= $2::date - 29 AND c.received_at < $2::date + 1
+             ) x WHERE nth <= $4 ORDER BY id LIMIT $3`,
+            [found.advertiser_id, yesterday, REPORT_CONVERSIONS, REPORT_PER_PERSON, REPORT_SALE_CLIP_MICROS],
           )
         ).rows;
         // Impressions of the business's campaigns by people who allow measurement now (only
@@ -488,27 +514,43 @@ export async function registerAdMeasurementRoutes(
             `SELECT i.ad_id::text, i.campaign_id::text AS campaign, i.shown_at AS at
              FROM app.ad_impressions i JOIN app.ad_campaigns c ON c.id = i.campaign_id
              JOIN app.ad_identities d ON d.ad_id = i.ad_id AND app.ads_permitted(d.profile_id, 'ads_measurement')
-             WHERE c.advertiser_id = $1 AND i.shown_at > now() - interval '60 days'
-             ORDER BY i.id DESC LIMIT $2`,
-            [found.advertiser_id, REPORT_IMPRESSIONS],
+             WHERE c.advertiser_id = $1 AND i.shown_at > $2::date - 59 AND i.shown_at < $2::date + 1
+             ORDER BY i.id DESC LIMIT $3`,
+            [found.advertiser_id, yesterday, REPORT_IMPRESSIONS],
           )
         ).rows;
-        return { totals, conversions, seen };
+        return { totals, conversions, seen, secret: await reportSecret(q) };
       });
-      // Exact numbers over a handful of people would tell a business that knows its buyers who
-      // tapped (part 8): under MIN_PEOPLE, nothing is shown.
-      if (data.totals.people < MIN_PEOPLE)
-        return { report: { days: 30, belowMinimum: true, minimumPeople: MIN_PEOPLE } };
-      const report = campaignReport(found.id, data.conversions, data.seen, Date.now());
+      if (!data) return { report: { days: 30, belowMinimum: true, minimumPeople: MIN_PEOPLE } };
+      if (data.exhausted)
+        return fail(reply, 429, 'privacy_budget', 'This business’s reports for today are used up. Try tomorrow.');
+      const { credited } = campaignReport(found.id, data.conversions, data.seen, Date.now());
+      // Six models, two figures each, share the charge.
+      const share = REPORT_EPSILON / 12;
+      const noisy = (name: string, value: number, sensitivity: number) =>
+        Math.max(
+          0,
+          value +
+            laplace(sensitivity / share, cellUniform(data.secret, `attribution|${found.id}|${yesterday}|${name}`)),
+        );
       return {
         report: {
           days: 30,
           belowMinimum: false,
-          impressions: data.totals.impressions,
-          clicks: data.totals.clicks,
+          throughDay: yesterday,
+          // Exact: it's what the business is charged. The figures that say who did what are in POST /ads/reports/private.
           spentMicros: Number(data.totals.spent),
-          businessConversions: data.conversions.length,
-          ...report,
+          credited: Object.fromEntries(
+            Object.entries(credited).map(([model, c]) => [
+              model,
+              {
+                conversions: Math.round(noisy(`${model}|n`, c.conversions, REPORT_PER_PERSON)),
+                valueMicros: Math.round(
+                  noisy(`${model}|v`, c.valueMicros, REPORT_PER_PERSON * REPORT_SALE_CLIP_MICROS),
+                ),
+              },
+            ]),
+          ),
         },
       };
     },

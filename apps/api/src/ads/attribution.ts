@@ -90,11 +90,17 @@ export function shapleyModel(paths: readonly Path[]): (path: Path) => Map<string
     memo.set(k, v);
     return v;
   };
+  // The answer depends only on which campaigns a path touched, and 2^k subsets is too much to redo per conversion:
+  // one business with 12 campaigns could otherwise stall the server for minutes (security review of 2026-11-01).
+  const answers = new Map<string, Map<string, number>>();
   return (path: Path) => {
     const players = [...new Set(path.touches.map(t => t.campaign))].sort();
     const credit = new Map<string, number>();
     if (players.length === 0) return credit;
     if (players.length > MAX_SHAPLEY_CAMPAIGNS) return ruleCredit(path, 'linear');
+    const known = answers.get(keyOf(players));
+    if (known) return known;
+    answers.set(keyOf(players), credit);
     const k = players.length;
     const factorial = (m: number) => {
       let f = 1;
