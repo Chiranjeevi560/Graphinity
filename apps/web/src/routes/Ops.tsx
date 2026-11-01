@@ -175,6 +175,7 @@ interface Period {
 interface Summary {
   totals: { day: Period; week: Period; month: Period };
   models: Array<{ name: string; version: number; stage: string; algorithm: string }>;
+  evaluations: Array<{ name: string; metrics: Record<string, unknown>; at: string }>;
   experiments: Array<{ name: string; status: string; p: number }>;
   commerce: Array<{ label: string; count: number; forecast: number | null }>;
   together: Array<{ from: string; to: string; people: number; lift: number }>;
@@ -218,6 +219,16 @@ function Section({ title, rows, empty }: { title: string; rows: Row[]; empty: st
       )}
     </section>
   );
+}
+
+/** Numbers as a line of text; lists, like a curve over ranks, say how long they are. */
+function describeEvaluation(metrics: Record<string, unknown>): string {
+  return Object.entries(metrics)
+    .map(
+      ([k, v]) =>
+        `${k} ${typeof v === 'number' ? String(Number(v.toPrecision(3))) : Array.isArray(v) ? `(${String(v.length)} values)` : ''}`,
+    )
+    .join(' · ');
 }
 
 /** For Graphinity's owner: how the whole thing is doing. Totals only; nothing here names anyone. */
@@ -303,6 +314,11 @@ export function OwnerPage() {
           m.name,
           `Version ${String(m.version)} · ${m.stage.toLowerCase()} · ${m.algorithm}`,
         ])}
+      />
+      <Section
+        title="Measurements"
+        empty="Not enough data yet. Each needs a few hundred real events first."
+        rows={data.evaluations.map(e => [e.name, describeEvaluation(e.metrics)])}
       />
       <Section
         title="Audit log"

@@ -44,6 +44,7 @@ import { createAlertSender, createLimiter, createPushSender } from './push-sende
 import { dueProblems, moderatorIds, problemsOf } from './ops/alerts.ts';
 import { announceRouting, routeDueQuestions, type Explorer, type Ranker } from './routing.ts';
 import { answeringRollup, basketRollup, retentionRollup } from './olap/rollups.ts';
+import { runModelEvaluations } from './platform/evaluations.ts';
 import { purposeKey, systemClock } from './rate-limit.ts';
 import { buildServer } from './server.ts';
 import {
@@ -636,6 +637,7 @@ const runRollups = serial(async () => {
     ['knowledge-graph', 3600, () => refreshKnowledgeGraph(db, Date.now())],
     ['feature-store', 3600, () => materializeFeatures(db, Date.now())],
     ['experiments', 3600, () => evaluateExperiments(db)],
+    ['model-evaluations', 3600, () => runModelEvaluations(db, Date.now())],
     [
       'ad-signal-expiry',
       3600,
