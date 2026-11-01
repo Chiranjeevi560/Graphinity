@@ -481,6 +481,7 @@ Available while `ads` and `ads_audiences` are on (otherwise 404 `ads_off`, or 40
 - `POST /ads/conversions` with `authorization: Bearer grk_…` and `{ clickId, externalId, valueMicros?, currency?, convertedAt? }`
   → 201 `{ conversion: { counted: true } }`, or 200 with `duplicate: true` for an order id already reported;
   401 `bad_key` for a malformed key; 404 `not_counted` for any other refusal, all alike.
+- **Changed (review of 2026-11-01):** the report below now returns only `{ days, belowMinimum, throughDay, spentMicros, credited }`, over complete days, with `credited` noised and charged 1.0 to the day's budget. Exact impressions, clicks and joined paths are gone; `POST /ads/reports/private` has noisy ones. A private report now costs its ε per new day. Lift is never `significant`, and carries `joinableSalesOnly`.
 - `GET /ads/campaigns/:id/report` (a member of the business) → 200 `{ report: { days: 30, impressions, clicks,
   spentMicros, businessConversions, joinedPaths, credited: { last_click, first_touch, linear, time_decay, position,
   data_driven } } }`; each model gives `{ conversions, valueMicros }`, the campaign's share of the business's

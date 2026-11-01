@@ -215,3 +215,17 @@ describe('a campaign’s report', () => {
     expect(campaignReport('b', conversions, seen, now).credited.data_driven?.conversions).toBe(1.5);
   });
 });
+
+describe('a report with many conversions', () => {
+  it('stays quick however many conversions share 12 campaigns', () => {
+    const campaigns = Array.from({ length: 12 }, (_, i) => `c${String(i)}`);
+    const path = { touches: campaigns.map((campaign, i) => ({ campaign, at: i })), converted: true, at: 100 };
+    const model = shapleyModel(Array.from({ length: 10_000 }, () => path));
+    const started = performance.now();
+    for (let i = 0; i < 10_000; i++) model(path);
+    // Without the cache this took about 16 ms each: 160 seconds, with every other request waiting.
+    expect(performance.now() - started).toBeLessThan(5_000);
+    const total = [...model(path).values()].reduce((a, b) => a + b, 0);
+    expect(total).toBeCloseTo(1);
+  });
+});

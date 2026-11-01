@@ -4,7 +4,7 @@
 // clicks, with every refusal looking the same from outside.
 import { beforeAll, describe, expect, it } from 'vitest';
 import { hashKey } from '../src/routes/ad-measurement.ts';
-import { startAdWorld } from './helpers/ads.ts';
+import { crowd, startAdWorld } from './helpers/ads.ts';
 import { must, type Body } from './helpers/must.ts';
 
 let w: Awaited<ReturnType<typeof startAdWorld>>;
@@ -216,29 +216,55 @@ describe('campaign reports', () => {
         belowMinimum: true,
         minimumPeople: 25,
       });
-      // 24 more viewers, untracked: 25 people.
+      // Signed-out impressions don't pad the floor: anyone could make those.
       await w.h.t.owner.query(
-        `INSERT INTO app.ad_impressions (campaign_id, creative_id, placement, price_micros)
-         SELECT c.id, cr.id, 'search', 1000 FROM app.ad_campaigns c JOIN app.ad_creatives cr ON cr.campaign_id = c.id,
-                generate_series(1, 24) WHERE c.public_id = $1`,
+        `INSERT INTO app.ad_impressions (campaign_id, creative_id, placement, price_micros, shown_at)
+         SELECT c.id, cr.id, 'search', 1000, now() - interval '1 day' FROM app.ad_campaigns c JOIN app.ad_creatives cr ON cr.campaign_id = c.id,
+                generate_series(1, 200) WHERE c.public_id = $1`,
         [live.campaign],
+      );
+      expect((await read(live.owner.token)).json<{ report: { belowMinimum: boolean } }>().report.belowMinimum).toBe(
+        true,
+      );
+      // 30 tracked people, seen yesterday: complete days only.
+      const { adIds } = await crowd(w, 30, {});
+      await w.h.t.owner.query(
+        `INSERT INTO app.ad_impressions (campaign_id, creative_id, ad_id, placement, price_micros, shown_at)
+         SELECT c.id, cr.id, a, 'search', 1000, now() - interval '1 day' FROM app.ad_campaigns c JOIN app.ad_creatives cr ON cr.campaign_id = c.id,
+                unnest($2::uuid[]) AS a WHERE c.public_id = $1`,
+        [live.campaign, adIds],
+      );
+      await w.h.t.owner.query(
+        "UPDATE app.ad_conversions SET received_at = now() - interval '1 day', converted_at = now() - interval '1 day' WHERE external_id = 'r-1'",
       );
       const res = await read(live.owner.token);
       expect(res.statusCode, res.body).toBe(200);
-      const body = res.json<{
+      interface Shown {
         report: {
-          impressions: number;
-          clicks: number;
           spentMicros: number;
-          businessConversions: number;
-          joinedPaths: number;
+          throughDay: string;
           credited: Record<string, { conversions: number; valueMicros: number }>;
         };
-      }>().report;
-      expect([body.impressions, body.clicks, body.businessConversions, body.joinedPaths]).toEqual([25, 1, 1, 1]);
-      expect(body.spentMicros).toBeGreaterThan(0);
-      for (const model of ['last_click', 'first_touch', 'linear', 'time_decay', 'position', 'data_driven'])
-        expect(body.credited[model]).toEqual({ conversions: 1, valueMicros: 4_000_000 });
+      }
+      const body = res.json<Shown>().report;
+      // None of the exact figures that let a business tell who did what.
+      for (const gone of ['impressions', 'clicks', 'businessConversions', 'joinedPaths'])
+        expect(body).not.toHaveProperty(gone);
+      expect(Object.keys(body.credited).sort()).toEqual(
+        ['data_driven', 'first_touch', 'last_click', 'linear', 'position', 'time_decay'].sort(),
+      );
+      // Reporting a sale today and re-reading shows nothing: the attack this report used to allow.
+      const clickToday = must(new URL(await click(live, person)).searchParams.get('gr_click'));
+      expect(
+        (await report(key.value, { clickId: clickToday, externalId: 'r-2', valueMicros: 9_000_000 })).statusCode,
+      ).toBe(201);
+      expect((await read(live.owner.token)).json<Shown>().report.credited).toEqual(body.credited);
+      // Re-reading draws on the budget once.
+      const spent = await w.h.t.owner.query<{ e: string }>(
+        `SELECT l.epsilon_spent::text AS e FROM app.ad_privacy_budget_ledger l JOIN app.ad_campaigns c ON c.advertiser_id = l.advertiser_id WHERE c.public_id = $1`,
+        [live.campaign],
+      );
+      expect(Number(must(spent.rows[0]).e)).toBeCloseTo(1, 5);
       // Nothing about the person who bought.
       expect(res.body).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
       // Another person, and a moderator (who reviews every campaign), get nothing.
@@ -246,14 +272,6 @@ describe('campaign reports', () => {
       const moderator = await w.member();
       await w.h.t.owner.query('INSERT INTO app.moderators (profile_id) VALUES ($1)', [moderator.id]);
       expect((await read(moderator.token)).json<Body>().error).toBe('not_found');
-      // Once the person stops allowing measurement, their impressions no longer join into a path.
-      await w.h.call('PUT', '/me/consents', person.token, {
-        choices: [{ category: 'ads_measurement', enabled: false }],
-      });
-      const after = (await read(live.owner.token)).json<{
-        report: { joinedPaths: number; businessConversions: number };
-      }>();
-      expect([after.report.businessConversions, after.report.joinedPaths]).toEqual([1, 0]);
     } finally {
       await w.h.t.owner.query("UPDATE app.feature_flags SET enabled = false WHERE name = 'ads_behavioral'");
     }
