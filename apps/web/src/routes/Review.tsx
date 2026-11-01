@@ -28,6 +28,7 @@ interface Group {
   picks: number;
   expected: number;
   lift: number;
+  evidence: { outsideTrust: number; inDenseBlock: number } | null;
 }
 
 const reasonNames: Record<string, string> = {
@@ -241,6 +242,12 @@ export default function ReviewPage() {
                     {group.picks === 1 ? '1 pick' : `${String(group.picks)} picks`} among them in 6 months, where their
                     activity would explain {String(group.expected)} ({String(group.lift)} times more)
                   </p>
+                  {group.evidence && (
+                    <p className="text-footnote secondary">
+                      Support from people outside the group: {String(group.evidence.outsideTrust)} per member. In a
+                      dense block of picks: {String(group.evidence.inDenseBlock)} of {String(group.members.length)}.
+                    </p>
+                  )}
                   {decided[key] && (
                     <p className="text-subhead" role="status">
                       {decided[key]}

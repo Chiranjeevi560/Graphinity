@@ -44,6 +44,7 @@ export const PROCESSING: Record<string, Processing> = {
   audit_log: row('Tamper-evident record of sensitive actions', 'legal_obligation', 'Kept; holds no personal content'),
   block_details: row('Why a person was blocked', 'legitimate_interest', account),
   blocks: row('Who may not post', 'legitimate_interest', account),
+  collusion_evidence: row('Numbers on a possible ring, for moderators', 'legitimate_interest', account),
   collusion_groups: row(
     'Groups of accounts under review for collusion',
     'legitimate_interest',
