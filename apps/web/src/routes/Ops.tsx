@@ -1,4 +1,5 @@
 import { Button } from '../components/Button.tsx';
+import { TextField } from '../components/Form.tsx';
 import { LegalQueue } from '../components/LegalQueue.tsx';
 import { ApiError } from '../lib/api.ts';
 import { api } from '../session.tsx';
@@ -273,29 +274,8 @@ function SpendForm({ onSaved }: { onSaved: () => void }) {
         void save();
       }}
     >
-      <label htmlFor="spend-month" className="text-subhead">
-        Month (2026-11)
-      </label>
-      <input
-        id="spend-month"
-        className="input"
-        value={month}
-        onChange={e => {
-          setMonth(e.target.value);
-        }}
-      />
-      <label htmlFor="spend-amount" className="text-subhead">
-        Spent bringing people in (₹)
-      </label>
-      <input
-        id="spend-amount"
-        className="input"
-        inputMode="decimal"
-        value={amount}
-        onChange={e => {
-          setAmount(e.target.value);
-        }}
-      />
+      <TextField label="Month (2026-11)" value={month} onChange={setMonth} />
+      <TextField label="Spent bringing people in (₹)" value={amount} onChange={setAmount} inputMode="decimal" />
       <Button type="submit" disabled={!usable}>
         Save spend
       </Button>
@@ -390,7 +370,7 @@ export function OwnerPage() {
         empty="Shown once there’s income or a finished month’s spend."
         rows={data.economics.map(e => [
           e.currency,
-          `Roughly worth ${money(e.lifetimeValueMicros, e.currency)} over about ${e.lifetimeWeeks.toFixed(1)} weeks · costs ${money(e.costPerJoinMicros, e.currency)} to bring in`,
+          `Roughly worth ${money(e.lifetimeValueMicros, e.currency)} over about ${e.lifetimeWeeks.toFixed(1)} weeks · to bring in: ${money(e.costPerJoinMicros, e.currency)}`,
         ])}
       />
       <SpendForm onSaved={retry} />
@@ -399,7 +379,7 @@ export function OwnerPage() {
         empty=""
         rows={data.health.objectives.map(o => [
           o.name === 'availability' ? 'Requests succeeding' : 'Requests fast enough',
-          `${share(o.budgetRemaining)} of the month’s allowance left · using it ${o.burn.hour.toFixed(1)}× too fast this hour`,
+          `${share(o.budgetRemaining)} of the month’s allowance left${o.burn.hour > 1 ? ` · using it ${o.burn.hour.toFixed(1)}× too fast this hour` : ''}`,
           o.budgetRemaining < 0.1,
         ])}
       />
@@ -449,7 +429,7 @@ export function OwnerPage() {
         empty=""
         rows={[
           brokenAt === null
-            ? ['Unchanged', `${n(entries)} entries`]
+            ? ['Unchanged', entries === 1 ? '1 entry' : `${n(entries)} entries`]
             : [`Entry ${String(brokenAt)} was changed`, 'Untrusted from here', true],
         ]}
       />

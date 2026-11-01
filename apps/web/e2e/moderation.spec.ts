@@ -190,7 +190,7 @@ test('the owner sees totals, and nobody else does', async ({ page, browserName }
   await expect(page.getByRole('heading', { name: 'Measurements', level: 2 })).toBeVisible();
   await page.getByLabel(/Spent bringing people in/).fill('5000');
   await page.getByRole('button', { name: 'Save spend' }).click();
-  await expect(page.getByText(/to bring in/)).toBeVisible();
+  await expect(page.getByText(/to bring in:/)).toBeVisible();
   await audit(page, 'owner');
   await asOwner('DELETE FROM app.acquisition_spend', []);
   await asOwner('DELETE FROM app.platform_owners WHERE profile_id = $1', [TEST_PERSON_A]);
