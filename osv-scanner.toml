@@ -1,0 +1,5 @@
+# Each entry is an exception in CONSTRAINTS.md, approved by the owner. It stops applying on its own date.
+[[IgnoredVulns]]
+id = "GHSA-g3hv-75wg-m249"
+ignoreUntil = 2026-11-15
+reason = "E2: minimatch, medium, used only by the linting tools. The fix is under two weeks old and eslint 9 needs minimatch 3."
