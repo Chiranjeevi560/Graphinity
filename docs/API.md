@@ -456,7 +456,7 @@ impressions, clicks, conversions }], suppressed, privacy: { epsilonCharged, epsi
 clipping, minimumPeople, minimumImpressions } } }`. Numbers carry fixed noise; cells under 25 people or 50
   impressions are left out and counted in `suppressed`. 400 `invalid_range`, 400 `day_not_over`, 400 `too_fine`
   (an audience breakdown of a campaign targeting more than 3 audiences), 404 `not_found` (not a member, moderators
-  included), 429 `privacy_budget_spent` (new details only; anything already released stays available).
+  included), 429 `privacy_budget_spent` (every read costs, so it comes back only as days pass).
 - `GET /ads/campaigns/:id/report` now returns `{ report: { days: 30, belowMinimum: true, minimumPeople: 25 } }`
   while fewer than 25 people saw the campaign in 30 days, and `belowMinimum: false` with the numbers otherwise.
 

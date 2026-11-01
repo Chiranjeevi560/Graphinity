@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Button } from '../components/Button.tsx';
-import { SelectField } from '../components/Form.tsx';
+import { SelectField, TextArea } from '../components/Form.tsx';
 import { ApiError } from '../lib/api.ts';
 import { api } from '../session.tsx';
 
@@ -68,21 +68,13 @@ export default function Complaint() {
         onChange={setKind}
         options={KINDS.map(([value, label]) => ({ value, label }))}
       />
-      <div className="field">
-        <label htmlFor="complaint-body" className="text-subhead">
-          What happened? Link the post if there is one.
-        </label>
-        <textarea
-          id="complaint-body"
-          className="input"
-          rows={6}
-          maxLength={4000}
-          value={body}
-          onChange={e => {
-            setBody(e.target.value);
-          }}
-        />
-      </div>
+      <TextArea
+        label="What happened? Link the post if there is one."
+        rows={6}
+        maxLength={4000}
+        value={body}
+        onChange={setBody}
+      />
       {kind === 'copyright' && (
         <label className="text-body">
           <input

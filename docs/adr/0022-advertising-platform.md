@@ -491,3 +491,5 @@ none exists: `ad_partner_impressions` holds what billing would need.
   would train on their own events. Graphinity's clients are web pages without durable on-device
   storage for model state (local storage is excluded by design), so server-side learning on
   pseudonymous events is the design. Revisit with a native app.
+
+**Superseded in part (2026-11-01):** days in a report do not compose in parallel, since one person can appear on every day. See ADR 0031.

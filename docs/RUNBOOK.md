@@ -163,6 +163,7 @@ in `apps/api/src/flags.ts`.
 
 - `node scripts/benchmark-search.mjs [questions]`: quality and per-stage latency, engine only.
 - `node scripts/load-search.mjs [questions]`: the real server under 1, 8 and 32 concurrent searches.
+- `node scripts/load-platform.mjs [questions]`: the same for question reads, related topics and the sitemap.
 - `node scripts/benchmark-ann.mjs`: index recall and speed.
 - `node scripts/benchmark-ltr.mjs`: learning from clicks.
 

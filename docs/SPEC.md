@@ -1260,3 +1260,5 @@ The table below codifies the exact architectural implementation for the 29 hidde
 The owner's charter, the bidirectional ad exchange specification, the data schema catalog and the API specification
 extend this document. Implementation status and every deviation measured against them: `docs/adr/0024-platform-engines.md`.
 Anti-goals here still hold: no AI-written answers (extraction quotes people, and a sentence no person wrote is dropped).
+
+Status on 2026-11-01, after three independent re-audits: report privacy, consent, audit and backup rules are in `docs/SECURITY.md`; what is connected, measuring only, or not built is in `project report.md`. Decisions on report budgets: `docs/adr/0031-report-privacy.md`. Everything is on the branch; nothing here is in production until migrations 0046-0060 are applied.
