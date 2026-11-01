@@ -62,7 +62,6 @@ One command per stage: `npm run check:fast` (seconds), `npm run check:task` (abo
 
 | ID | Rule | Path | Reason | Owner | Expires |
 |---|---|---|---|---|---|
-| E1 | Supply chain: nothing published in the last 2 weeks | `package-lock.json`: fastify 5.12.6 (2026-10-13), fast-uri 3.1.9 and 4.2.3 (2026-10-19), zod 4.6.6 (2026-10-11) | Security fixes the dependency check requires (GHSA-389g-gv7q-r4x8, GHSA-333x-w4r6-6crp and three more fast-uri advisories, GHSA-mrhx-c7xc-m3w5); the owner asked for the fixed versions. Registry signatures verified; fast-uri and zod also have build provenance | owner | 2026-11-02 (all past two weeks by then; remove the row) |
 | E2 | Dependencies: the scanner stops on any known advisory | `osv-scanner.toml`: GHSA-g3hv-75wg-m249, minimatch 3.1.5 and 10.2.6 | Medium, under this file's high-or-above bar, in a package only the linting tools use, so it never reaches the website or API. The fix (11.0.1) is under two weeks old and eslint 9 needs minimatch 3. Approved by the owner on 2026-11-01 | owner | 2026-11-15 (the scanner enforces the date; upgrade or decide again) |
 
 ## Known limits of the checks

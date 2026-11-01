@@ -476,3 +476,37 @@ Commit 04aa3a6 said the backup rehearsal passed before it had: the first run use
 ### Waiting on the owner
 
 See the final message of the run: backup then migrations, `sslmode` on Render, the step-up switch, a lawyer, grievance officer, `SECURITY_CONTACT`, the PR.
+
+## Second pass (2026-11-02, Claude)
+
+Supersedes the scorecard above where it differs. Scores are still judgment, not measurement.
+
+### What changed
+
+| Subsystem | Was | Now | Why |
+|---|---:|---:|---|
+| Experiments | 62 | 70 | Search reads an arm. Enrolment is by consent and one experiment at a time, the metric is valid, and withdrawing deletes |
+| Memory | 60 | 70 | Semantic memory now feeds recommendations |
+| OLAP, owner page | 62 | 70 | Heatmap, lifetime value and cost per person. Burn rate was already there: the table above was wrong. Lifetime value is rough |
+| Bi-temporal graph, GraphSAGE | 55 | 60 | Starts from real meanings. Weights still untrained |
+| OpenRTB, partner events, holdout | 62 | 64 | Push built with its own consent, and off |
+| Legal workflow | 60 | 62 | Moderators can reach every complaint. A lawyer still hasn't confirmed the wording |
+| Security review | 82 | 78 | Lowered: a new independent review of recent work found 14 problems, 2 serious, in code that had passed tests. Fixed, but those fixes haven't been re-reviewed |
+
+**Equal-weight mean: about 64/100. This isn't production ready.** Most of the remaining distance needs traffic, partners, a lawyer and a deployment, not code.
+
+### Algorithms
+
+Compared on synthetic data only; decisions in `docs/adr/0032-ranking-algorithms-evaluated.md`. DPP is served behind an experiment. Two-tower and MMoE are built, not served. SQ8 isn't used, PQ is rejected, PLE isn't built, Double ML is for measuring.
+
+### Against the owner's 61-item checklist
+
+20 done as written, 19 built with differences, 21 partial, 1 unfinished (6.6: no second re-audit of the latest fixes, and no `docs/SECURITY_AUDIT_REPORT.md`). Judged from code searches and earlier results, not a line-by-line re-check.
+
+### Verified
+
+Full browser suite on `91bfb41`: 42 of 42, Chromium and WebKit, with axe, layout and tap-target checks. Lighthouse on `/`: 97, 100, 100, 100, LCP 2.33 s, CLS 0. Gate: 1,118 API and 221 website tests. Firefox and Semgrep run only in CI. CI's result on this commit wasn't awaited when this was written. CodeQL stays red on three alerts judged false positives, for the owner to dismiss.
+
+### Found along the way
+
+The migration lint mistook a TRUNCATE guard for a TRUNCATE, and `ship.sh` never ran it. Reports' UTC days shifted on a server in another zone, now fixed for every transaction. A stash pop of mine briefly restored two old files from an unrelated stash; they were checked identical and removed, and both stashes are intact.
