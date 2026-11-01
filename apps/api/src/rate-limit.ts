@@ -1,4 +1,4 @@
-import { createHmac } from 'node:crypto';
+import { createHmac, hkdfSync } from 'node:crypto';
 import { isIPv4, isIPv6 } from 'node:net';
 
 export interface Clock {
@@ -90,10 +90,25 @@ export function visitorAddress(address: string): string {
     .join(':')}::/64`;
 }
 
+const derived = new WeakMap<Buffer, Map<string, Buffer>>();
+
+/**
+ * A key for one purpose only, from the root key, so hashes made for different jobs can't be compared. Hashes already
+ * stored under the root (locked-out subjects) stay on it: moving them would let a locked-out person back in.
+ */
+export function purposeKey(root: Buffer, purpose: string): Buffer {
+  let keys = derived.get(root);
+  if (!keys) derived.set(root, (keys = new Map<string, Buffer>()));
+  let key = keys.get(purpose);
+  if (!key)
+    keys.set(purpose, (key = Buffer.from(hkdfSync('sha256', root, Buffer.alloc(0), `graphinity:${purpose}`, 32))));
+  return key;
+}
+
 /**
  * A stable, non-reversible key for a visitor's address. Used for rate limits
  * and, later, duplicate reports; the address itself is never stored or logged.
  */
 export function visitorKey(address: string, key: Buffer): string {
-  return createHmac('sha256', key).update(address).digest('base64url').slice(0, 22);
+  return createHmac('sha256', purposeKey(key, 'visitor')).update(address).digest('base64url').slice(0, 22);
 }

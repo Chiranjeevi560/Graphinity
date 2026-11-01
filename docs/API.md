@@ -18,23 +18,23 @@ Base URL: `http://localhost:3000` locally; the Render URL in production.
   { "error": "handle_taken", "message": "That name is taken. Try another." }
   ```
 
-| Status | `error` | When |
-|---|---|---|
-| 400 | `invalid_request` | Missing or malformed input, or a database rule refused it |
-| 400 | `invalid_title` / `invalid_details` / `invalid_answer` | Text breaks the rules. Includes `reason`: `too_short`, `too_long`, `invalid_characters` (controls other than line breaks, and direction overrides and isolates U+202A-202E, U+2066-2069) |
-| 400 | `invalid_handle` | Name breaks the rules. Includes `reason`: `length`, `characters`, `edges`, `dots`, `digits`, `reserved` |
-| 401 | `signed_out` | No token, a bad or expired token, or the account was deleted |
-| 403 | `no_profile` | Asking or answering before setting up a profile |
-| 404 | `not_found` / `no_profile` | Nothing there / set up your profile first |
-| 409 | `handle_taken` / `profile_exists` / `handle_change_too_soon` | The last one includes `availableAt` (ISO time) |
-| 400 | `contact_details` | An answer holding a phone number, email address or invitation to message elsewhere (spec §21.2). Amounts, codes and dates are fine |
-| 409 | `already_answered` / `own_question` | One answer per person per question; never on your own |
-| 400 / 403 / 409 | `not_an_answer` / `reason_required` / `not_your_question` / `no_changes_left` / `not_picked` | Picking, marking, verdicts and ratings (see below) |
-| 413 | `too_large` | Body over the limit (4 KB; 48 KB when asking or answering while signed in) |
-| 415 | `unsupported` | Wrong content type |
-| 429 | `rate_limited` | Too many requests. `Retry-After` gives the seconds to wait |
-| 500 | `server_error` | Our fault. Details are never returned or logged |
-| 503 | `auth_unavailable` | Supabase's signing keys couldn't be loaded. Not the person's fault |
+| Status          | `error`                                                                                      | When                                                                                                                                                                                     |
+| --------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 400             | `invalid_request`                                                                            | Missing or malformed input, or a database rule refused it                                                                                                                                |
+| 400             | `invalid_title` / `invalid_details` / `invalid_answer`                                       | Text breaks the rules. Includes `reason`: `too_short`, `too_long`, `invalid_characters` (controls other than line breaks, and direction overrides and isolates U+202A-202E, U+2066-2069) |
+| 400             | `invalid_handle`                                                                             | Name breaks the rules. Includes `reason`: `length`, `characters`, `edges`, `dots`, `digits`, `reserved`                                                                                  |
+| 401             | `signed_out`                                                                                 | No token, a bad or expired token, or the account was deleted                                                                                                                             |
+| 403             | `no_profile`                                                                                 | Asking or answering before setting up a profile                                                                                                                                          |
+| 404             | `not_found` / `no_profile`                                                                   | Nothing there / set up your profile first                                                                                                                                                |
+| 409             | `handle_taken` / `profile_exists` / `handle_change_too_soon`                                 | The last one includes `availableAt` (ISO time)                                                                                                                                           |
+| 400             | `contact_details`                                                                            | An answer holding a phone number, email address or invitation to message elsewhere (spec §21.2). Amounts, codes and dates are fine                                                       |
+| 409             | `already_answered` / `own_question`                                                          | One answer per person per question; never on your own                                                                                                                                    |
+| 400 / 403 / 409 | `not_an_answer` / `reason_required` / `not_your_question` / `no_changes_left` / `not_picked` | Picking, marking, verdicts and ratings (see below)                                                                                                                                       |
+| 413             | `too_large`                                                                                  | Body over the limit (4 KB; 48 KB when asking or answering while signed in)                                                                                                               |
+| 415             | `unsupported`                                                                                | Wrong content type                                                                                                                                                                       |
+| 429             | `rate_limited`                                                                               | Too many requests. `Retry-After` gives the seconds to wait                                                                                                                               |
+| 500             | `server_error`                                                                               | Our fault. Details are never returned or logged                                                                                                                                          |
+| 503             | `auth_unavailable`                                                                           | Supabase's signing keys couldn't be loaded. Not the person's fault                                                                                                                       |
 
 ## The Profile object
 
@@ -53,6 +53,7 @@ Base URL: `http://localhost:3000` locally; the Render URL in production.
 ## Endpoints
 
 ### `GET /health`
+
 Checks that the server can reach the database as its restricted role. Used by the keep-awake worker
 and to confirm a deploy reached the database.
 `200 {"status":"ok","schemaVersion":29,"environment":"staging","release":"<commit>"}` · `503 {"status":"unavailable"}`.
@@ -60,27 +61,33 @@ and to confirm a deploy reached the database.
 was built from (`null` on your computer). The pipeline waits until `release` is the commit it deployed.
 
 ### `GET /meta`
+
 The 20 fields and 250 countries for the profile form. Public. `Cache-Control: public, max-age=3600`.
 `{ "fields": [{slug, name}], "countries": [{code, name}] }`
 
 ### `GET /me` (signed in)
+
 `{ "profile": Profile }`, or `{ "profile": null }` when the person hasn't set up yet.
 
 ### `POST /me/profile` (signed in, counts as a write)
+
 Body: `{ "handle": "Chiru.K", "country": "IN", "fields": ["imports-customs"], "adult": true }`.
 The handle is trimmed and lowercased. 1-8 distinct known fields. `adult` must be exactly `true`.
 `201 { "profile": Profile }` · 400 · 409 `handle_taken` / `profile_exists`
 
 ### `PATCH /me/profile` (signed in, counts as a write)
+
 Any of `handle`, `country`, `fields` (fields replace the whole set). A name can change once every 7
 days. `200 { "profile": Profile }` · 404 `no_profile` · 409 `handle_change_too_soon`
 
 ### `GET /handles/:handle` (signed in)
+
 Live availability while typing. Signed-in only, so it can't be used anonymously to list members.
 `{ "handle", "available": true }` or `{ "handle", "available": false, "reason", "message" }`.
 Your own current name counts as available.
 
 ### `GET /profiles/:handle`
+
 Public. `{ "profile": { handle, country, fields, joined } }`: no id, no timestamps beyond the
 month joined. 404 `not_found` with "There’s no one with that name."
 
@@ -107,13 +114,14 @@ hashed per person. `GET /ops/status` carries `rollouts`. 404 `not_found` for an 
 - `GET /privacy/ropa` (public): purpose, lawful basis and retention for every table.
 
 ### `DELETE /me` (signed in, counts as a write)
+
 Body: `{ "confirm": true }`. Deletes the profile and everything that cascades from it, records the
 sign-in as pending removal, locks the account out (a keyed hash, 2 hours), then asks Supabase to
 delete the sign-in.
 
 - `204`: done, including the sign-in at Supabase.
 - `202 { "status": "finishing", "message": "Your account is deleted. Removing your sign-in is taking
-  longer than usual; it will finish automatically." }`: Supabase didn't answer. The server retries
+longer than usual; it will finish automatically." }`: Supabase didn't answer. The server retries
   every 5 minutes at first, backing off to 6 hours, until Supabase confirms. The account is refused
   everywhere meanwhile, and the database won't accept a new profile for it. Calling again is safe.
 
@@ -188,7 +196,7 @@ changed. `meaning` is `false` when matching by meaning was unavailable. Nothing 
 returned: no authors, trust, reputation or scores. Hidden questions never appear.
 
 - `query`: 2 to 200 characters once cleaned. Shorter answers `{ results: [], corrections: [], meaning:
-  false }`; longer, or with control characters, is 400 `invalid_query` with `reason` (`too_long`,
+false }`; longer, or with control characters, is 400 `invalid_query` with `reason` (`too_long`,
   `invalid_characters`). Unknown properties and wrong types are 400.
 - Authentication is optional. Each signed-in person, and each visitor address, has its own allowance
   (a burst of 30, then one every 2 seconds) on top of the server-wide limits; past it, 429
@@ -361,7 +369,7 @@ and try again); 409 `too_many_devices` past 10.
 
 ### `POST /me/push/status` (signed in)
 
-`{ endpoint }` → `{ push: { on } }`: whether this browser gets *your* notifications. A browser's
+`{ endpoint }` → `{ push: { on } }`: whether this browser gets _your_ notifications. A browser's
 subscription may belong to whoever used it before, so the website asks rather than trusting it. A POST
 so the address stays out of URLs and logs.
 
@@ -424,14 +432,12 @@ unchanged choice creates no extra event. `GET /me/consents/audit` returns the ca
 choice events. Audit history cannot be edited or deleted through the API; account deletion removes
 it with the account.
 
-
 ### `GET /me/ad-interests` (signed in)
 
 The caller's advertising profile (ADR 0022): `{ interests: [{ field: { slug, name }, strength, updatedAt }] }`,
 strongest first; `strength` is 0–100 relative to the strongest. Empty unless they allow personalized ads
 and the platform is on. `DELETE /me/ad-interests/:field` (counts as a write) removes one topic
 (`{ removed: { field } }`, 404 `not_found` if absent). The data export includes `adInterests`.
-
 
 ### Ads on a page (ADR 0022 part 4)
 
@@ -441,14 +447,13 @@ and the platform is on. `DELETE /me/ad-interests/:field` (counts as a write) rem
 - `POST /ads/click/:token` → `{ destination }`; counted once, charged only when valid; 404 `not_found`
   when unknown, older than an hour, or advertising is off. Both have their own rate limit (429).
 
-
 ### Private campaign reports (ADR 0022 part 8)
 
 - `POST /ads/reports/private` (a member of the business) with `{ campaignId, startDate, endDate, breakdown }`
   (dates `YYYY-MM-DD`, UTC, at most 92 days, ending yesterday or earlier; `breakdown` is `day`, `country`,
   `placement` or `audience`) → 200 `{ report: { campaignId, breakdown, startDate, endDate, cells: [{ day, value,
-  impressions, clicks, conversions }], suppressed, privacy: { epsilonCharged, epsilonRemainingToday, epsilonPerMetric,
-  clipping, minimumPeople, minimumImpressions } } }`. Numbers carry fixed noise; cells under 25 people or 50
+impressions, clicks, conversions }], suppressed, privacy: { epsilonCharged, epsilonRemainingToday, epsilonPerMetric,
+clipping, minimumPeople, minimumImpressions } } }`. Numbers carry fixed noise; cells under 25 people or 50
   impressions are left out and counted in `suppressed`. 400 `invalid_range`, 400 `day_not_over`, 400 `too_fine`
   (an audience breakdown of a campaign targeting more than 3 audiences), 404 `not_found` (not a member, moderators
   included), 429 `privacy_budget_spent` (new details only; anything already released stays available).
@@ -482,9 +487,10 @@ Available while `ads` and `ads_audiences` are on (otherwise 404 `ads_off`, or 40
   → 201 `{ conversion: { counted: true } }`, or 200 with `duplicate: true` for an order id already reported;
   401 `bad_key` for a malformed key; 404 `not_counted` for any other refusal, all alike.
 - **Changed (review of 2026-11-01):** the report below now returns only `{ days, belowMinimum, throughDay, spentMicros, credited }`, over complete days, with `credited` noised and charged 1.0 to the day's budget. Exact impressions, clicks and joined paths are gone; `POST /ads/reports/private` has noisy ones. A private report now costs its ε per new day. Lift is never `significant`, and carries `joinableSalesOnly`.
+- **`GET /me/data-export` also returns** `adActivity` (ads shown, held back, partner events, reported sales), `memory`, `complaints` and `statementsOfReasons`. With `Sec-GPC: 1`, reading a question or searching adds nothing to advertising interests.
 - `GET /ads/campaigns/:id/report` (a member of the business) → 200 `{ report: { days: 30, impressions, clicks,
-  spentMicros, businessConversions, joinedPaths, credited: { last_click, first_touch, linear, time_decay, position,
-  data_driven } } }`; each model gives `{ conversions, valueMicros }`, the campaign's share of the business's
+spentMicros, businessConversions, joinedPaths, credited: { last_click, first_touch, linear, time_decay, position,
+data_driven } } }`; each model gives `{ conversions, valueMicros }`, the campaign's share of the business's
   conversions and their value (ADR 0022 part 6b). 404 `not_found` for anyone else, moderators included.
 
 ### Advertising: advertisers, campaigns, ads, targeting (ADR 0022 part 3)
@@ -582,7 +588,6 @@ It excludes the caller's own questions, hidden questions, questions they answere
 and questions older than 180 days. It stores no recommendation history, uses no affiliate or
 commercial signal, and doesn't optimize clicks. Revoking search or reading history takes effect on the
 next request. The result is a finite discovery list, not an endless feed.
-
 
 ## Outside bidders (ADR 0022 part 9a)
 

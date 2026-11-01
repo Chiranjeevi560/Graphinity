@@ -44,7 +44,7 @@ import { createAlertSender, createLimiter, createPushSender } from './push-sende
 import { dueProblems, moderatorIds, problemsOf } from './ops/alerts.ts';
 import { announceRouting, routeDueQuestions, type Explorer, type Ranker } from './routing.ts';
 import { answeringRollup, basketRollup, retentionRollup } from './olap/rollups.ts';
-import { systemClock } from './rate-limit.ts';
+import { purposeKey, systemClock } from './rate-limit.ts';
 import { buildServer } from './server.ts';
 import {
   commerceRollup,
@@ -625,7 +625,7 @@ app.addHook('onClose', (_instance, done) => {
 });
 // The platform's rollups (ADR 0024). Hourly: journal into cubes, the day's products and the graph,
 // features and experiments. Every five minutes, while advertising is on: budget pacing. Numbers only.
-const rollupSecret = config.ipHashKey;
+const rollupSecret = purposeKey(config.ipHashKey, 'rollups');
 const runRollups = serial(async () => {
   const steps: Array<[string, number, () => Promise<number>]> = [
     ['olap-rollup', 3600, () => drainJournal(db, rollupSecret)],

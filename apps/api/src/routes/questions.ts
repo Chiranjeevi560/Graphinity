@@ -276,8 +276,9 @@ export function registerQuestionRoutes(
             [viewer, id],
           );
         }
-        // A signal for the reader's advertising interests, only if they allow it (ADR 0022).
-        if (viewer) await q.query('SELECT app.record_ad_interest($1, $2, $3)', [viewer, question.field, READ_WEIGHT]);
+        // A signal for the reader's advertising interests, only if they allow it (ADR 0022) and their browser doesn't object.
+        if (viewer && req.headers['sec-gpc'] !== '1')
+          await q.query('SELECT app.record_ad_interest($1, $2, $3)', [viewer, question.field, READ_WEIGHT]);
         const answers = (
           await q.query<{
             id: string;

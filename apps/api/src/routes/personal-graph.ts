@@ -345,6 +345,25 @@ export function registerPersonalGraphRoutes(app: FastifyInstance, deps: Personal
       const adInterests = await q.query(
         'SELECT field, name, score, updated_at AS "updatedAt" FROM app.my_ad_interests()',
       );
+      const adActivity = await q.query<{ activity: unknown }>('SELECT app.my_ad_activity() AS activity');
+      const memory = await q.query(
+        `SELECT tier, key, value, strength, reviews, seen_at AS "seenAt" FROM app.memory_entries
+         WHERE user_id = $1 ORDER BY seen_at`,
+        [user.id],
+      );
+      const complaints = await q.query(
+        `SELECT public_id AS id, kind, body, question_id AS "questionId", received_at AS "receivedAt",
+                acknowledged_at AS "acknowledgedAt", resolved_at AS "resolvedAt", outcome
+         FROM app.grievances WHERE user_id = $1 ORDER BY received_at`,
+        [user.id],
+      );
+      const statements = await q.query(
+        `SELECT question_id AS "questionId", restriction, facts, legal_ground AS "legalGround",
+                terms_ground AS "termsGround", automated, redress, issued_at AS "issuedAt",
+                appeal_status AS "appealStatus", appeal_text AS "appealText"
+         FROM app.statements_of_reasons WHERE affected_id = $1 ORDER BY issued_at`,
+        [user.id],
+      );
       const consentHistory = await q.query(
         `SELECT category, enabled, policy_version AS "policyVersion", source, changed_at AS "changedAt"
          FROM app.user_consent_audit_log WHERE user_id = $1 ORDER BY changed_at, id`,
@@ -405,6 +424,10 @@ export function registerPersonalGraphRoutes(app: FastifyInstance, deps: Personal
         consents: consents.rows,
         consentHistory: consentHistory.rows,
         adInterests: adInterests.rows,
+        adActivity: adActivity.rows[0]?.activity ?? null,
+        memory: memory.rows,
+        complaints: complaints.rows,
+        statementsOfReasons: statements.rows,
         personalKnowledgeGraph: {
           nodes: nodes.rows,
           edges: edges.rows,

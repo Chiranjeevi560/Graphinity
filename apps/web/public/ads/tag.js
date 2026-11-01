@@ -10,7 +10,13 @@
   const read = () => {
     try {
       const fresh = new URLSearchParams(location.search).get('gr_eid');
-      if (fresh) sessionStorage.setItem(KEY, fresh);
+      if (fresh) {
+        sessionStorage.setItem(KEY, fresh);
+        // Out of the address bar, so it can't reach the page's analytics, a shared link or the next site's referrer.
+        const clean = new URL(location.href);
+        clean.searchParams.delete('gr_eid');
+        history.replaceState(history.state, '', clean);
+      }
       return fresh ?? sessionStorage.getItem(KEY);
     } catch {
       return null;
