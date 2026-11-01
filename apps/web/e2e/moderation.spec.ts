@@ -185,6 +185,33 @@ test('the owner sees totals, and nobody else does', async ({ page, browserName }
   await asOwner('DELETE FROM app.platform_owners WHERE profile_id = $1', [TEST_PERSON_A]);
 });
 
+test('a moderator can reach complaints past the first hundred', async ({ page, browserName }) => {
+  const run = `${browserName}${String(Date.now() % 1_000_000)}`;
+  await signIn(page, 'Test person A');
+  await setUpIfNeeded(page, `moderator.${run}`);
+  await establishTestPersonA();
+  await asOwner('INSERT INTO app.moderators (profile_id) VALUES ($1) ON CONFLICT DO NOTHING', [TEST_PERSON_A]);
+  // Far-off deadlines put these after any other test's, so the last of them is always past page one.
+  const body = `Paging check ${run}`;
+  await asOwner(
+    `INSERT INTO app.grievances (kind, body, acknowledge_by, resolve_by)
+     SELECT 'general', $1 || ' number ' || n, now() + interval '9 years', now() + interval '9 years' + n * interval '1 minute'
+     FROM generate_series(1, 101) n`,
+    [body],
+  );
+  await page.goto('/ops');
+  await expect(page.getByText(/Complaints page 1 of \d+/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Sooner deadlines' })).toBeDisabled();
+  const later = page.getByRole('button', { name: 'Later deadlines' });
+  const last = page.getByText(`${body} number 101`, { exact: true });
+  await expect(last).toHaveCount(0);
+  await later.click();
+  await expect(page.getByText(/Complaints page 2 of \d+/)).toBeVisible();
+  await expect(last).toBeVisible();
+  await audit(page, 'ops, later complaints');
+  await asOwner('DELETE FROM app.grievances WHERE body LIKE $1', [`${body}%`]);
+});
+
 test('a person makes a complaint and gets a reference, and a moderator sees it', async ({ page, browserName }) => {
   const run = `${browserName}${String(Date.now() % 1_000_000)}`;
   await signIn(page, 'Test person A');
