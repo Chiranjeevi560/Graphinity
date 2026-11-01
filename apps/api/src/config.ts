@@ -1,6 +1,7 @@
 // Reads configuration from the environment once, at startup, and refuses to
 // start if anything is missing or unsafe. A server that boots with a weak or
 // absent secret is worse than one that doesn't boot.
+import { tlsProblem } from './db-target.ts';
 import { createECDH } from 'node:crypto';
 import type { VapidKeys } from './push.ts';
 
@@ -15,6 +16,8 @@ export interface Config {
   host: string;
   port: number;
   databaseUrl: string;
+  /** The CA that signed the database's certificate, when Node doesn't trust it by itself. */
+  databaseCaPem: string | null;
   /** The one website origin allowed to call this API from a browser. */
   webOrigin: string;
   /**
@@ -62,6 +65,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 
   const databaseUrl = env.DATABASE_URL ?? '';
   if (!/^postgres(ql)?:\/\//.test(databaseUrl)) problems.push('DATABASE_URL must be a postgres:// URL');
+  else if (production) {
+    const tls = tlsProblem(databaseUrl);
+    if (tls) problems.push(`DATABASE_URL ${tls}`);
+  }
+  const databaseCaPem = env.DATABASE_CA_PEM ?? null;
 
   const webOrigin = env.WEB_ORIGIN ?? (production ? '' : 'http://localhost:5173');
   if (!isOrigin(webOrigin)) problems.push('WEB_ORIGIN must be an origin like https://example.pages.dev (no path)');
@@ -119,6 +127,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     host: env.HOST ?? (production ? '0.0.0.0' : '127.0.0.1'),
     port,
     databaseUrl,
+    databaseCaPem,
     webOrigin,
     trustProxyHops,
     ipHashKey: Buffer.from(keyHex, 'hex'),

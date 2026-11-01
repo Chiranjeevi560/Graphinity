@@ -270,12 +270,21 @@ does it for you (a later phase), you run it from your computer when a release ne
    ```
 
 4. In the window that opens, type `MIGRATION_DATABASE_URL=`, paste the string right after it, put
-   your password in place of `[YOUR-PASSWORD]`, and save. Don't send it to me: it can change
+   your password in place of `[YOUR-PASSWORD]`, add `?sslmode=require` at the very end, and save. Don't send it to me: it can change
    anything in the database. The folder is never uploaded to GitHub.
 
-**Each time:** run `npm run db:migrate:remote`. The first time it says `applied
+**Each time:** first run `npm run db:backup` and keep its passphrase safe. Then run `npm run db:migrate:remote`, and type the address it shows. The first time it says `applied
 0001_baseline.sql` (your database adopts the record; nothing in it changes) and `schema version
 16`. After that it lists any new files it applied, or says `already up to date`.
+
+## Part K: Nightly backups (optional, free)
+
+1. On GitHub, open the repository, then **Settings**, **Secrets and variables**, **Actions**, **New repository secret**.
+2. Name `BACKUP_DATABASE_URL`, value: the string from `.local/migrate.env` after the `=`. Save.
+3. Name `BACKUP_PASSPHRASE`, value: a long passphrase you also keep in a password manager. Save.
+4. Open **Actions**, **Backup**, **Run workflow**, and check it finishes green. Copies are then kept for 30 days.
+
+**Also on Render:** add `?sslmode=require` to the end of `DATABASE_URL` before the next deploy, or the new server refuses to start and the old one keeps running.
 
 ## Part J: See the owner's page (after the database is updated)
 

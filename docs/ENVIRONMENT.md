@@ -11,7 +11,7 @@ Every setting, where it lives, and the free-tier limits it runs under.
 | `RELEASE` | no | 40-hex commit hash | The commit the image was built from, written in at build time so it is the same wherever that image runs. Reported by `/health`, so a deploy can wait until its own commit answers. Must be a full hash |
 | `PORT` | no | `3000` | Render sets this itself |
 | `HOST` | no | `0.0.0.0` in production, `127.0.0.1` locally | |
-| `DATABASE_URL` | yes | `postgres://graphinity_api:…@…/postgres` | The **restricted** login role, never the owner. Secret |
+| `DATABASE_URL` | yes | `postgres://graphinity_api:…@…/postgres?sslmode=require` | The **restricted** login role, never the owner. Secret |
 | `WEB_ORIGIN` | production | `https://graphinity.pages.dev` | The one origin allowed by CORS. Must be https |
 | `TRUST_PROXY_HOPS` | production | `1` | **Measured** at deploy (SECURITY.md). No default in production |
 | `IP_HASH_KEY` | yes | 64 hex chars | `openssl rand -hex 32`. Secret. Also hashes deleted-account ids. Changing it resets rate-limit identities and forgets the 2-hour deleted-account lockout |
@@ -24,7 +24,8 @@ Every setting, where it lives, and the free-tier limits it runs under.
 
 | Variable | Required | Example | Notes |
 |---|---|---|---|
-| `MIGRATION_DATABASE_URL` | yes | `postgres://postgres.<project>:…@…pooler.supabase.com:5432/postgres` | The **schema owner**, the opposite of `DATABASE_URL`: it must own the tables and bypass row-level security (Supabase's `postgres` does). Only the migration step has it, never the running server. For the live project it lives in `.local/migrate.env` on the owner's computer (SETUP-ACCOUNTS.md, Part I). Secret |
+| `DATABASE_CA_PEM` | no | PEM text | The CA for the database's certificate, when Node doesn't trust it by itself. Not secret |
+| `MIGRATION_DATABASE_URL` | yes | `postgres://postgres.<project>:…@…pooler.supabase.com:5432/postgres?sslmode=require` | The **schema owner**, the opposite of `DATABASE_URL`: it must own the tables and bypass row-level security (Supabase's `postgres` does). Only the migration step has it, never the running server. For the live project it lives in `.local/migrate.env` on the owner's computer (SETUP-ACCOUNTS.md, Part I). Secret |
 
 Locally, `npm run db:start` generates `DATABASE_URL`, `IP_HASH_KEY`, a local `SUPABASE_URL` and a
 random dev `SUPABASE_SECRET_KEY` into `.local/api.env`.

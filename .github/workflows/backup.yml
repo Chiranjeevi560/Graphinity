@@ -1,0 +1,41 @@
+# A nightly encrypted copy of the database (docs/RUNBOOK.md, "Backups"). Does nothing until the owner adds the secrets.
+name: Backup
+on:
+  schedule:
+    - cron: '30 20 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  backup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+      - name: Encrypted dump
+        id: dump
+        env:
+          BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+          BACKUP_DIR: backup
+          # The pinned image CI tests against, so pg_dump matches Postgres 17.
+          PG_DUMP: docker run --rm -e PGHOST -e PGPORT -e PGUSER -e PGPASSWORD -e PGDATABASE -e PGSSLMODE pgvector/pgvector@sha256:3e8b3adfd27b5707128f60956f62a793c3c9326ea8cfaf0eab7adccb5d700b21 pg_dump
+        run: |
+          if [ -z "$BACKUP_DATABASE_URL" ]; then
+            echo "No backup secrets set: nothing to do."
+            exit 0
+          fi
+          node scripts/db-backup.mjs
+          echo "made=true" >> "$GITHUB_OUTPUT"
+      - name: Keep it
+        if: steps.dump.outputs.made == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: backup-${{ github.run_id }}
+          path: backup/
+          retention-days: 30
