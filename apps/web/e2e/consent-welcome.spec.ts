@@ -78,6 +78,12 @@ test('gives its three answers equal size, weight and contrast, at every width, i
     await page.setViewportSize({ width, height: 800 });
     for (const scheme of ['light', 'dark'] as const) {
       await page.emulateMedia({ colorScheme: scheme });
+      // The sheet scales in, and a box measured mid-way reads about 4% short: wait for what's really there.
+      await page.evaluate(() =>
+        Promise.all(
+          (document.querySelector('dialog[open]')?.getAnimations({ subtree: true }) ?? []).map(a => a.finished),
+        ),
+      );
       const [first, ...rest] = await measure(page);
       if (!first) throw new Error('no answers');
       expect(first.height, `${String(width)} ${scheme}: tall enough to tap`).toBeGreaterThanOrEqual(44);
