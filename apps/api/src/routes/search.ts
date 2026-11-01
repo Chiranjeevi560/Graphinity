@@ -96,7 +96,7 @@ export function registerSearchRoutes(
   // Read at most once a minute: every signed-in search would otherwise pay for a question that's almost always no.
   let diversityChecked = -Infinity;
   let diversityRunning = false;
-  async function inDiversityArm(userId: string): Promise<boolean> {
+  async function diversityArm(userId: string): Promise<string | null> {
     if (clock.now() - diversityChecked >= EXPERIMENT_CHECK_MS) {
       diversityChecked = clock.now();
       diversityRunning =
@@ -106,9 +106,7 @@ export function registerSearchRoutes(
           )
         ).rowCount === 1;
     }
-    if (!diversityRunning) return false;
-    const { experiments } = await enrol(db, userId);
-    return experiments.some(e => e.experiment === DIVERSITY_EXPERIMENT && e.arm === 'treatment');
+    return diversityRunning ? enrol(db, userId, DIVERSITY_EXPERIMENT) : null;
   }
 
   // The whole cascade in one answer, each result saying how it got there. Reads only: this records nothing about anyone.
@@ -262,6 +260,7 @@ export function registerSearchRoutes(
       const interleave = recorded && served.challenger !== null && random() < INTERLEAVE_SHARE;
       let shown: Array<{ f: Found; reasons: Reason[]; rankedPosition: number; team?: 'a' | 'b' }>;
       let swap: number | null = null;
+      let diversity: string | null = null;
       if (interleave && served.challenger) {
         const byChallenger = ordered(
           served.challenger,
@@ -276,19 +275,21 @@ export function registerSearchRoutes(
         }));
       } else {
         // Only people who chose to help improve search can be in the comparison at all.
-        const diverse = recorded && userId ? await inDiversityArm(userId) : false;
-        const inOrder = diverse
-          ? diversify(
-              byProduction,
-              await engine.vectors(
-                byProduction.map(f => f.id),
-                meaningModel,
-              ),
-              SEARCH_RESULTS,
-            )
-          : byProduction.slice(0, SEARCH_RESULTS);
+        diversity = recorded && userId ? await diversityArm(userId) : null;
+        const inOrder =
+          diversity === 'treatment'
+            ? diversify(
+                byProduction,
+                await engine.vectors(
+                  byProduction.map(f => f.id),
+                  meaningModel,
+                ),
+                SEARCH_RESULTS,
+              )
+            : byProduction.slice(0, SEARCH_RESULTS);
         const ranked = inOrder.map((f, i) => ({ f, reasons: reasonOf.get(f.id) ?? [], rankedPosition: i + 1 }));
-        swap = recorded ? chooseSwap(random, ranked.length) : null;
+        // One intervention to a search: both arms alike, so a swap can't muddy the comparison.
+        swap = recorded && !diversity ? chooseSwap(random, ranked.length) : null;
         shown = applySwap(ranked, swap);
       }
       const results = shown.map(({ f, reasons }) => ({
@@ -316,7 +317,10 @@ export function registerSearchRoutes(
               })),
               swap,
               ranker: served.production.id,
-              experiment: interleave && served.challenger ? `${served.production.id}/${served.challenger.id}` : null,
+              experiment:
+                interleave && served.challenger
+                  ? `${served.production.id}/${served.challenger.id}`
+                  : diversity && `${DIVERSITY_EXPERIMENT}/${diversity}`,
               now: new Date(clock.now()),
             })
           : null;

@@ -392,6 +392,20 @@ describe('the cascade and diversified search', () => {
         (await app.t.owner.query('SELECT 1 FROM app.exp_unit_metrics WHERE subject = $1', [id])).rowCount;
       expect(await enrolled(helper.id)).toBe(1);
       expect(await enrolled(other.id)).toBe(0);
+      // Who saw what is on the record, so later learning can tell these apart.
+      const logged = await app.t.owner.query<{ experiment: string }>(
+        'SELECT experiment FROM app.searches WHERE user_id = $1',
+        [helper.id],
+      );
+      expect(logged.rows[0]?.experiment).toBe('search_diversity/treatment');
+      // Asking which arm enters nobody, and withdrawing forgets.
+      const fresh = await member(app);
+      expect((await app.call('GET', '/me/experiments', fresh.token)).statusCode).toBe(200);
+      expect(await enrolled(fresh.id)).toBe(0);
+      await app.call('PUT', '/me/consents', helper.token, {
+        choices: [{ category: 'search_improvement', enabled: false }],
+      });
+      expect(await enrolled(helper.id)).toBe(0);
     } finally {
       await app.close();
     }
