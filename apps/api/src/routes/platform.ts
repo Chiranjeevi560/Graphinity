@@ -3,7 +3,7 @@
 // every rule (migrations 0040-0044). Owner answers are aggregates: nothing here names a person.
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Database, Queryable } from '../db.ts';
-import { enrol } from '../experiments/enrol.ts';
+import { experimentArms } from '../experiments/enrol.ts';
 import { evaluate } from '../experiments/stats.ts';
 import { GRIEVANCE_KINDS } from '../governance/legal.ts';
 import { RINGS } from '../governance/rollback.ts';
@@ -540,7 +540,7 @@ export function registerPlatformRoutes(
   );
 
   // A signed-in person's experiment arms. The unit is a keyed hash, per layer.
-  app.get('/me/experiments', { config: { auth: 'required' } }, async req => enrol(db, signedIn(req).id));
+  app.get('/me/experiments', { config: { auth: 'required' } }, async req => experimentArms(db, signedIn(req).id));
 
   app.get(
     '/commerce/intelligence/forecast',

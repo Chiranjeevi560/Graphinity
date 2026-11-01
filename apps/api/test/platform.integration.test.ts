@@ -1,5 +1,6 @@
 // The platform's database and addresses, through the real server and Postgres, as the restricted
 // role: who may reach what, what can't be rewritten, and what leaves nobody identifiable.
+import { enrol } from '../src/experiments/enrol.ts';
 import { randomUUID } from 'node:crypto';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { hashKey } from '../src/routes/ad-measurement.ts';
@@ -344,9 +345,12 @@ describe('experiments', () => {
       ),
     ).rejects.toThrow(/overlap/);
     const p = await member();
-    const first = (await h.call('GET', '/me/experiments', p.token)).json<{ experiments: Array<{ arm: string }> }>();
+    const first = (await h.call('GET', '/me/experiments', p.token)).json<{
+      experiments: Array<{ arm: string; experiment: string }>;
+    }>();
     expect(first.experiments).toHaveLength(1);
     expect((await h.call('GET', '/me/experiments', p.token)).json()).toEqual(first);
+    await enrol(db(), p.id, must(first.experiments[0]).experiment);
     const units = await o.query<{ unit_id: string }>('SELECT unit_id FROM app.exp_unit_metrics WHERE exp_id = $1', [
       exp,
     ]);

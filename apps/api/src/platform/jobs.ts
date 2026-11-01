@@ -410,6 +410,14 @@ export async function evaluateExperiments(db: Pick<Database, 'asSystem'>): Promi
       `SELECT exp_id::text AS id, control_share AS share, always_valid_p AS p FROM app.exp_definitions WHERE status = 'running'`,
     );
     for (const e of rows) {
+      // Here rather than on a person's next visit, or people who stopped coming would keep an old figure. Late joiners'
+      // answers from before they entered count too: arms are assigned at random, so that doesn't favour either.
+      await q.query(
+        `UPDATE app.exp_unit_metrics m SET post_metric_y = (SELECT count(*) FROM app.answers a, app.exp_definitions d
+           WHERE d.exp_id = m.exp_id AND a.answerer_id = m.subject AND a.created_at >= d.created_at), updated_at = now()
+         WHERE m.exp_id = $1 AND m.subject IS NOT NULL`,
+        [e.id],
+      );
       const { control, treatment } = await loadExperimentArms(q, e.id);
       if (control.y.length + treatment.y.length < 100) continue;
       const result = evaluate(control, treatment, [e.share, 1 - e.share], e.p);

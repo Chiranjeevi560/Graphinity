@@ -1,4 +1,5 @@
 // One test per verified finding of the independent review of the platform work.
+import { enrol } from '../src/experiments/enrol.ts';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { eid } from '../src/ads/rtb.ts';
 import { hashKey } from '../src/routes/ad-measurement.ts';
@@ -196,7 +197,7 @@ describe('finding 6: account deletion', () => {
       "INSERT INTO app.exp_definitions (layer_id, name, bucket_start, bucket_end, status) VALUES ($1, 'all', 0, 10000, 'running')",
       [layer],
     );
-    await h.call('GET', '/me/experiments', p.token);
+    await enrol(h.t.database, p.id, 'all');
     expect((await o.query('SELECT 1 FROM app.exp_unit_metrics WHERE subject = $1', [p.id])).rows).toHaveLength(1);
     await o.query('DELETE FROM app.profiles WHERE id = $1', [p.id]);
     expect((await o.query("SELECT 1 FROM app.grievances WHERE body LIKE '%Asha%'")).rows).toEqual([]);
