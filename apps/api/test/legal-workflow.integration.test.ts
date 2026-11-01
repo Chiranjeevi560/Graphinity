@@ -2,6 +2,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { releaseExpiredHolds } from '../src/governance/holds.ts';
 import { PROCESSING } from '../src/governance/ropa.ts';
+import { auditWithin } from '../src/platform/jobs.ts';
 import { startApp, type TestApp } from './helpers/app.ts';
 import { must, type Body } from './helpers/must.ts';
 
@@ -303,5 +304,41 @@ describe('the record of processing', () => {
       [p.id],
     );
     expect((await send()).statusCode).toBe(201);
+  });
+
+  it('an appeal whose post is gone can still be closed', async () => {
+    const { author, statement, q } = await removed();
+    await appeal(author.token, statement.id);
+    const second = await moderator();
+    await h.t.owner.query('DELETE FROM app.questions WHERE id = $1', [q]);
+    expect(
+      (await h.call('POST', `/ops/appeals/${statement.id}`, second.token, { decision: 'overturn' })).statusCode,
+    ).toBe(200);
+  });
+
+  it('an action and its audit entry stand or fall together', async () => {
+    const p = await member();
+    const before = await h.t.owner.query<{ n: number }>('SELECT count(*)::int AS n FROM app.audit_log');
+    const sent = await h.call('POST', '/grievances', p.token, {
+      kind: 'general',
+      body: 'Someone is using my name here.',
+    });
+    expect(sent.statusCode).toBe(201);
+    const after = await h.t.owner.query<{ n: number }>('SELECT count(*)::int AS n FROM app.audit_log');
+    expect(must(after.rows[0]).n).toBe(must(before.rows[0]).n + 1);
+    // Without system rights once it's done: the person's transaction doesn't keep them.
+    await h.t.database.withUser(p.id, async q => {
+      await auditWithin(q, { action: 'test.within', actor: 'person', subject: 's', detail: {} });
+      expect((await q.query('SELECT 1 FROM app.audit_log')).rowCount).toBe(0);
+    });
+    await expect(h.t.owner.query('TRUNCATE app.audit_log')).rejects.toThrow(/append-only/);
+    const m = await moderator();
+    const q = await ask((await member()).token);
+    await h.call('POST', '/review/decision', m.token, { kind: 'question', id: q, decision: 'remove' });
+    const logged = await h.t.owner.query(
+      "SELECT 1 FROM app.audit_log WHERE action = 'moderation.remove' AND subject = $1",
+      [`question:${q}`],
+    );
+    expect(logged.rows).toHaveLength(1);
   });
 });

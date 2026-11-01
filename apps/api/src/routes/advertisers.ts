@@ -8,6 +8,7 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Database, Queryable } from '../db.ts';
 import { cleanLine } from '../text.ts';
 import { isModerator } from './moderation.ts';
+import { auditWithin } from '../platform/jobs.ts';
 import { fail, pgCode, signedIn } from './common.ts';
 
 const uuid = { type: 'string', format: 'uuid' };
@@ -100,7 +101,7 @@ export function registerAdvertiserRoutes(
   app.put(
     '/ads/advertisers/:id/pixel',
     {
-      config: { auth: 'required', write: true },
+      config: { auth: 'required', write: true, freshAuth: true },
       schema: {
         params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } }, required: ['id'] },
         body: {
@@ -145,7 +146,7 @@ export function registerAdvertiserRoutes(
   app.post(
     '/ads/advertisers',
     {
-      config: { auth: 'required', write: true },
+      config: { auth: 'required', write: true, freshAuth: true },
       schema: {
         body: {
           type: 'object',
@@ -193,7 +194,7 @@ export function registerAdvertiserRoutes(
 
   app.post(
     '/ads/advertisers/:id/campaigns',
-    { config: { auth: 'required', write: true }, schema: { params: idParams, body: campaignBody } },
+    { config: { auth: 'required', write: true, freshAuth: true }, schema: { params: idParams, body: campaignBody } },
     async (req, reply) => {
       if (!enabled()) return off(reply);
       const user = signedIn(req);
@@ -268,7 +269,7 @@ export function registerAdvertiserRoutes(
   app.patch(
     '/ads/campaigns/:id',
     {
-      config: { auth: 'required', write: true },
+      config: { auth: 'required', write: true, freshAuth: true },
       schema: {
         params: idParams,
         body: {
@@ -327,7 +328,7 @@ export function registerAdvertiserRoutes(
   app.post(
     '/ads/campaigns/:id/creatives',
     {
-      config: { auth: 'required', write: true },
+      config: { auth: 'required', write: true, freshAuth: true },
       schema: {
         params: idParams,
         body: {
@@ -369,7 +370,7 @@ export function registerAdvertiserRoutes(
   app.put(
     '/ads/campaigns/:id/targeting',
     {
-      config: { auth: 'required', write: true },
+      config: { auth: 'required', write: true, freshAuth: true },
       schema: {
         params: idParams,
         body: {
@@ -473,6 +474,13 @@ export function registerAdvertiserRoutes(
         db.withUser(user.id, async q => {
           if (!(await isModerator(q))) return 'forbidden' as const;
           const r = await q.query('UPDATE app.ad_advertisers SET status = $2 WHERE public_id = $1', [id, status]);
+          if (r.rowCount)
+            await auditWithin(q, {
+              action: 'ad_review.advertiser',
+              actor: 'moderator',
+              subject: id,
+              detail: { status },
+            });
           return r.rowCount ? ('ok' as const) : ('missing' as const);
         }),
       );
@@ -517,6 +525,13 @@ export function registerAdvertiserRoutes(
               decision === 'reject' ? cleanLine(reason ?? '') : null,
             ],
           );
+          if (r.rowCount)
+            await auditWithin(q, {
+              action: 'ad_review.creative',
+              actor: 'moderator',
+              subject: id,
+              detail: { decision },
+            });
           return r.rowCount ? ('ok' as const) : ('missing' as const);
         }),
       );

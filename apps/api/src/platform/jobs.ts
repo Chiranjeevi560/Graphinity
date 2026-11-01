@@ -419,6 +419,20 @@ export async function audit(
   return next;
 }
 
+/**
+ * An entry written in the caller's own transaction, so it and the action commit or roll back together. System rights
+ * last only for the entry: the rest of the transaction runs as the person it belongs to.
+ */
+export async function auditWithin(
+  q: Queryable,
+  entry: { action: string; actor: string; subject: string; detail: Record<string, unknown> },
+): Promise<void> {
+  const system = (on: string) => q.query("SELECT set_config('app.system', $1, true)", [on]);
+  await system('on');
+  await audit(q, entry);
+  await system('');
+}
+
 /** The whole chain re-derived from its rows: the first broken entry, or null. */
 export async function verifyAudit(q: Queryable): Promise<{ entries: number; brokenAt: number | null }> {
   const { rows } = await q.query<{

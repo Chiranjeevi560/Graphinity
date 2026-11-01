@@ -6,6 +6,7 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Database, Queryable } from '../db.ts';
 import { handleProblem, normalizeHandle } from '../handles.ts';
 import { cleanBody, textProblem } from '../text.ts';
+import { auditWithin } from '../platform/jobs.ts';
 import { fail, pgCode, signedIn } from './common.ts';
 
 export const REPORT_REASONS = ['spam', 'abuse', 'private_info', 'misleading', 'other'] as const;
@@ -173,7 +174,7 @@ export function registerModerationRoutes(app: FastifyInstance, { db }: { db: Dat
           JOIN app.reports r ON r.answer_id = a.id
             AND r.created_at > coalesce((SELECT max(d.decided_at) FROM app.decisions d WHERE d.answer_id = a.id), '-infinity')
           GROUP BY a.id, p.handle
-        ) open ORDER BY last DESC LIMIT 50`)
+        ) open ORDER BY hidden DESC, last DESC LIMIT 50`)
       ).rows;
       // People giving each other points from a shared network in the last 30 days.
       const pairs = (
@@ -264,6 +265,12 @@ export function registerModerationRoutes(app: FastifyInstance, { db }: { db: Dat
             user.id,
           ]);
           if (decision === 'remove') await recordRemoval(q, kind, id, user.id);
+          await auditWithin(q, {
+            action: `moderation.${decision}`,
+            actor: 'moderator',
+            subject: `${kind}:${id}`,
+            detail: {},
+          });
           return { decision: { kind, id, decision } };
         });
       } catch (err) {
@@ -315,6 +322,12 @@ export function registerModerationRoutes(app: FastifyInstance, { db }: { db: Dat
             decision === 'confirm'
               ? ((await q.query<{ n: number }>('SELECT app.take_back_collusion($1) AS n', [group.id])).rows[0]?.n ?? 0)
               : 0;
+          await auditWithin(q, {
+            action: `collusion.${decision}`,
+            actor: 'moderator',
+            subject: id,
+            detail: { awardsTakenBack: takenBack },
+          });
           return { decision: { id, decision, awardsTakenBack: takenBack } };
         });
       } catch (err) {
@@ -366,6 +379,8 @@ export function registerModerationRoutes(app: FastifyInstance, { db }: { db: Dat
             reason,
           ]);
         }
+        // By public id, not handle: a handle names a person, and this log outlives them.
+        await auditWithin(q, { action: 'block.added', actor: 'moderator', subject: person.id, detail: {} });
         return { block: { handle, blocked: true } };
       });
     },
