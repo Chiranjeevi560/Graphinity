@@ -136,10 +136,14 @@ async function load(q: Queryable, now: number) {
   ).rows;
   const units = (
     await q.query<{ exp: string; arm: string; x: number; y: number }>(
-      `SELECT m.exp_id::text AS exp, m.arm, m.pre_experiment_covariate_x AS x, m.post_metric_y AS y
-       FROM app.exp_unit_metrics m JOIN app.exp_definitions d ON d.exp_id = m.exp_id
-       WHERE d.status = 'running' ORDER BY m.exp_id, m.unit_id LIMIT $1`,
-      [MAX_ROWS * 4],
+      // Per experiment, or the oldest would use up the whole allowance.
+      `SELECT exp, arm, x, y FROM (
+         SELECT m.exp_id::text AS exp, m.arm, m.pre_experiment_covariate_x AS x, m.post_metric_y AS y,
+                row_number() OVER (PARTITION BY m.exp_id ORDER BY m.unit_id) AS nth
+         FROM app.exp_unit_metrics m JOIN app.exp_definitions d ON d.exp_id = m.exp_id
+         WHERE d.status = 'running'
+       ) u WHERE nth <= $1`,
+      [MAX_ROWS],
     )
   ).rows;
   return {

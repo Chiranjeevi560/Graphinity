@@ -236,6 +236,8 @@ describe('ad reminders', () => {
     expect(res.statusCode, res.body).toBe(201);
     const reminder = res.json<{ audience: { id: string } }>().audience.id;
     await build();
+    // Tapped while they'd chosen personal ads.
+    await w.h.t.owner.query('UPDATE app.ad_impressions SET personal = true WHERE ad_id IS NOT NULL');
     // 99 recent tappers: under the floor.
     expect((await list(live.owner, live.advertiser)).find(a => a.id === reminder)?.status).toBe('insufficient');
     // A signed-in reader who tapped too makes 100.
@@ -246,13 +248,21 @@ describe('ad reminders', () => {
     await w.h.t.owner.query('INSERT INTO app.ad_identities (profile_id) VALUES ($1) ON CONFLICT DO NOTHING', [
       reader.id,
     ]);
-    await w.h.t.owner.query(
-      `INSERT INTO app.ad_impressions (campaign_id, creative_id, ad_id, placement, price_micros, shown_at, clicked_at)
-       SELECT c.id, cr.id, d.ad_id, 'search', 1000, now() - interval '1 day', now() - interval '1 day'
-       FROM app.ad_campaigns c JOIN app.ad_creatives cr ON cr.campaign_id = c.id, app.ad_identities d
-       WHERE c.public_id = $1 AND d.profile_id = $2`,
-      [live.campaign, reader.id],
-    );
+    const tap = (personal: boolean) =>
+      w.h.t.owner.query(
+        `INSERT INTO app.ad_impressions (campaign_id, creative_id, ad_id, placement, price_micros, shown_at, clicked_at, personal)
+         SELECT c.id, cr.id, d.ad_id, 'search', 1000, now() - interval '1 day', now() - interval '1 day', $3
+         FROM app.ad_campaigns c JOIN app.ad_creatives cr ON cr.campaign_id = c.id, app.ad_identities d
+         WHERE c.public_id = $1 AND d.profile_id = $2`,
+        [live.campaign, reader.id, personal],
+      );
+    // A tap from when they allowed only measurement doesn't count, whatever they've chosen since.
+    await tap(false);
+    await build();
+    expect((await list(live.owner, live.advertiser)).find(a => a.id === reminder)?.status).toBe('insufficient');
+    // It's gone again so the frequency counts below see only the reader's one tap.
+    await w.h.t.owner.query('DELETE FROM app.ad_impressions WHERE NOT personal AND ad_id IS NOT NULL');
+    await tap(true);
     await build();
     expect((await list(live.owner, live.advertiser)).find(a => a.id === reminder)?.status).toBe('ready');
     await w.h.call('PUT', `/ads/campaigns/${live.campaign}/targeting`, live.owner.token, {

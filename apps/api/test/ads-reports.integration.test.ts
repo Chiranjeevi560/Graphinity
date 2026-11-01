@@ -202,6 +202,25 @@ describe('private reports', () => {
     const by = (breakdown: string) =>
       ask(live.owner.token, { campaignId: live.campaign, startDate: yesterday(), endDate: yesterday(), breakdown });
     expect((await by('audience')).json<Body>().error).toBe('too_fine');
+    // Emptying the targeting just before asking doesn't help: what was shown in the range counts.
+    const id = must(
+      (
+        await w.h.t.owner.query<{ id: string }>('SELECT id::text FROM app.ad_campaigns WHERE public_id = $1', [
+          live.campaign,
+        ])
+      ).rows[0],
+    ).id;
+    await w.h.t.owner.query(
+      `INSERT INTO app.ad_impressions (campaign_id, creative_id, placement, price_micros, shown_at, audience_id)
+       SELECT $1, cr.id, 'search', 5, $2::timestamptz, a.id
+       FROM app.ad_creatives cr,
+            (SELECT au.id FROM app.ad_audiences au JOIN app.ad_targeting t ON t.value = au.public_id::text
+             WHERE t.campaign_id = $1) a
+       WHERE cr.campaign_id = $1`,
+      [id, `${yesterday()}T12:00:00Z`],
+    );
+    await w.h.t.owner.query('DELETE FROM app.ad_targeting WHERE campaign_id = $1', [id]);
+    expect((await by('audience')).json<Body>().error).toBe('too_fine');
     expect((await by('day')).statusCode).toBe(200);
   });
 

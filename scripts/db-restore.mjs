@@ -42,6 +42,11 @@ if (isAuthenticated(file)) {
   // Plain text sits in `work` for this long, so nothing here may exit before the finally has removed it.
   const work = mkdtempSync(join(tmpdir(), 'graphinity-restore-'));
   const plain = join(work, 'dump');
+  for (const signal of ['SIGINT', 'SIGTERM'])
+    process.on(signal, () => {
+      rmSync(work, { recursive: true, force: true });
+      process.exit(1);
+    });
   try {
     await decryptToFile(file, plain, process.env.BACKUP_PASSPHRASE ?? '');
     ok =

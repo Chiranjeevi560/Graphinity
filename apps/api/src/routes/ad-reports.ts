@@ -135,20 +135,29 @@ export function registerAdReportRoutes(
         user.id,
         async q =>
           (
-            await q.query<{ id: string; audiences: number }>(
-              `SELECT c.id::text, greatest(
-                 (SELECT count(*)::int FROM app.ad_targeting t WHERE t.campaign_id = c.id AND t.kind = 'audience'),
-                 -- What was actually shown in the range, not today's targeting: it can be emptied just before asking.
-                 (SELECT count(DISTINCT i.audience_id)::int + (bool_or(i.audience_id IS NULL))::int
-                  FROM app.ad_impressions i WHERE i.campaign_id = c.id AND i.shown_at >= $2 AND i.shown_at < $3)
-               ) AS audiences
-               FROM app.ad_campaigns c WHERE c.public_id = $1 AND app.is_ad_member(c.advertiser_id)`,
-              [b.campaignId, from, new Date(to.getTime() + DAY_MS)],
+            await q.query<{ id: string }>(
+              `SELECT c.id::text FROM app.ad_campaigns c WHERE c.public_id = $1 AND app.is_ad_member(c.advertiser_id)`,
+              [b.campaignId],
             )
           ).rows[0],
       );
       if (!campaign) return fail(reply, 404, 'not_found', 'There’s no such campaign you run.');
-      const cost = releaseCost(b.breakdown, campaign.audiences);
+      // As the system: the person asking can't read impressions, so counting them as that person finds none. What was
+      // actually shown in the range counts, not today's targeting, which could be emptied just before asking.
+      const audiences = await db.asSystem(
+        async q =>
+          (
+            await q.query<{ n: number }>(
+              `SELECT greatest(
+                 (SELECT count(*)::int FROM app.ad_targeting t WHERE t.campaign_id = $1 AND t.kind = 'audience'),
+                 (SELECT count(DISTINCT i.audience_id)::int + coalesce(bool_or(i.audience_id IS NULL)::int, 0)
+                  FROM app.ad_impressions i WHERE i.campaign_id = $1 AND i.shown_at >= $2 AND i.shown_at < $3)
+               ) AS n`,
+              [campaign.id, from, new Date(to.getTime() + DAY_MS)],
+            )
+          ).rows[0]?.n ?? 0,
+      );
+      const cost = releaseCost(b.breakdown, audiences);
       // A person in many of the campaign's audiences would appear in that many cells: more than a
       // day's budget can hide.
       if (cost > EPSILON_DAILY)
