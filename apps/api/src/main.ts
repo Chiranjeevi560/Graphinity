@@ -44,6 +44,7 @@ import { createAlertSender, createLimiter, createPushSender } from './push-sende
 import { dueProblems, moderatorIds, problemsOf } from './ops/alerts.ts';
 import { announceRouting, routeDueQuestions, type Explorer, type Ranker } from './routing.ts';
 import { answeringRollup, basketRollup, retentionRollup } from './olap/rollups.ts';
+import { sweepMemory } from './intelligence/memory-job.ts';
 import { runModelEvaluations } from './platform/evaluations.ts';
 import { purposeKey, systemClock } from './rate-limit.ts';
 import { buildServer } from './server.ts';
@@ -638,6 +639,7 @@ const runRollups = serial(async () => {
     ['feature-store', 3600, () => materializeFeatures(db, Date.now())],
     ['experiments', 3600, () => evaluateExperiments(db)],
     ['model-evaluations', 3600, () => runModelEvaluations(db, Date.now())],
+    ['memory-sweep', 3600, () => sweepMemory(db, Date.now())],
     [
       'ad-signal-expiry',
       3600,
