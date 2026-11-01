@@ -1,6 +1,6 @@
 // Search (ADR 0015 part 4): from the home page to a result and back, with what
 // is recorded to improve search only for someone who allowed it.
-import { asOwner, clearConsoleErrors, expect, readAsOwner, setUpIfNeeded, signIn, test } from './helpers.ts';
+import { asOwner, clearConsoleErrors, expect, readAsOwner, setUpIfNeeded, signIn, test, settle } from './helpers.ts';
 
 test.beforeEach(clearConsoleErrors);
 
@@ -56,10 +56,14 @@ test('searches from home, opens a result, and records the reading only when allo
   // Signing out forgets the last search: the next person on this device doesn't see it.
   // Within the app, as a person does it (a page load would forget it anyway).
   await page.getByRole('link', { name: /^Your profile/ }).click();
+  // Signing out ends by going home, after the sign-in service answers. The address can already read "/" before then,
+  // so wait for that answer, or going home could land after the next step.
+  const ended = page.waitForResponse(/\/auth\/v1\/logout/);
   await page.getByRole('button', { name: 'Sign out' }).click();
+  await ended;
   await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeVisible();
-  // Signing out ends by going home: wait for it, or it could land after the next step.
   await expect(page).toHaveURL(/\/$/);
+  await settle(page);
   await page.evaluate(() => {
     history.pushState(null, '', '/search');
     window.dispatchEvent(new PopStateEvent('popstate'));

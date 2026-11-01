@@ -66,7 +66,7 @@ Status: ✅ built and tested · ◐ in progress · ○ planned · ⤳ bent (reas
 | §2.3 Bounties via Stripe (months 18–36) | Not now: needs money and legal decisions | ⤳ |
 | §17.2 SLOs, PagerDuty, k6, Toxiproxy, chaos, GameDays | ⤳ Out of scope on free tiers with one server; revisit with real traffic | ⤳ |
 
-| Master AI Platform Charter (2026-10) | Engines, schema, jobs and addresses per ADR 0024; several engines tested but not yet connected, some items not built: `project report.md` lists both | ◐ |
+| Master AI Platform Charter (2026-10) | Engines, schema, jobs and addresses per ADR 0024; most engines connected, several only measuring (they change nothing anyone sees), some items not built: `project report.md` lists each | ◐ |
 
 ## Bends, in one place
 

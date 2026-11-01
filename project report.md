@@ -363,7 +363,7 @@ Found, not yet fixed: at 100k questions the meaning stage (unchanged, already us
 
 ## Master AI Platform Charter run (2026-11-01, Claude)
 
-**This is not complete.** The charter asked for everything to be finished; some is connected, some is tested but not
+**Superseded by "Completion of the charter run" at the end of this report.** **This is not complete.** The charter asked for everything to be finished; some is connected, some is tested but not
 connected, some isn't built. All of it is on the branch, none of it in production: migrations 0039-0045 await
 `npm run db:migrate:remote`.
 
@@ -421,3 +421,58 @@ tests of the new routes, and mutation testing beyond the rules named in commits.
 
 0.6 kB more script budget for the Sponsored slot; a lawyer before any ad switch or the complaint wording; `SECURITY_CONTACT`;
 adding themselves to `app.platform_owners`; running the remote migration.
+
+## Completion of the charter run (2026-11-01, Claude)
+
+Supersedes the table and lists above. **Scores are engineering judgment, not measurement.** Nothing here has real traffic, real partners or a deployment, and none of it is in production: migrations 0046-0060 await the owner.
+
+### Production Readiness Scorecard
+
+| Subsystem | State | Score |
+|---|---|---:|
+| Consent, Symmetry screen, GPC | Connected. GPC also stops interest recording and journey steps. Measurement can be withdrawn, removing what it collected | 88 |
+| Delete and export | Ad rows, memory, complaints and statements now covered. A merchant's own copy of an id is out of reach | 85 |
+| Security review | Six reviewers, then three re-audits, each smaller than the last; findings fixed with attack tests. A final pass of the last fixes wasn't re-reviewed | 82 |
+| DP reports | Every read charged, floors noised, 30-day cap. No lifetime bound; signed-out viewers get a weaker guarantee | 78 |
+| Ad billing | Budgets under lock, running total. No invalid-click filter | 75 |
+| Audit log | Commits with its action; append-only. Unkeyed, so a schema owner could rewrite it | 75 |
+| Backups | Authenticated encryption; local restore rehearsed, tamper refused. Not run against Supabase or in GitHub | 70 |
+| Step-up | Built, wide coverage, **off until the owner turns it on** | 55 |
+| Moderation limits, collusion | Connected, with evidence. Three aged accounts can still hide a post until reviewed | 78 |
+| Legal workflow | Clocks, statements, appeals, holds connected. Wording unconfirmed by a lawyer; moderator screen has no paging control though the API does | 60 |
+| OpenRTB, partner events, holdout | Connected, off. No real partner tested. Lift can't be significant, by design | 62 |
+| Calibration, pacing | Connected, off | 72 |
+| Delayed CVR, tuning, counterfactual, uplift | **Measuring only** via the daily job, on the owner page. Change nothing anyone sees. Tuning isn't in real training | 55 |
+| Trust flow, Fraudar | Evidence for moderators. Runtime on a large real graph unmeasured | 60 |
+| Bi-temporal graph, GraphSAGE | Connected; embeddings feed Related topics, but start from random features, so may mean little | 55 |
+| Session graph | Connected to a screen, consent-gated | 70 |
+| Memory | All three tiers connected; semantic is stored and shown, used by nothing | 60 |
+| Feature store, registry | One feature group; shadow and canary don't route traffic | 58 |
+| Experiments | Connected; no product surface reads an arm | 62 |
+| OLAP, owner page | Connected, browser tested. No heatmap, burn rate, LTV or CAC | 62 |
+| LinUCB | Thompson routing is connected; the general LinUCB engine still has no caller | 35 |
+| Template registry | Tested, no caller: with no LLM by the owner's decision it has little to serve | 25 |
+| Multimodal | Engines only; Graphinity takes no images | 25 |
+| Rollback governor | Runs, tested, connected to flags. Render has no rings | 55 |
+| SLSA, SBOM, manifest | In `release.yml`; not exercised by a real release here | 78 |
+
+**Equal-weight mean: about 63/100. This isn't production ready.** The largest gaps need things code can't supply: traffic, partners, a lawyer and a deployment.
+
+### Not built, and not evaluated
+
+Two-Tower log-Q, SQ8/PQ quantization, MMoE/PLE, DPP/MMR diversity and Double ML. The brief asked to evaluate these by benchmark: **that wasn't done.** Without real traffic such a benchmark would mostly measure synthetic data. Also not built: the S2S partner webhook push, joint text-image embeddings.
+
+### Verified
+
+Each commit passed the full gate (API and website tests on real Postgres as the restricted role, coverage, lint, types, size). Mutations named in each commit message.
+Browser audit, Chromium and WebKit, 40 tests, screenshots looked at: the last full run after the dropdown and text box fixes passed 39. The one failure was a timing race in the search test, about one run in three on Chromium, in the test and not the product; the fixed test then passed repeated runs in the numbers of the final message. **The full 40 wasn't run again after that one test fix.**
+Lighthouse on `/`: performance 97, accessibility, best practices and SEO 100, LCP 2.3 s, CLS 0.
+Load, local, 20,000 questions, 32 concurrent, client and server in one process: question 5,600 a second (p95 8 ms), signed in with memory on 2,800 (13 ms), related topics 7,800 (6 ms), sitemap 16,500 (2 ms), no errors. That's on a local socket database, so it says nothing about Render and Supabase.
+
+### Corrections on the record
+
+Commit 04aa3a6 said the backup rehearsal passed before it had: the first run used the wrong `pg_dump` and failed. It passed on the rerun. 72ee358 implied every rule had a mutation test, but its audience-cost fix had none and did nothing; 246ff63 fixed it. A bug found along the way: the audit log broke at its eleventh entry (00151e4).
+
+### Waiting on the owner
+
+See the final message of the run: backup then migrations, `sslmode` on Render, the step-up switch, a lawyer, grievance officer, `SECURITY_CONTACT`, the PR.
