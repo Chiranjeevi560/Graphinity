@@ -129,6 +129,9 @@ export async function registerAdMeasurementRoutes(
         } catch {
           host = null;
         }
+        // Per pixel and per id, so one script can't fill the table: the same polite answer either way.
+        if (!perKey.take(`pixel:${b.pixel}`).ok || !perKey.take(`pixel-eid:${b.eidToken}`).ok)
+          return reply.code(202).send({ accepted: true });
         // Global Privacy Control reaches here too, whatever the tag did.
         if (host && req.headers['sec-gpc'] !== '1')
           await db.asSystem(q =>
@@ -156,7 +159,15 @@ export async function registerAdMeasurementRoutes(
       bodyLimit: 2 * 1024 * 1024,
       // No key, no reading a two-megabyte body.
       onRequest: async (req, reply) => {
-        if (!bearerKey(req.headers.authorization)) return reply.code(202).send({ status: 'insufficient' });
+        // Before any of the body is read: a made-up key, or advertising off, must not cost two megabytes.
+        const key = bearerKey(req.headers.authorization);
+        if (!key || !deps.enabled()) return reply.code(202).send({ status: 'insufficient' });
+        const known = await db.asSystem(
+          async q =>
+            (await q.query<{ id: string | null }>('SELECT app.active_key_advertiser($1) AS id', [hashKey(key)])).rows[0]
+              ?.id,
+        );
+        if (!known) return reply.code(202).send({ status: 'insufficient' });
       },
       schema: {
         body: {

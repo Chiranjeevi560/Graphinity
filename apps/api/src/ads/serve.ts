@@ -217,7 +217,7 @@ export async function loadIndex(q: Queryable): Promise<IndexedCampaign[]> {
               (SELECT p.lambda FROM app.ad_pacing p WHERE p.campaign_id = c.id AND p.day = (now() AT TIME ZONE 'UTC')::date)
             END AS lambda,
             coalesce((SELECT sum(i.charged_micros) FROM app.ad_impressions i
-                      WHERE i.campaign_id = c.id AND i.shown_at >= date_trunc('day', now(), 'UTC')), 0)::text AS spent,
+                      WHERE i.campaign_id = c.id AND i.charged_at >= date_trunc('day', now(), 'UTC')), 0)::text AS spent,
             (SELECT count(*) FROM app.ad_impressions i WHERE i.campaign_id = c.id AND i.shown_at > now() - interval '30 days')::text AS impressions,
             (SELECT count(*) FROM app.ad_impressions i WHERE i.campaign_id = c.id AND i.shown_at > now() - interval '30 days'
                AND i.clicked_at IS NOT NULL)::text AS clicks,

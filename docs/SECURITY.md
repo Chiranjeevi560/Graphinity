@@ -381,6 +381,9 @@ now on: maintenance scripts name the local socket explicitly and never read `mig
   ring it is under review would tell it to change. It is deleted with the account.
 - A legal hold keeps the words of a removed post with no author until the appeal closes; deleting an account still
   works (ADR 0027). Whether that meets a real legal demand is for a lawyer.
+- Ad billing (review of 2026-11-01, migration 0051): spend counts by when a charge happened, so clicks after midnight can't
+  escape a day's budget; total budgets, pauses and suspensions hold at click time. Staff tapping their own ad isn't a click.
+  Click fraud from outside remains limited only by per-visitor allowances: there's no invalid-click filter yet.
 - Awards whose question was deleted can't be named by a guarded take-back row, so they stay.
 - Advertising (ADR 0022) uses a person's data only when `app.ads_permitted()` says so: switches on,
   the country's rule approved by a lawyer (only the owner can change rules) and the person's own

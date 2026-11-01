@@ -10,6 +10,9 @@ export default defineConfig({
     include: ['test/**/*.test.ts'],
     // Integration tests each create their own database; keep runs predictable.
     fileParallelism: false,
+    // Time limits catch hangs, not slowness: a busy laptop stalled pure maths past the 5-second default.
+    testTimeout: 60_000,
+    hookTimeout: 120_000,
     // The coverage ratchet in CONSTRAINTS.md: today's numbers less its 0.5
     // point tolerance. Applies whenever coverage is measured (test:coverage).
     coverage: {
