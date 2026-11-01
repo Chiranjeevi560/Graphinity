@@ -57,7 +57,7 @@ describe('consent-aware knowledge recommendations', () => {
       recommendations: Array<{ id: string; reason: string; score: number }>;
     }>();
     expect(result.enabled).toBe(true);
-    expect(result.algorithmVersion).toBe('feed-rrf-v3');
+    expect(result.algorithmVersion).toBe('feed-rrf-v4');
     expect(result.recommendations.find(item => item.id === candidateId)).toMatchObject({
       reason: 'Related to your recent Graphinity searches',
     });
