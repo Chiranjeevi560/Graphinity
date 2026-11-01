@@ -70,10 +70,12 @@ export function createDatabase(connectionString: string, options: DatabaseOption
       await client.query('BEGIN');
       // Third argument true = local to this transaction, so the identity
       // can never leak to the next request that reuses this connection.
-      await client.query("SELECT set_config('app.user_id', $1, true), set_config('app.system', $2, true)", [
-        userId,
-        system,
-      ]);
+      // UTC whatever the server's default: reports' "complete days" are UTC dates, and a date cast in another zone
+      // moved their edges by hours. In this statement so it costs no extra round trip.
+      await client.query(
+        "SELECT set_config('app.user_id', $1, true), set_config('app.system', $2, true), set_config('timezone', 'UTC', true)",
+        [userId, system],
+      );
       const result = await fn(client);
       await client.query('COMMIT');
       return result;

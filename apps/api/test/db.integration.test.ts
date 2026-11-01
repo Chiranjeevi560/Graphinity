@@ -35,6 +35,12 @@ async function refused(sql: string): Promise<string> {
 describe('schema', () => {
   // Running the baseline again on an older database is tested in migrations.integration.test.ts
   // (that is how such databases adopt migrations); here, the version the migrations leave.
+  it('runs every transaction in UTC, so a date means the same day whatever the server is set to', async () => {
+    const zone = "SELECT current_setting('timezone') AS z";
+    expect((await database.withUser(null, q => q.query<{ z: string }>(zone))).rows[0]?.z).toBe('UTC');
+    expect((await database.asSystem(q => q.query<{ z: string }>(zone))).rows[0]?.z).toBe('UTC');
+  });
+
   it('records the schema version the latest migration declares', async () => {
     const { rows } = await owner.query('SELECT version FROM app.schema_meta');
     expect(VERSION).toBeGreaterThan(0);
