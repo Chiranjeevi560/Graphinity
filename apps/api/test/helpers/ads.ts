@@ -12,11 +12,16 @@ import { must } from './must.ts';
 
 export type Ad = { token: string; headline: string; domain: string; label: string; advertiser: string };
 
-export async function startAdWorld(prefix: string, flags: readonly string[] = ['ads', 'ads_behavioral']) {
+export async function startAdWorld(
+  prefix: string,
+  flags: readonly string[] = ['ads', 'ads_behavioral'],
+  limits: NonNullable<Parameters<typeof startApp>[1]>['limits'] = {},
+) {
   let names = 0;
   let on = true;
   const holder: { server: ReturnType<typeof createAdServer> | null } = { server: null };
   const h: TestApp = await startApp(() => Date.now(), {
+    limits,
     adsEnabled: () => on,
     adServer: {
       serve: (input: Parameters<ReturnType<typeof createAdServer>['serve']>[0]) => must(holder.server).serve(input),

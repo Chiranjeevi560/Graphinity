@@ -58,6 +58,8 @@ export interface Limits {
   anonymousBodyBytes: number;
   /** Changes one signed-in person can make (profile edits, later posts). */
   userWrites: BucketOptions;
+  /** Ad clicks that can be charged, per person or address. */
+  adCharges: BucketOptions;
   /** Searches per signed-in person, or per visitor address (POST /search). */
   search: BucketOptions;
   /** Opens and reading times recorded per person (PUT /searches/:id/opens/:position). */
@@ -74,6 +76,8 @@ export const defaultLimits: Limits = {
   visitor: { capacity: 300, refillPerSecond: 10, maxKeys: 50_000 },
   anonymousBodyBytes: 4 * 1024,
   userWrites: { capacity: 20, refillPerSecond: 1 / 30, maxKeys: 50_000 },
+  // Ten an hour: far past a real reader, and it caps what one address can drain.
+  adCharges: { capacity: 10, refillPerSecond: 10 / 3600, maxKeys: 50_000 },
   // A burst of 30, then one every two seconds: well beyond anyone reading the
   // results, well short of scraping. Generous per address for the same
   // carrier reason as the visitor limit.
@@ -370,6 +374,7 @@ export async function buildServer(deps: Deps) {
     server: deps.adServer ?? createAdServer(db),
     clock,
     limit: limits.ads,
+    chargeLimit: limits.adCharges,
     keySecret: config.ipHashKey,
   });
   registerAdvertiserRoutes(app, { db, enabled: deps.adsEnabled ?? (() => false) });
