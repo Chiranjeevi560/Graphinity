@@ -54,6 +54,16 @@ async function server(
   return app;
 }
 
+describe('Global Privacy Control', () => {
+  it('says it saw the signal, and says nothing without it', async () => {
+    const app = await server();
+    const on = await app.inject({ url: '/health', headers: { 'sec-gpc': '1' } });
+    expect(on.headers['x-gpc-honored']).toBe('1');
+    const off = await app.inject('/health');
+    expect(off.headers['x-gpc-honored']).toBeUndefined();
+  });
+});
+
 describe('health', () => {
   it('reports ok with the schema version when the database answers', async () => {
     const app = await server();

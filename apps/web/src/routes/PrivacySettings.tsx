@@ -223,6 +223,11 @@ export default function PrivacySettings() {
   return (
     <main className="page legal">
       <h1 className="text-title1">Your data choices</h1>
+      {navigator.globalPrivacyControl && (
+        <p className="text-subhead" role="status">
+          Global Privacy Control is on in this browser, and Graphinity honors it here.
+        </p>
+      )}
       <p className="text-body secondary">
         Optional uses start off. Choose separately what Graphinity may use to personalize your experience or support
         commercial programs. Your choices are saved with a history you can review below.

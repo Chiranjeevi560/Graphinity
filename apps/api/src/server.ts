@@ -193,6 +193,8 @@ export async function buildServer(deps: Deps) {
 
   app.addHook('onRequest', async (req, reply) => {
     reply.headers(securityHeaders);
+    // Says the signal was seen. What it stops is enforced where each thing happens: ads, interests, journeys, consent.
+    if (req.headers['sec-gpc'] === '1') reply.header('x-gpc-honored', '1');
 
     // The visitor's own allowance first: a request refused here must not
     // spend the shared allowance, or one address could exhaust it and lock

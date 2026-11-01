@@ -72,3 +72,13 @@ test('searches from home, opens a result, and records the reading only when allo
   await expect(page.getByRole('link', { name: new RegExp(word) })).toHaveCount(0);
   await expect(page.getByRole('searchbox', { name: 'Search questions' })).toHaveValue('');
 });
+
+test('someone whose browser sends Global Privacy Control is told it is honored', async ({ page, browserName }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'globalPrivacyControl', { value: true });
+  });
+  await signIn(page, 'A brand-new person');
+  await setUpIfNeeded(page, `gpc.${browserName}${String(Date.now() % 1_000_000)}`);
+  await page.goto('/me/privacy');
+  await expect(page.getByText('Global Privacy Control is on in this browser')).toBeVisible();
+});
