@@ -2,7 +2,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { hashKey } from '../src/routes/ad-measurement.ts';
 import type { TestApp } from './helpers/app.ts';
-import { startAdWorld } from './helpers/ads.ts';
+import { crowd, startAdWorld } from './helpers/ads.ts';
 import { must, type Body } from './helpers/must.ts';
 
 let w: Awaited<ReturnType<typeof startAdWorld>>;
@@ -176,5 +176,73 @@ describe('uploads', () => {
     });
     expect(res.statusCode).toBe(202);
     expect(res.json<Body>()).toEqual({ status: 'insufficient' });
+  });
+});
+
+describe('invalid clicks', () => {
+  const charged = async (token: string) =>
+    Number(
+      must(
+        (
+          await h.t.owner.query<{ c: string }>(
+            'SELECT charged_micros::text AS c FROM app.ad_impressions WHERE token = $1',
+            [token],
+          )
+        ).rows[0],
+      ).c,
+    );
+  const impression = async (campaign: string, adId: string | null) =>
+    must(
+      (
+        await h.t.owner.query<{ token: string }>(
+          `INSERT INTO app.ad_impressions (campaign_id, creative_id, ad_id, placement, price_micros)
+           SELECT c.id, cr.id, $2::uuid, 'search', 700000 FROM app.ad_campaigns c JOIN app.ad_creatives cr ON cr.campaign_id = c.id
+           WHERE c.public_id = $1 LIMIT 1 RETURNING token::text`,
+          [campaign, adId],
+        )
+      ).rows[0],
+    ).token;
+
+  it('charges a campaign for one person once a day, however many new impressions they make', async () => {
+    const live = await w.liveCampaign([{ kind: 'field', value: 'travel' }], { dailyBudgetMicros: 9_000_000 });
+    const { adIds } = await crowd(w, 2, {});
+    const [a, b] = [must(adIds[0]), must(adIds[1])];
+    const first = await impression(live.campaign, a);
+    const again = await impression(live.campaign, a);
+    const other = await impression(live.campaign, b);
+    for (const t of [first, again, other]) expect((await h.call('POST', `/ads/click/${t}`)).statusCode).toBe(200);
+    expect(await charged(first)).toBe(700000);
+    expect(await charged(again)).toBe(0);
+    expect(await charged(other)).toBe(700000);
+  });
+
+  it('stops charging past one address allowance, still sending them on', async () => {
+    const tight = await startAdWorld('tight', ['ads'], {
+      adCharges: { capacity: 2, refillPerSecond: 0.0001, maxKeys: 10 },
+    });
+    try {
+      const live = await tight.liveCampaign([{ kind: 'field', value: 'travel' }], { dailyBudgetMicros: 9_000_000 });
+      const tokens: string[] = [];
+      for (let i = 0; i < 3; i++)
+        tokens.push(
+          must(
+            (
+              await tight.h.t.owner.query<{ token: string }>(
+                `INSERT INTO app.ad_impressions (campaign_id, creative_id, placement, price_micros)
+                 SELECT c.id, cr.id, 'search', 700000 FROM app.ad_campaigns c JOIN app.ad_creatives cr ON cr.campaign_id = c.id
+                 WHERE c.public_id = $1 LIMIT 1 RETURNING token::text`,
+                [live.campaign],
+              )
+            ).rows[0],
+          ).token,
+        );
+      for (const t of tokens) expect((await tight.h.call('POST', `/ads/click/${t}`)).statusCode).toBe(200);
+      const { rows } = await tight.h.t.owner.query<{ n: number }>(
+        'SELECT count(*)::int AS n FROM app.ad_impressions WHERE charged_micros > 0',
+      );
+      expect(rows[0]?.n).toBe(2);
+    } finally {
+      await tight.h.close();
+    }
   });
 });

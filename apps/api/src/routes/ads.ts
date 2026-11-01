@@ -22,10 +22,14 @@ export function registerAdRoutes(
     clock: Clock;
     limit: BucketOptions;
     keySecret: Buffer;
+    /** Clicks per person or address that can cost a business anything. */
+    chargeLimit: BucketOptions;
   },
 ) {
   const { db } = deps;
   const buckets = new TokenBuckets(deps.limit, deps.clock);
+  // ponytail: one server's memory, and people behind one address share it, which errs for the advertiser. Shared counters when there are two servers.
+  const charges = new TokenBuckets(deps.chargeLimit, deps.clock);
   const allowed = (userId: string | null, ip: string) =>
     buckets.take(userId ? `u:${userId}` : visitorKey(visitorAddress(ip), deps.keySecret));
   app.get('/me/ad-interests', { config: { auth: 'required' } }, async req => {
@@ -200,12 +204,13 @@ export function registerAdRoutes(
         return fail(reply, 429, 'rate_limited', 'Too many requests. Wait a minute, then try again.');
       }
       const { token } = req.params as { token: string };
+      const key = viewer ? `u:${viewer}` : visitorKey(visitorAddress(req.ip), deps.keySecret);
       const row = await db.asSystem(
         async q =>
           (
             await q.query<{ destination: string; click_id: string | null }>(
-              'SELECT destination, click_id::text FROM app.record_ad_click($1, $2)',
-              [token, viewer],
+              'SELECT destination, click_id::text FROM app.record_ad_click($1, $2, $3)',
+              [token, viewer, charges.take(key).ok],
             )
           ).rows[0],
       );
