@@ -6,12 +6,14 @@ import {
   evaluateExplorationEffect,
   evaluatePositionBias,
   evaluatePriceElasticity,
+  evaluateTwoTower,
   evaluateRoutingPolicy,
   evaluateUplift,
   MIN_CLICKS,
   MIN_DECISIONS,
   MIN_PER_ARM,
   MIN_QUESTIONS,
+  MIN_READERS,
   MIN_SEARCH_ROWS,
   runModelEvaluations,
 } from '../src/platform/evaluations.ts';
@@ -162,6 +164,21 @@ describe('what each one says', () => {
     expect(must(result.high)).toBeGreaterThan(-0.1);
     // One arm too thin: nothing.
     expect(evaluateExplorationEffect(log.map(d => ({ ...d, target: 1 })))).toBeNull();
+  });
+
+  it('compares two-tower retrieval with most-opened on each person’s latest open', () => {
+    // Ten groups of readers, each reading its own eight questions: taste a popularity list can't see.
+    const opens = Array.from({ length: 400 }, (_, u) =>
+      Array.from({ length: 6 }, (_, k) => ({
+        user: `u${String(u)}`,
+        item: `g${String(u % 10)}-${String((u + k * 3) % 8)}`,
+      })),
+    ).flat();
+    const result = must(evaluateTwoTower(opens));
+    expect(result.people).toBe(400);
+    expect(must(result.recallTwoTower)).toBeGreaterThan(must(result.recallPopular) + 0.2);
+    // Too few people who opened two different questions: nothing.
+    expect(evaluateTwoTower(opens.filter(o => Number(o.user.slice(1)) < MIN_READERS - 1))).toBeNull();
   });
 
   it('scores uplift on units the model did not fit', () => {

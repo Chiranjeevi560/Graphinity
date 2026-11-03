@@ -3,6 +3,7 @@
 // outside the database transaction, so a slow fit never holds a connection.
 import { estimateElasticity } from '../commerce/elasticity.ts';
 import { classifyCommercialIntent, INTENT_DIMENSIONS } from '../commercial-intent.ts';
+import { underCollusionReview } from '../collusion.ts';
 import type { Database, Queryable } from '../db.ts';
 import {
   doublyRobustValue,
@@ -14,6 +15,7 @@ import {
 import { doubleMl } from '../ml/double-ml.ts';
 import { fitDelayedFeedback, predictConversion, type DelayedExample } from '../ml/delayed-feedback.ts';
 import { searchTpe, walkForwardFolds } from '../ml/tuning.ts';
+import { topItems, trainTwoTower } from '../ml/two-tower.ts';
 import { effect, fitXLearner, qini, type UpliftRow } from '../ml/uplift.ts';
 
 export const MIN_CLICKS = 200;
@@ -21,6 +23,8 @@ export const MIN_SEARCH_ROWS = 500;
 export const MIN_DECISIONS = 200;
 export const MIN_PER_ARM = 100;
 export const MIN_QUESTIONS = 50;
+/** People with at least two questions opened from search, for the retrieval comparison. */
+export const MIN_READERS = 100;
 const MAX_ROWS = 5_000;
 const DAY_MS = 86_400_000;
 /** A sale later than this after its click isn't credited, so an older click's outcome is final. */
@@ -105,6 +109,54 @@ export function evaluateUplift(rows: readonly UpliftRow[]): Record<string, numbe
   return {
     units: rows.length,
     ...qini(held.map(r => ({ score: effect(model, r.x), treated: r.treated, y: r.y }))),
+  };
+}
+
+/**
+ * Whether two-tower retrieval (ml/two-tower.ts, ADR 0032) would find what people go on to open better than "most
+ * opened": each person's latest question opened from search is held back, both learn from the rest, and recall@10 is
+ * whether the held-back one is in their ten. Measuring only: nothing serves it.
+ */
+export function evaluateTwoTower(opens: ReadonlyArray<{ user: string; item: string }>): Record<string, number> | null {
+  const byUser = new Map<string, string[]>();
+  for (const o of opens) byUser.set(o.user, [...(byUser.get(o.user) ?? []), o.item]);
+  const readers = [...byUser].filter(([, items]) => new Set(items).size >= 2);
+  if (readers.length < MIN_READERS) return null;
+  const itemIndex = new Map<string, number>();
+  const id = (item: string) => itemIndex.get(item) ?? itemIndex.set(item, itemIndex.size).get(item) ?? 0;
+  const train: Array<readonly [number, number]> = [];
+  const held: number[] = [];
+  const seen: Array<Set<number>> = [];
+  readers.forEach(([, items], u) => {
+    const last = id(items[items.length - 1] ?? '');
+    const before = new Set(items.slice(0, -1).map(id));
+    before.delete(last);
+    held.push(last);
+    seen.push(before);
+    for (const i of before) train.push([u, i]);
+  });
+  const model = trainTwoTower(train, { users: readers.length, items: itemIndex.size, logQ: true });
+  const counts = new Map<number, number>();
+  for (const [, i] of train) counts.set(i, (counts.get(i) ?? 0) + 1);
+  const popular = [...counts].sort((a, b) => b[1] - a[1] || a[0] - b[0]).map(([i]) => i);
+  let tower = 0;
+  let top = 0;
+  held.forEach((item, u) => {
+    const skip = seen[u] ?? new Set<number>();
+    if (topItems(model, u, 10, skip).includes(item)) tower += 1;
+    if (
+      popular
+        .filter(i => !skip.has(i))
+        .slice(0, 10)
+        .includes(item)
+    )
+      top += 1;
+  });
+  return {
+    people: readers.length,
+    items: itemIndex.size,
+    recallTwoTower: tower / held.length,
+    recallPopular: top / held.length,
   };
 }
 
@@ -219,7 +271,18 @@ async function load(q: Queryable, now: number) {
        GROUP BY field, date_trunc('day', shown_at)`,
     )
   ).rows;
+  const reads = (
+    await q.query<{ user: string; item: string }>(
+      // Who opened what from search, oldest first; people under collusion review are left out, as in training.
+      `SELECT s.user_id::text AS user, r.question_id::text AS item
+       FROM app.search_opens o JOIN app.search_results r USING (search_id, position) JOIN app.searches s ON s.id = o.search_id
+       WHERE o.opened_at > now() - interval '90 days' AND s.experiment IS NULL AND NOT ${underCollusionReview('s.user_id')}
+       ORDER BY o.opened_at DESC LIMIT $1`,
+      [MAX_ROWS * 4],
+    )
+  ).rows.reverse();
   return {
+    reads,
     questions,
     prices,
     delayed: clicks.map((c): DelayedExample => ({
@@ -261,6 +324,7 @@ export async function runModelEvaluations(db: Pick<Database, 'asSystem'>, now: n
     ['routing-policy-value', evaluateRoutingPolicy(data.decisions)],
     ['routing-exploration-effect', evaluateExplorationEffect(data.decisions)],
     ['commercial-intent', evaluateCommercialIntent(data.questions)],
+    ['two-tower-retrieval', evaluateTwoTower(data.reads)],
     ['ad-price-elasticity', evaluatePriceElasticity(data.prices)],
     ...[...byExperiment].map(([id, rows]): [string, object | null] => [`uplift:${id}`, evaluateUplift(rows)]),
   ];
