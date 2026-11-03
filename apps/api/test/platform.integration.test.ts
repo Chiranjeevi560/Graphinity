@@ -294,11 +294,63 @@ describe('the feature store', () => {
       must(
         (
           await h.t.owner.query<{ d: number }>(
-            "SELECT cardinality(numeric_features) AS d FROM app.feature_store_online WHERE entity_type = 'field' AND entity_id = 'travel'",
+            "SELECT cardinality(numeric_features) AS d FROM app.feature_store_online WHERE entity_type = 'field' AND entity_id = 'travel' AND feature_group = 'activity'",
           )
         ).rows[0],
       ).d,
     ).toBe(3);
+  });
+});
+
+describe('topic outcome features', () => {
+  it('records how a topic’s questions turn out, from what happened by then', async () => {
+    const [asker, answerer] = [randomUUID(), randomUUID()];
+    for (const [id, handle] of [
+      [asker, 'outcome.asker'],
+      [answerer, 'outcome.answerer'],
+    ] as const) {
+      await h.t.owner.query('BEGIN');
+      await h.t.owner.query(
+        "INSERT INTO app.profiles (id, handle, country, adult_confirmed_at, created_at) VALUES ($1, $2, 'IN', now(), now() - interval '60 days')",
+        [id, handle],
+      );
+      await h.t.owner.query("INSERT INTO app.profile_fields (profile_id, field) VALUES ($1, 'study-abroad')", [id]);
+      await h.t.owner.query('COMMIT');
+    }
+    const ask = async (title: string) =>
+      must(
+        (
+          await h.t.owner.query<{ id: string }>(
+            "INSERT INTO app.questions (asker_id, field, title) VALUES ($1, 'study-abroad', $2) RETURNING id::text",
+            [asker, title],
+          )
+        ).rows[0],
+      ).id;
+    const answered = await ask('Which evening course in Pune taught you Python well?');
+    await ask('Is a part-time MBA in Hyderabad worth it after five years?');
+    const answer = must(
+      (
+        await h.t.owner.query<{ id: string }>(
+          "INSERT INTO app.answers (question_id, answerer_id, body) VALUES ($1, $2, 'I took the weekend one at the college near the station, and it was good.') RETURNING id::text",
+          [answered, answerer],
+        )
+      ).rows[0],
+    ).id;
+    await h.t.owner.query('INSERT INTO app.selections (question_id, answer_id) VALUES ($1, $2)', [answered, answer]);
+    await materializeFeatures(db(), Date.now());
+    const { rows } = await h.t.owner.query<{ v: number[] }>(
+      "SELECT numeric_features AS v FROM app.feature_store_online WHERE entity_type = 'field' AND entity_id = 'study-abroad' AND feature_group = 'outcomes'",
+    );
+    // Half answered within a day, half with a pick, half an answer each.
+    expect(must(rows[0]).v).toEqual([0.5, 0.5, 0.5]);
+    // Seen from before the answer, nothing had happened yet.
+    const before = Date.now() - 3_600_000;
+    await h.t.owner.query("UPDATE app.questions SET created_at = now() - interval '2 hours' WHERE field = 'study-abroad'");
+    await materializeFeatures(db(), before);
+    const [old] = await db().asSystem(q =>
+      asOfJoin(q, 'field', ['outcomes'], [{ entityId: 'study-abroad', observedAt: new Date(before + 1).toISOString() }]),
+    );
+    expect(must(old).values).toEqual([0, 0, 0]);
   });
 });
 
