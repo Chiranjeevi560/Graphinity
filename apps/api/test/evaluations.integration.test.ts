@@ -4,6 +4,7 @@ import {
   evaluateCommercialIntent,
   evaluateDelayedCvr,
   evaluateExplorationEffect,
+  evaluateLinUcb,
   evaluateMultiTask,
   evaluatePositionBias,
   evaluatePriceElasticity,
@@ -203,6 +204,34 @@ describe('what each one says', () => {
     expect(
       evaluateMultiTask(routed.map((r, i) => ({ ...r, answered: i < MIN_ANSWERED - 1, picked: false }))),
     ).toBeNull();
+  });
+
+  it('replays LinUCB over logged choices and values what it would have done', () => {
+    const random = (() => {
+      let s = 5;
+      return () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 2 ** 32;
+    })();
+    // Exploring pays when the model is unsure of its pick, and costs when it is sure; the log chose evenly.
+    const log = Array.from({ length: 4000 }, () => {
+      const predicted = random();
+      const explored = random() < 0.5;
+      const p = explored ? 0.8 - 0.6 * predicted : 0.2 + 0.6 * predicted;
+      return {
+        reward: random() < p ? 1 : 0,
+        propensity: 0.5,
+        examination: 1,
+        target: explored ? 0 : 1,
+        predicted,
+        targetValue: predicted,
+      };
+    });
+    const result = must(evaluateLinUcb(log));
+    expect(must(result.logged)).toBeCloseTo(0.5, 1);
+    expect(must(result.linUcbIps)).toBeGreaterThan(must(result.logged) + 0.1);
+    // The best any policy can do here is 0.65.
+    expect(must(result.linUcbIps)).toBeLessThan(0.75);
+    expect(must(result.matched)).toBeGreaterThan(1000);
+    expect(evaluateLinUcb(log.slice(0, MIN_DECISIONS - 1))).toBeNull();
   });
 
   it('scores uplift on units the model did not fit', () => {
