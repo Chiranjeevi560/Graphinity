@@ -16,6 +16,10 @@
 // 5. It passes only on a gain at least MIN_GAIN whose 99% paired bootstrap
 //    interval over people excludes zero. Passing makes it a candidate, not the
 //    serving model: online comparison decides that (judge.ts).
+// With `tune`, step 3's settings are first chosen by ml/tuning.ts: a Latin
+// hypercube of settings, successive halving on the number of trees, each scored
+// walk-forward on the training people's later searches. The held-out people
+// are never seen by tuning, so the gate still judges a model on strangers.
 import { createHash } from 'node:crypto';
 import { pairedDifference, type Judged } from '../search/metrics.ts';
 import { clickWeight, estimatePropensities, type Propensities } from '../search/interventions.ts';
@@ -27,7 +31,10 @@ import {
   serializeLambdaMart,
   trainLambdaMart,
   type LambdaMartModel,
+  type LambdaMartOptions,
 } from './lambdamart.ts';
+import { seededRandom } from './linalg.ts';
+import { latinHypercube, successiveHalving, walkForwardFolds, type Space } from './tuning.ts';
 
 export const SEARCH_RANKER_ALGORITHM = 'lambdamart-ips';
 /** Held-out searches with a click, and the people behind them, needed before the gate decides. */
@@ -48,6 +55,64 @@ export interface SearchRankerInput {
   /** The serving learned model, if any: the bar to clear. Otherwise the logged order is. */
   serving: { version: number; artifact: Uint8Array } | null;
   options?: { trees?: number; maxDepth?: number; learningRate?: number };
+  /** Choose learning rate, depth and l2 by tuning first (the daily job does). */
+  tune?: boolean;
+}
+
+/** What tuning may choose; trees is its budget, up to the configured number. */
+export const TUNING_SPACE: Space = {
+  learningRate: { min: 0.03, max: 0.3, log: true },
+  maxDepth: { min: 2, max: 6 },
+  l2: { min: 0.1, max: 10, log: true },
+};
+export const TUNING_CONFIGS = 9;
+
+const toQuery = (s: TrainingSearch, p: Propensities) => ({
+  features: s.results.map(r => r.features),
+  labels: s.results.map(r => r.label),
+  weights: s.results.map(r => (r.label > 0 ? clickWeight(p, r.position) : 1)),
+});
+
+/**
+ * The best settings by walk-forward IPS-NDCG@10 on `train` alone, which is in the order searched: each fold learns
+ * from earlier searches and is scored on later ones, never the reverse.
+ */
+export async function tuneSearchRanker(
+  train: readonly TrainingSearch[],
+  p: Propensities,
+  base: Required<LambdaMartOptions>,
+): Promise<{ learningRate: number; maxDepth: number; l2: number; score: number }> {
+  const folds = walkForwardFolds(train.length, 2);
+  const settings = (c: Record<string, number>) => ({
+    learningRate: c.learningRate ?? base.learningRate,
+    maxDepth: Math.round(c.maxDepth ?? base.maxDepth),
+    l2: c.l2 ?? base.l2,
+  });
+  const { best } = await successiveHalving(
+    latinHypercube(TUNING_SPACE, TUNING_CONFIGS, seededRandom(1)),
+    (c, trees) => {
+      let total = 0;
+      let n = 0;
+      for (const f of folds) {
+        const model = trainLambdaMart(
+          train.slice(...f.train).map(s => toQuery(s, p)),
+          { ...base, ...settings(c), trees },
+        );
+        for (const s of train.slice(...f.test))
+          if (s.results.some(r => r.label > 0)) {
+            total += ipsNdcg(
+              s,
+              s.results.map(r => scoreOne(model, r.features)),
+              p,
+            );
+            n += 1;
+          }
+      }
+      return n ? -total / n : 0;
+    },
+    { minBudget: Math.max(1, Math.round(base.trees / 9)), maxBudget: base.trees, eta: 3 },
+  );
+  return { ...settings(best.config), score: -best.loss };
 }
 
 export interface SearchRankerResult {
@@ -68,8 +133,8 @@ export function ipsNdcg(search: TrainingSearch, scores: readonly number[], p: Pr
   return ideal > 0 ? dcg(order.map(o => gains[o.i] ?? 0)) / ideal : 0;
 }
 
-export function trainSearchRankerAndEvaluate(input: SearchRankerInput): SearchRankerResult {
-  const params = { ...LAMBDAMART_DEFAULTS, ...input.options };
+export async function trainSearchRankerAndEvaluate(input: SearchRankerInput): Promise<SearchRankerResult> {
+  let params = { ...LAMBDAMART_DEFAULTS, ...input.options };
   const empty = { trainingSearches: 0, heldOutSearches: 0, heldOutPeople: 0 };
   const propensities = estimatePropensities(
     input.searches.map(s => ({
@@ -87,22 +152,23 @@ export function trainSearchRankerAndEvaluate(input: SearchRankerInput): SearchRa
     heldOutSearches: heldOut.length,
     heldOutPeople: new Set(heldOut.map(s => s.user)).size,
   };
-  const all = { ...params, propensities: propensities.theta, eta: propensities.eta };
+  let tuned: Awaited<ReturnType<typeof tuneSearchRanker>> | null = null;
   if (dataset.heldOutSearches < MIN_HELDOUT_SEARCHES || dataset.heldOutPeople < MIN_HELDOUT_PEOPLE)
     return refuse(
       `${String(dataset.heldOutSearches)} held-out searches with a click from ${String(dataset.heldOutPeople)} people; ` +
         `${String(MIN_HELDOUT_SEARCHES)} from ${String(MIN_HELDOUT_PEOPLE)} needed`,
       dataset,
-      all,
+      { ...params, propensities: propensities.theta, eta: propensities.eta },
     );
 
   const started = performance.now();
+  if (input.tune) {
+    tuned = await tuneSearchRanker(train, propensities, params);
+    params = { ...params, learningRate: tuned.learningRate, maxDepth: tuned.maxDepth, l2: tuned.l2 };
+  }
+  const all = { ...params, propensities: propensities.theta, eta: propensities.eta, tuned };
   const model = trainLambdaMart(
-    train.map(s => ({
-      features: s.results.map(r => r.features),
-      labels: s.results.map(r => r.label),
-      weights: s.results.map(r => (r.label > 0 ? clickWeight(propensities, r.position) : 1)),
-    })),
+    train.map(s => toQuery(s, propensities)),
     params,
   );
   const trainMs = Math.round(performance.now() - started);
