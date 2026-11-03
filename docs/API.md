@@ -607,7 +607,7 @@ untracked and unshared, whatever the person chose.
 ## Enterprise analytics (ADR 0033), off by default
 
 - **`GET /enterprise/v1/topics/:field?days=`** (`days` 1 to 90, default 30) with `authorization: Bearer gre_…`:
-  `{ field, days, rows: [{ day, product, noisyCount, forecast30d, forecast90d, interval90 }] }`, newest first, at most
+  `{ field, days, rows: [{ day, product, noisyCount }] }`, newest first, at most
   500. Only products 25 or more people mentioned; every count has Laplace noise. Refusals: 404 `enterprise_off`, 401
   `bad_key` (missing, malformed, unknown or revoked), 429 `rate_limited` or `quota` (the organization's reads for the
   UTC day), 400 for a bad `days`.

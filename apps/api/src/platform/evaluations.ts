@@ -345,7 +345,7 @@ async function load(q: Queryable, now: number) {
               EXISTS (SELECT 1 FROM app.selections s JOIN app.answers a ON a.id = s.answer_id
                        WHERE s.question_id = f.question_id AND a.answerer_id = f.profile_id) AS picked
        FROM app.route_factors f JOIN app.routes r ON r.question_id = f.question_id AND r.profile_id = f.profile_id
-       WHERE r.routed_at < now() - interval '7 days'
+       WHERE r.routed_at < now() - interval '7 days' AND NOT ${underCollusionReview('f.profile_id')}
        ORDER BY r.routed_at DESC LIMIT $1`,
       [MAX_ROWS],
     )

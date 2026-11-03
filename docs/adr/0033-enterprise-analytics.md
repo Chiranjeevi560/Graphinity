@@ -13,9 +13,11 @@ it. Organizations (retailers, makers, researchers) would pay for that kind of tr
 ## Decision
 
 - **What an organization reads:** `GET /enterprise/v1/topics/:field?days=1..90` with its own key: per day, the
-  product, its noised count and forecasts. Only cube rows with 25 contributors or more, at most 500 rows.
+  product and its noised count. Only cube rows with 25 contributors or more, at most 500 rows. **Not the forecasts:**
+  they are fitted to un-noised daily mentions, so comparing one day's forecast with the next would reveal the newest
+  day's exact count (found by the independent review). Noised forecasts can be added later, fitted to noised counts.
 - **Keys:** `gre_` and 43 random characters, shown once to the owner, kept as a SHA-256 hash; revoked at once.
-- **Quota:** each organization has a number of reads a day (1,000 unless set), counted in the database, plus the
+- **Quota:** each organization has a number of reads a UTC day (1,000 unless set), counted in the database, plus the
   per-key request limit the ad keys use.
 - **Who manages it:** the platform's owner only, at `/owner/enterprise/*`, each change written to the audit log, with
   a recent sign-in once `step_up_auth` is on.
