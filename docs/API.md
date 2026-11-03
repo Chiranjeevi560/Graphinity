@@ -604,6 +604,18 @@ No new address: `POST /ads/select` may fill a slot with an outside bidder's ad w
 `POST /ads/click/:token` handles either kind. A browser's `Sec-GPC: 1` header makes that request
 untracked and unshared, whatever the person chose.
 
+## Enterprise analytics (ADR 0033), off by default
+
+- **`GET /enterprise/v1/topics/:field?days=`** (`days` 1 to 90, default 30) with `authorization: Bearer gre_…`:
+  `{ field, days, rows: [{ day, product, noisyCount, forecast30d, forecast90d, interval90 }] }`, newest first, at most
+  500. Only products 25 or more people mentioned; every count has Laplace noise. Refusals: 404 `enterprise_off`, 401
+  `bad_key` (missing, malformed, unknown or revoked), 429 `rate_limited` or `quota` (the organization's reads for the
+  UTC day), 400 for a bad `days`.
+- **Owner only** (403 `not_owner` for anyone else): `GET /owner/enterprise/orgs` (`id`, `name`, `dailyReads`,
+  `readsToday`, `keys: [{ prefix, revoked }]`); `POST /owner/enterprise/orgs { name, dailyReads? }` → 201
+  `{ org }`; `POST /owner/enterprise/orgs/:id/keys` → 201 `{ key, prefix }`, the only time the key is shown;
+  `DELETE /owner/enterprise/keys/:prefix` → 204. Writes need a recent sign-in once `step_up_auth` is on.
+
 ## Platform (ADR 0024)
 
 Owner only (`app.platform_owners`): `GET /owner/dashboard/summary`, `POST /knowledge-graph/bitemporal/query`,

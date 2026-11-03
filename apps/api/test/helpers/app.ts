@@ -32,6 +32,7 @@ export async function startApp(
     graphAnalyzer?: GraphAnalyzer;
     metrics?: MetricsRecorder;
     adsEnabled?: () => boolean;
+    enterpriseEnabled?: () => boolean;
     adServer?: AdServer;
     stepUpEnabled?: () => boolean;
   } = {},
@@ -60,6 +61,7 @@ export async function startApp(
     ...(opts.graphAnalyzer ? { graphAnalyzer: opts.graphAnalyzer } : {}),
     ...(opts.metrics ? { metrics: opts.metrics } : {}),
     ...(opts.adsEnabled ? { adsEnabled: opts.adsEnabled } : {}),
+    ...(opts.enterpriseEnabled ? { enterpriseEnabled: opts.enterpriseEnabled } : {}),
     ...(opts.adServer ? { adServer: opts.adServer } : {}),
     ...(opts.stepUpEnabled ? { stepUpEnabled: opts.stepUpEnabled } : {}),
     ...(opts.recommendationsEnabled ? { recommendationsEnabled: opts.recommendationsEnabled } : {}),

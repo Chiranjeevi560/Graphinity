@@ -29,6 +29,8 @@ describe('feature flags', () => {
       { name: 'ads_partner_sites', enabled: false },
       { name: 'ads_rtb', enabled: false },
       { name: 'embeddings', enabled: true },
+      // Off until the owner, an agreement and the privacy page say otherwise (ADR 0033).
+      { name: 'enterprise_analytics', enabled: false },
       // Off until the owner chooses: who gets notified is their decision (ADR 0013).
       { name: 'learned_routing', enabled: false },
       { name: 'learned_search_ranking', enabled: false },

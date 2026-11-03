@@ -329,6 +329,17 @@ Reviewed by an independent reader; findings fixed in migration 0045, tests in `s
   - Partner ads aren't reviewed like our own; any contract must cover content.
   - A legal hold doesn't stop account deletion, per the owner's "deleting deletes everything" rule. A lawyer must decide.
 
+## Enterprise analytics (ADR 0033)
+
+- **What leaves:** the commerce cube's rows only: products 25 or more people mentioned in a topic, with fixed Laplace
+  noise per day, and forecasts. No person, id, question or answer. Off by default.
+- **Keys:** 256 random bits, kept as SHA-256 (enough for a random key: there is nothing to guess), shown once; a
+  revoked key stops on its next request. Per-key request limits in memory, a daily quota in the database.
+- **Enforced twice:** the API checks the switch and the key's shape; `app.enterprise_topic_demand` checks the switch,
+  the key, revocation, the quota and the 25-person floor itself, and is the only read. The tables are the owner's
+  alone under forced RLS. Each is broken on purpose in `enterprise.integration.test.ts`'s commit.
+- **Gap:** whether noised totals with a 25-person floor are anonymous under DPDP and GDPR is for a lawyer.
+
 ## Incident, 2026-11-01: production database touched during local repair
 
 While repairing a local checksum, a script chose its connection by pattern from `.local/migrate.env` and reached

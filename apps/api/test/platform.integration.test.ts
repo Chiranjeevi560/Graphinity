@@ -345,10 +345,17 @@ describe('topic outcome features', () => {
     expect(must(rows[0]).v).toEqual([0.5, 0.5, 0.5]);
     // Seen from before the answer, nothing had happened yet.
     const before = Date.now() - 3_600_000;
-    await h.t.owner.query("UPDATE app.questions SET created_at = now() - interval '2 hours' WHERE field = 'study-abroad'");
+    await h.t.owner.query(
+      "UPDATE app.questions SET created_at = now() - interval '2 hours' WHERE field = 'study-abroad'",
+    );
     await materializeFeatures(db(), before);
     const [old] = await db().asSystem(q =>
-      asOfJoin(q, 'field', ['outcomes'], [{ entityId: 'study-abroad', observedAt: new Date(before + 1).toISOString() }]),
+      asOfJoin(
+        q,
+        'field',
+        ['outcomes'],
+        [{ entityId: 'study-abroad', observedAt: new Date(before + 1).toISOString() }],
+      ),
     );
     expect(must(old).values).toEqual([0, 0, 0]);
   });
