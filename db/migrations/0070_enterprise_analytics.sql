@@ -1,5 +1,5 @@
 -- Enterprise analytics (ADR 0033): an organization reads what people ask about a topic's products, as the commerce
--- cube already holds it (25 people or more, Laplace noise, a forecast), with its own key and a daily quota. Nothing
+-- cube already holds it (25 people or more, Laplace noise), with its own key and a daily quota. Nothing
 -- about any person leaves. Off by default: turning it on needs the owner, an agreement with each organization, and
 -- the privacy page saying that noised totals are shared.
 INSERT INTO app.feature_flags (name, enabled, note) VALUES
@@ -56,10 +56,11 @@ DROP POLICY IF EXISTS enterprise_reads_owner ON app.enterprise_reads;
 CREATE POLICY enterprise_reads_owner ON app.enterprise_reads FOR SELECT TO app_api USING (app.is_owner());
 
 -- A key's read: refused (no rows, and the reason) unless the switch is on, the key is live and today's quota has room.
--- Only cube rows with 25 contributors or more, as the cube promises, whatever wrote them.
+-- Only cube rows with 25 contributors or more, as the cube promises, whatever wrote them, and only the noised count:
+-- the cube's forecasts are fitted to un-noised daily mentions, so one day's forecast against the next would give away
+-- the newest day's exact count.
 CREATE OR REPLACE FUNCTION app.enterprise_topic_demand(in_key_hash text, in_field text, in_days integer)
-  RETURNS TABLE (outcome text, day date, product text, noisy_count double precision,
-                 forecast_30d double precision, forecast_90d double precision, interval_90 double precision)
+  RETURNS TABLE (outcome text, day date, product text, noisy_count double precision)
   LANGUAGE plpgsql SECURITY DEFINER
   SET search_path = pg_catalog, pg_temp
 AS $$
@@ -70,34 +71,37 @@ DECLARE
   used integer;
 BEGIN
   IF NOT app.flag_on('enterprise_analytics') THEN
-    RETURN QUERY SELECT 'off'::text, NULL::date, NULL::text, NULL::float8, NULL::float8, NULL::float8, NULL::float8;
+    RETURN QUERY SELECT 'off'::text, NULL::date, NULL::text, NULL::float8;
     RETURN;
   END IF;
   SELECT o.id, o.daily_reads INTO org, allowed
     FROM app.enterprise_keys k JOIN app.enterprise_orgs o ON o.id = k.org_id
    WHERE k.key_hash = in_key_hash AND k.revoked_at IS NULL;
   IF org IS NULL THEN
-    RETURN QUERY SELECT 'unknown'::text, NULL::date, NULL::text, NULL::float8, NULL::float8, NULL::float8, NULL::float8;
+    RETURN QUERY SELECT 'unknown'::text, NULL::date, NULL::text, NULL::float8;
     RETURN;
   END IF;
-  INSERT INTO app.enterprise_reads AS r (org_id, day, reads) VALUES (org, current_date, 1)
+  -- The quota's day is the UTC day, whatever the session's time zone.
+  INSERT INTO app.enterprise_reads AS r (org_id, day, reads) VALUES (org, (now() AT TIME ZONE 'UTC')::date, 1)
   ON CONFLICT (org_id, day) DO UPDATE SET reads = r.reads + 1 WHERE r.reads < allowed
   RETURNING r.reads INTO used;
   IF used IS NULL THEN
-    RETURN QUERY SELECT 'quota'::text, NULL::date, NULL::text, NULL::float8, NULL::float8, NULL::float8, NULL::float8;
+    RETURN QUERY SELECT 'quota'::text, NULL::date, NULL::text, NULL::float8;
     RETURN;
   END IF;
   RETURN QUERY
-    SELECT 'ok'::text, c.day, p.label, c.dp_noisy_intent_count::float8, c.holt_winters_forecast_30d::float8,
-           c.holt_winters_forecast_90d::float8, c.conformal_interval_90::float8
+    SELECT 'ok'::text, c.day, p.label, c.dp_noisy_intent_count::float8
       FROM app.olap_daily_commerce_cube c JOIN app.products p ON p.id = c.product_entity_id
      WHERE c.field_id = in_field AND c.k_distinct_contributors >= 25
-       AND c.day > current_date - least(greatest(in_days, 1), 90)
+       AND c.day > (now() AT TIME ZONE 'UTC')::date - least(greatest(in_days, 1), 90)
      ORDER BY c.day DESC, c.dp_noisy_intent_count DESC
      LIMIT 500;
 END
 $$;
 REVOKE ALL ON FUNCTION app.enterprise_topic_demand(text, text, integer) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app.enterprise_topic_demand(text, text, integer) TO app_api;
+
+-- The daily retrieval comparison reads the last 90 days of opens, newest first (platform/evaluations.ts).
+CREATE INDEX IF NOT EXISTS search_opens_opened ON app.search_opens (opened_at);
 
 UPDATE app.schema_meta SET version = 85, applied_at = now();

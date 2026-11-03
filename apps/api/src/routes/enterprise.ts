@@ -61,11 +61,8 @@ export function registerEnterpriseRoutes(
           day: string | null;
           product: string | null;
           noisy_count: number | null;
-          forecast_30d: number | null;
-          forecast_90d: number | null;
-          interval_90: number | null;
         }>(
-          `SELECT outcome, day::text AS day, product, noisy_count, forecast_30d, forecast_90d, interval_90
+          `SELECT outcome, day::text AS day, product, noisy_count
            FROM app.enterprise_topic_demand($1, $2, $3)`,
           [hashKey(key), field, days],
         ),
@@ -79,14 +76,7 @@ export function registerEnterpriseRoutes(
         field,
         days,
         // Each count has Laplace noise and covers 25 people or more; small or noisy days can read as 0.
-        rows: rows.map(r => ({
-          day: r.day,
-          product: r.product,
-          noisyCount: r.noisy_count,
-          forecast30d: r.forecast_30d,
-          forecast90d: r.forecast_90d,
-          interval90: r.interval_90,
-        })),
+        rows: rows.map(r => ({ day: r.day, product: r.product, noisyCount: r.noisy_count })),
       };
     },
   );
