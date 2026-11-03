@@ -13,6 +13,7 @@ import {
   type LoggedDecision,
 } from '../ml/counterfactual.ts';
 import { doubleMl } from '../ml/double-ml.ts';
+import { newArm, ucb, update } from '../ml/linucb.ts';
 import { auc } from '../ml/logistic.ts';
 import { predictMmoe, trainMmoe } from '../ml/mmoe.ts';
 import { fitDelayedFeedback, predictConversion, type DelayedExample } from '../ml/delayed-feedback.ts';
@@ -198,6 +199,34 @@ export function evaluateMultiTask(
 }
 
 /**
+ * How a LinUCB policy (ml/linucb.ts) would have done at choosing between the model's pick and exploring, replayed over
+ * the logged decisions oldest first (Li et al. 2011): where it agrees with what was logged, it learns from the outcome
+ * and the outcome counts, weighted by 1 / the logged propensity. Measuring only; Thompson sampling still routes.
+ */
+export function evaluateLinUcb(log: readonly LoggedDecision[], alpha = 1): Record<string, number> | null {
+  if (log.length < MIN_DECISIONS) return null;
+  const arms = [newArm(2), newArm(2)];
+  let matched = 0;
+  let value = 0;
+  for (const d of log) {
+    const x = [1, d.predicted];
+    const choice = ucb(arms[1] ?? newArm(2), x, alpha) >= ucb(arms[0] ?? newArm(2), x, alpha) ? 1 : 0;
+    if (choice !== d.target) continue;
+    matched += 1;
+    value += d.reward / Math.max(d.propensity, 0.01);
+    const arm = arms[choice];
+    if (arm) update(arm, x, d.reward);
+  }
+  if (matched < MIN_PER_ARM) return null;
+  return {
+    decisions: log.length,
+    matched,
+    linUcbIps: value / log.length,
+    logged: log.reduce((a, d) => a + d.reward, 0) / log.length,
+  };
+}
+
+/**
  * What exploring costs or gains in answers: the effect of a routing slot going to an explored person rather than the
  * model's pick, on whether they answered within 7 days. Exploration goes to people the model rates lower, so comparing
  * averages would blame exploration for the model's own doubt; double ML (ml/double-ml.ts) takes the model's prediction
@@ -374,6 +403,8 @@ export async function runModelEvaluations(db: Pick<Database, 'asSystem'>, now: n
     ['search-position-bias', evaluatePositionBias(data.opens)],
     ['routing-policy-value', evaluateRoutingPolicy(data.decisions)],
     ['routing-exploration-effect', evaluateExplorationEffect(data.decisions)],
+    // Oldest first: a replayed policy learns in the order things happened.
+    ['routing-linucb-replay', evaluateLinUcb([...data.decisions].reverse())],
     ['commercial-intent', evaluateCommercialIntent(data.questions)],
     ['two-tower-retrieval', evaluateTwoTower(data.reads)],
     ['routing-multi-task', evaluateMultiTask(data.routed)],
