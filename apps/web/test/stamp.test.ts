@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { SiteSettings } from '../src/lib/settings.ts';
+import { LEGAL_EMAIL } from '../src/lib/legal.ts';
 import { assertNeutral, STAMPED_FILES, stampDist, stampIndexHtml } from '../stamp.ts';
 
 const staging: SiteSettings = {
@@ -58,6 +59,26 @@ describe('one build, stamped for each environment', () => {
     // The build itself is untouched, and every other file is it, byte for byte.
     expect(hashes(dist)).toEqual(before);
     for (const [k, h] of before) if (!(STAMPED_FILES as readonly string[]).includes(k)) expect(a.get(k)).toBe(h);
+  });
+
+  it('publishes security.txt with the address the legal pages give, unless one is set', () => {
+    const out = mkdtempSync(join(tmpdir(), 'graphinity-out-'));
+    const saved = process.env.SECURITY_CONTACT;
+    try {
+      delete process.env.SECURITY_CONTACT;
+      stampDist(build(), out, production);
+      const txt = readFileSync(join(out, '.well-known', 'security.txt'), 'utf8');
+      expect(txt).toContain(`Contact: mailto:${LEGAL_EMAIL}\n`);
+      expect(txt).toContain('Canonical: https://graphinity.pages.dev/.well-known/security.txt');
+    } finally {
+      if (saved === undefined) delete process.env.SECURITY_CONTACT;
+      else process.env.SECURITY_CONTACT = saved;
+    }
+  });
+
+  it('names the same Grievance Officer address on the privacy page', () => {
+    const page = readFileSync(join(import.meta.dirname, '../src/routes/Privacy.tsx'), 'utf8');
+    expect(page).toContain(`<a href="mailto:${LEGAL_EMAIL}">${LEGAL_EMAIL}</a>`);
   });
 
   it('writes the settings and the site’s own address, escaped for the page', () => {
