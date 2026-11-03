@@ -1,6 +1,8 @@
 // The daily measuring job: engines that report on what the product does, and change nothing anyone sees. Each needs
 // a floor of real data; below it, it reports nothing rather than a number that means nothing. The heavy work runs
 // outside the database transaction, so a slow fit never holds a connection.
+import { estimateElasticity } from '../commerce/elasticity.ts';
+import { classifyCommercialIntent, INTENT_DIMENSIONS } from '../commercial-intent.ts';
 import type { Database, Queryable } from '../db.ts';
 import {
   doublyRobustValue,
@@ -17,6 +19,7 @@ export const MIN_CLICKS = 200;
 export const MIN_SEARCH_ROWS = 500;
 export const MIN_DECISIONS = 200;
 export const MIN_PER_ARM = 100;
+export const MIN_QUESTIONS = 50;
 const MAX_ROWS = 5_000;
 const DAY_MS = 86_400_000;
 /** A sale later than this after its click isn't credited, so an older click's outcome is final. */
@@ -104,6 +107,46 @@ export function evaluateUplift(rows: readonly UpliftRow[]): Record<string, numbe
   };
 }
 
+/**
+ * What share of recent questions shows each kind of commercial intent, read from their public words only
+ * (commercial-intent.ts). Two matched signals count: one can be a passing word ("I had to buy a ticket").
+ */
+export function evaluateCommercialIntent(
+  questions: ReadonlyArray<{ title: string; body: string; field: string }>,
+): Record<string, number> | null {
+  if (questions.length < MIN_QUESTIONS) return null;
+  const counts = new Map<string, number>();
+  for (const q of questions) {
+    const { dimensions } = classifyCommercialIntent({ title: q.title, supportingEvidence: [q.body], field: q.field });
+    for (const d of INTENT_DIMENSIONS)
+      if (dimensions[d].matchedSignals.length >= 2) counts.set(d, (counts.get(d) ?? 0) + 1);
+  }
+  const share = (d: string) => Math.round(((counts.get(d) ?? 0) / questions.length) * 1000) / 1000;
+  return { questions: questions.length, ...Object.fromEntries(INTENT_DIMENSIONS.map(d => [d, share(d)])) };
+}
+
+/**
+ * How the number of ads sold in a field each day moves with that day's clearing price, as support for setting reserve
+ * prices. Observational: prices rise with demand, so it's labelled a slope, not a cause, and fields without enough
+ * days or price spread are left out (estimateElasticity).
+ */
+export function evaluatePriceElasticity(
+  days: ReadonlyArray<{ field: string; price: number; quantity: number }>,
+): Record<string, number> | null {
+  const byField = new Map<string, Array<{ price: number; quantity: number }>>();
+  for (const d of days) byField.set(d.field, [...(byField.get(d.field) ?? []), d]);
+  const out: Record<string, number> = {};
+  for (const [field, points] of byField) {
+    const e = estimateElasticity(points);
+    if (!e) continue;
+    out[`${field}.slope`] = e.elasticity;
+    out[`${field}.low`] = e.low;
+    out[`${field}.high`] = e.high;
+    out[`${field}.days`] = e.observations;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
 async function load(q: Queryable, now: number) {
   const clicks = (
     await q.query<{ search: boolean; clicked_at: Date; converted_at: Date | null }>(
@@ -146,7 +189,25 @@ async function load(q: Queryable, now: number) {
       [MAX_ROWS],
     )
   ).rows;
+  const questions = (
+    await q.query<{ title: string; body: string; field: string }>(
+      // Public words only, and only what anyone can see.
+      `SELECT title, body, field FROM app.questions
+       WHERE created_at > now() - interval '90 days' AND NOT app.is_question_hidden(id)
+       ORDER BY created_at DESC LIMIT $1`,
+      [MAX_ROWS],
+    )
+  ).rows;
+  const prices = (
+    await q.query<{ field: string; price: number; quantity: number }>(
+      `SELECT field, avg(price_micros)::float8 / 1e6 AS price, count(*)::int AS quantity
+       FROM app.ad_impressions WHERE field IS NOT NULL AND shown_at > now() - interval '90 days'
+       GROUP BY field, date_trunc('day', shown_at)`,
+    )
+  ).rows;
   return {
+    questions,
+    prices,
     delayed: clicks.map((c): DelayedExample => ({
       x: Float64Array.of(1, c.search ? 1 : 0),
       delay: c.converted_at ? Math.max(0, (c.converted_at.getTime() - c.clicked_at.getTime()) / DAY_MS) : null,
@@ -184,6 +245,8 @@ export async function runModelEvaluations(db: Pick<Database, 'asSystem'>, now: n
     ['ad-cvr-delayed', evaluateDelayedCvr(data.delayed)],
     ['search-position-bias', evaluatePositionBias(data.opens)],
     ['routing-policy-value', evaluateRoutingPolicy(data.decisions)],
+    ['commercial-intent', evaluateCommercialIntent(data.questions)],
+    ['ad-price-elasticity', evaluatePriceElasticity(data.prices)],
     ...[...byExperiment].map(([id, rows]): [string, object | null] => [`uplift:${id}`, evaluateUplift(rows)]),
   ];
   const ready = results.filter((r): r is [string, object] => r[1] !== null);
