@@ -67,7 +67,6 @@ jobs:
           docker build --build-arg RELEASE="$SHA" -t "$IMAGE:$SHA" .
           docker push "$IMAGE:$SHA"
           echo "digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE:$SHA" | cut -d@ -f2)" >> "$GITHUB_OUTPUT"
-          docker logout ghcr.io
 
       - name: Signed build provenance for the image
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
@@ -75,6 +74,11 @@ jobs:
           subject-name: ${{ steps.name.outputs.image }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
+
+      # After signing: the provenance is pushed to the registry too, using the login above.
+      - name: Log out of the registry
+        if: always()
+        run: docker logout ghcr.io
 
       - name: SBOM of the image, and its vulnerability summary
         env:
