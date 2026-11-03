@@ -202,6 +202,18 @@ there are 20,000 impressions and 200 clicks in 30 days; each version's reason sa
 While `ads` is off, nobody is asked about ad purposes; turning it on shows them in "Your data choices",
 off until each person turns them on.
 
+### Enterprise analytics (ADR 0033): off until an agreement and the privacy page
+
+Organizations read noised topic demand with a key. Before turning it on: a written agreement with each organization,
+a line on the privacy page saying noised topic totals are shared, and a lawyer's view (ADR 0033). Then:
+
+```sql
+UPDATE app.feature_flags SET enabled = true, note = 'owner, <date>', updated_at = now() WHERE name = 'enterprise_analytics';
+```
+
+Add an organization and its key with `POST /owner/enterprise/orgs` and `POST /owner/enterprise/orgs/:id/keys`; the key
+is shown once. Revoke with `DELETE /owner/enterprise/keys/:prefix`.
+
 ### Operations: request metrics, SLOs and job health
 
 The server counts every response by route pattern and saves the counts once a minute (ADR 0020). A

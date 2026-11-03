@@ -46,6 +46,8 @@ export const FLAG_DEFAULTS = {
   ads_holdout: false,
   /** Primal-dual budget pacing instead of the on/off rule. */
   ads_pacing: false,
+  /** Organizations read noised topic demand with their own key (ADR 0033). */
+  enterprise_analytics: false,
   /** Dangerous actions need a sign-in from the last 5 minutes (ADR 0026). */
   step_up_auth: false,
 } as const;
