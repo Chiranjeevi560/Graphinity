@@ -18,7 +18,7 @@
     "pg": "8.23.1"
   },
   "devDependencies": {
-    "@types/node": "24.19.1",
+    "@types/node": "26.6.5",
     "@types/pg": "8.23.1",
     "fast-check": "4.10.2",
     "typescript": "7.0.2",
