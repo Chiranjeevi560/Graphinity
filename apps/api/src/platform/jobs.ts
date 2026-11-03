@@ -264,7 +264,7 @@ export async function refreshKnowledgeGraph(db: Pick<Database, 'asSystem'>, now:
 
 export const FEATURE_SCHEMA = 1;
 
-/** One definition for online and offline: the topic's activity features, never a person's. */
+/** One definition for online and offline: each topic's activity and outcome features, never a person's. */
 export async function materializeFeatures(db: Pick<Database, 'asSystem'>, now: number): Promise<number> {
   return db.asSystem(async q => {
     const at = new Date(now);
@@ -281,7 +281,22 @@ export async function materializeFeatures(db: Pick<Database, 'asSystem'>, now: n
       const values = [r.q7, r.a7, r.q28];
       await writeFeature(q, 'field', r.field, 'activity', values, at);
     }
-    return rows.length;
+    // How the topic's questions turn out over 28 days: answered within a day, a picked answer, answers per question.
+    const outcomes = await q.query<{ field: string; fast: number; picked: number; answers: number }>(
+      `SELECT x.field,
+              avg((EXISTS (SELECT 1 FROM app.answers a WHERE a.question_id = x.id AND a.created_at <= x.created_at + interval '1 day'
+                             AND a.created_at <= $1))::int)::float8 AS fast,
+              avg((EXISTS (SELECT 1 FROM app.selections s WHERE s.question_id = x.id AND s.answer_id IS NOT NULL
+                             AND s.selected_at <= $1))::int)::float8 AS picked,
+              avg((SELECT count(*) FROM app.answers a WHERE a.question_id = x.id AND a.created_at <= $1))::float8 AS answers
+       FROM app.questions x
+       WHERE x.created_at > $1::timestamptz - interval '28 days' AND x.created_at <= $1
+       GROUP BY x.field`,
+      [at],
+    );
+    for (const r of outcomes.rows)
+      await writeFeature(q, 'field', r.field, 'outcomes', [r.fast, r.picked, r.answers], at);
+    return rows.length + outcomes.rows.length;
   });
 }
 
