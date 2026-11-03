@@ -234,7 +234,7 @@ export function trainSearchRankerJob(
       const loaded = await loadSearchTraining(db);
       return { ...loaded, size: loaded.searches.length };
     },
-    (data, serving) => (options.run ?? runSearchRankerOnWorker)({ searches: data.searches, serving }),
+    (data, serving) => (options.run ?? runSearchRankerOnWorker)({ searches: data.searches, serving, tune: true }),
     result => ({
       algorithm: SEARCH_RANKER_ALGORITHM,
       params: { ...result.params },
