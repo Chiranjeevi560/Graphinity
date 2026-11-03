@@ -110,9 +110,7 @@ describe('enterprise analytics', () => {
       expect(first.statusCode).toBe(200);
       const body = first.json<{ rows: Array<{ product: string; noisyCount: number }> }>();
       // Only the last 30 days by default: the old row isn't read.
-      expect(body.rows).toEqual([
-        expect.objectContaining({ product: 'Acme Phone X', noisyCount: 42, forecast30d: 300 }),
-      ]);
+      expect(body.rows).toEqual([{ day: expect.any(String) as string, product: 'Acme Phone X', noisyCount: 42 }]);
       expect((await read(key, '/enterprise/v1/topics/travel')).json<{ rows: unknown[] }>().rows).toEqual([]);
       const third = await read(key);
       expect(third.statusCode).toBe(429);

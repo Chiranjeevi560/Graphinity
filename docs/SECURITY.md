@@ -331,8 +331,9 @@ Reviewed by an independent reader; findings fixed in migration 0045, tests in `s
 
 ## Enterprise analytics (ADR 0033)
 
-- **What leaves:** the commerce cube's rows only: products 25 or more people mentioned in a topic, with fixed Laplace
-  noise per day, and forecasts. No person, id, question or answer. Off by default.
+- **What leaves:** the commerce cube's noised counts only: products 25 or more people mentioned in a topic, with fixed
+  Laplace noise per day. Not its forecasts, which are fitted to un-noised mentions. No person, id, question or answer.
+  Off by default. The quota counts UTC days.
 - **Keys:** 256 random bits, kept as SHA-256 (enough for a random key: there is nothing to guess), shown once; a
   revoked key stops on its next request. Per-key request limits in memory, a daily quota in the database.
 - **Enforced twice:** the API checks the switch and the key's shape; `app.enterprise_topic_demand` checks the switch,
