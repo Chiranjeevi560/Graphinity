@@ -3,6 +3,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import {
   evaluateCommercialIntent,
   evaluateDelayedCvr,
+  evaluateExplorationEffect,
   evaluatePositionBias,
   evaluatePriceElasticity,
   evaluateRoutingPolicy,
@@ -129,6 +130,38 @@ describe('what each one says', () => {
     const result = must(evaluateRoutingPolicy(log));
     expect(must(result.logged)).toBeCloseTo(0.75, 5);
     expect(must(result.noExplorationIps)).toBeCloseTo(1, 1);
+  });
+
+  it('separates what exploring costs from the doubt that chose whom to explore', () => {
+    // Exploration goes to people the model rates low, and costs 0.1 in answering on top of that.
+    const random = (() => {
+      let s = 7;
+      return () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 2 ** 32;
+    })();
+    const log = Array.from({ length: 4000 }, () => {
+      const predicted = random();
+      const explored = random() < 0.8 - 0.6 * predicted;
+      const p = 0.2 + 0.6 * predicted - (explored ? 0.1 : 0);
+      return {
+        reward: random() < p ? 1 : 0,
+        propensity: 0.5,
+        examination: 1,
+        target: explored ? 0 : 1,
+        predicted,
+        targetValue: predicted,
+      };
+    });
+    const naive =
+      log.filter(d => d.target === 0).reduce((a, d) => a + d.reward, 0) / log.filter(d => d.target === 0).length -
+      log.filter(d => d.target === 1).reduce((a, d) => a + d.reward, 0) / log.filter(d => d.target === 1).length;
+    const result = must(evaluateExplorationEffect(log));
+    expect(naive).toBeLessThan(-0.2);
+    expect(must(result.effect)).toBeGreaterThan(-0.15);
+    expect(must(result.effect)).toBeLessThan(-0.05);
+    expect(must(result.low)).toBeLessThan(-0.1);
+    expect(must(result.high)).toBeGreaterThan(-0.1);
+    // One arm too thin: nothing.
+    expect(evaluateExplorationEffect(log.map(d => ({ ...d, target: 1 })))).toBeNull();
   });
 
   it('scores uplift on units the model did not fit', () => {
