@@ -4,6 +4,7 @@ import {
   evaluateCommercialIntent,
   evaluateDelayedCvr,
   evaluateExplorationEffect,
+  evaluateMultiTask,
   evaluatePositionBias,
   evaluatePriceElasticity,
   evaluateTwoTower,
@@ -11,6 +12,7 @@ import {
   evaluateUplift,
   MIN_CLICKS,
   MIN_DECISIONS,
+  MIN_ANSWERED,
   MIN_PER_ARM,
   MIN_QUESTIONS,
   MIN_READERS,
@@ -179,6 +181,28 @@ describe('what each one says', () => {
     expect(must(result.recallTwoTower)).toBeGreaterThan(must(result.recallPopular) + 0.2);
     // Too few people who opened two different questions: nothing.
     expect(evaluateTwoTower(opens.filter(o => Number(o.user.slice(1)) < MIN_READERS - 1))).toBeNull();
+  });
+
+  it('learns answering and being picked together, and scores both on people it held out', () => {
+    const random = (() => {
+      let s = 11;
+      return () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 2 ** 32;
+    })();
+    // Answering follows the first factor; being picked, among those who answer, the second.
+    const routed = Array.from({ length: 2000 }, () => {
+      const factors = Array.from({ length: 9 }, () => random());
+      const answered = random() < 0.1 + 0.7 * (factors[0] ?? 0);
+      return { factors, answered, picked: answered && random() < 0.1 + 0.8 * (factors[1] ?? 0) };
+    });
+    const result = must(evaluateMultiTask(routed));
+    expect(result.routed).toBe(2000);
+    expect(must(result.mmoeAnswered)).toBeGreaterThan(0.7);
+    expect(must(result.mmoePicked)).toBeGreaterThan(0.65);
+    expect(must(result.sharedAnswered)).toBeGreaterThan(0.7);
+    // Too few answers to learn picks from: nothing.
+    expect(
+      evaluateMultiTask(routed.map((r, i) => ({ ...r, answered: i < MIN_ANSWERED - 1, picked: false }))),
+    ).toBeNull();
   });
 
   it('scores uplift on units the model did not fit', () => {

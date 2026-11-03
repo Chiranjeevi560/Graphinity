@@ -32,7 +32,8 @@ benchmark can be rerun when it exists.
 
 **Update, 2026-11-04:** two-tower now runs daily in the measuring job on real searches (`two-tower-retrieval`), against
 most-opened, so the comparison happens as data arrives. It still serves nothing: serving it is a separate decision once
-it wins on real people.
+it wins on real people. MMoE runs the same way on routing (`routing-multi-task`): answering and being picked, against one
+shared bottom.
 
 ## Cascade timings
 

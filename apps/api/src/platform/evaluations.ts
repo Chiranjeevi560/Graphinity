@@ -13,6 +13,8 @@ import {
   type LoggedDecision,
 } from '../ml/counterfactual.ts';
 import { doubleMl } from '../ml/double-ml.ts';
+import { auc } from '../ml/logistic.ts';
+import { predictMmoe, trainMmoe } from '../ml/mmoe.ts';
 import { fitDelayedFeedback, predictConversion, type DelayedExample } from '../ml/delayed-feedback.ts';
 import { searchTpe, walkForwardFolds } from '../ml/tuning.ts';
 import { topItems, trainTwoTower } from '../ml/two-tower.ts';
@@ -25,6 +27,8 @@ export const MIN_PER_ARM = 100;
 export const MIN_QUESTIONS = 50;
 /** People with at least two questions opened from search, for the retrieval comparison. */
 export const MIN_READERS = 100;
+/** Answers among routed people, for the multi-task comparison: picks are only known for these. */
+export const MIN_ANSWERED = 50;
 const MAX_ROWS = 5_000;
 const DAY_MS = 86_400_000;
 /** A sale later than this after its click isn't credited, so an older click's outcome is final. */
@@ -161,6 +165,39 @@ export function evaluateTwoTower(opens: ReadonlyArray<{ user: string; item: stri
 }
 
 /**
+ * Whether learning "answers" and "gets picked" together (MMoE, ml/mmoe.ts, ADR 0032) predicts them better than one shared
+ * bottom does, from the nine routing factors. Every other routed person is held out; AUC on them, per task, for both.
+ * Picks are only known for people who answered, so that task learns and is scored on them alone. Measuring only.
+ */
+export function evaluateMultiTask(
+  routed: ReadonlyArray<{ factors: readonly number[]; answered: boolean; picked: boolean }>,
+): Record<string, number> | null {
+  const answered = routed.filter(r => r.answered).length;
+  if (routed.length < MIN_DECISIONS || answered < MIN_ANSWERED) return null;
+  const rows = routed.map(r => ({ x: r.factors, y: [r.answered ? 1 : 0, r.answered ? (r.picked ? 1 : 0) : null] }));
+  const fit = rows.filter((_, i) => i % 2 === 0);
+  const held = rows.filter((_, i) => i % 2 === 1);
+  const inputs = rows[0]?.x.length ?? 0;
+  const score = (shared: boolean, task: number) => {
+    const m = trainMmoe(fit, { inputs, tasks: 2, sharedGate: shared });
+    const scored = held.filter(r => r.y[task] != null);
+    return auc(
+      scored.map(r => predictMmoe(m, r.x, task)),
+      scored.map(r => r.y[task] ?? 0),
+    );
+  };
+  const out = {
+    routed: routed.length,
+    answered,
+    mmoeAnswered: score(false, 0),
+    mmoePicked: score(false, 1),
+    sharedAnswered: score(true, 0),
+    sharedPicked: score(true, 1),
+  };
+  return Object.fromEntries(Object.entries(out).filter((e): e is [string, number] => e[1] !== null));
+}
+
+/**
  * What exploring costs or gains in answers: the effect of a routing slot going to an explored person rather than the
  * model's pick, on whether they answered within 7 days. Exploration goes to people the model rates lower, so comparing
  * averages would blame exploration for the model's own doubt; double ML (ml/double-ml.ts) takes the model's prediction
@@ -271,6 +308,19 @@ async function load(q: Queryable, now: number) {
        GROUP BY field, date_trunc('day', shown_at)`,
     )
   ).rows;
+  const routed = (
+    await q.query<{ factors: number[]; answered: boolean; picked: boolean }>(
+      `SELECT f.factors,
+              EXISTS (SELECT 1 FROM app.answers a WHERE a.question_id = f.question_id AND a.answerer_id = f.profile_id
+                        AND a.created_at <= r.routed_at + interval '7 days') AS answered,
+              EXISTS (SELECT 1 FROM app.selections s JOIN app.answers a ON a.id = s.answer_id
+                       WHERE s.question_id = f.question_id AND a.answerer_id = f.profile_id) AS picked
+       FROM app.route_factors f JOIN app.routes r ON r.question_id = f.question_id AND r.profile_id = f.profile_id
+       WHERE r.routed_at < now() - interval '7 days'
+       ORDER BY r.routed_at DESC LIMIT $1`,
+      [MAX_ROWS],
+    )
+  ).rows;
   const reads = (
     await q.query<{ user: string; item: string }>(
       // Who opened what from search, oldest first; people under collusion review are left out, as in training.
@@ -282,6 +332,7 @@ async function load(q: Queryable, now: number) {
     )
   ).rows.reverse();
   return {
+    routed,
     reads,
     questions,
     prices,
@@ -325,6 +376,7 @@ export async function runModelEvaluations(db: Pick<Database, 'asSystem'>, now: n
     ['routing-exploration-effect', evaluateExplorationEffect(data.decisions)],
     ['commercial-intent', evaluateCommercialIntent(data.questions)],
     ['two-tower-retrieval', evaluateTwoTower(data.reads)],
+    ['routing-multi-task', evaluateMultiTask(data.routed)],
     ['ad-price-elasticity', evaluatePriceElasticity(data.prices)],
     ...[...byExperiment].map(([id, rows]): [string, object | null] => [`uplift:${id}`, evaluateUplift(rows)]),
   ];
