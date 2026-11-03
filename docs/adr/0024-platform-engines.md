@@ -76,3 +76,7 @@ which should happen one at a time with real traffic to compare against.
 
 - Nothing here affects anyone until migrations are applied and switches turned on.
 - `kg_*` nodes are topics and products that passed 25 people: time travel is safe to keep forever.
+
+**Update, 2026-11-04:** the feature store has a second group per topic, `outcomes`: the share of the last 28 days'
+questions answered within a day, the share with a picked answer, and answers per question, each counted only as it stood
+at the feature's time (an answer or a pick made later never reaches an earlier value). Still topics, never people.
