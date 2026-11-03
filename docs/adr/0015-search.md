@@ -262,6 +262,11 @@ the algorithm LightGBM and XGBoost run as `lambdarank`.
 - **Features** (`search/features.ts`) are the logged point-in-time ones (word and meaning reciprocal
   ranks, similarity, found-by flags, every-word, log answers, answer freshness), computed by one
   function for training and serving.
+- **Settings, tuned (2026-11-04):** the daily run first chooses learning rate, depth and L2 with
+  `ml/tuning.ts`: nine Latin-hypercube settings, successive halving on the number of trees, each
+  scored by IPS-NDCG@10 walk-forward on the training people's later searches. Held-out people are
+  never seen by tuning, and the result still has to pass the gate. It costs about six times one
+  training run. The chosen settings are kept with the model (`params.tuned`).
 
 `scripts/benchmark-ltr.mjs`, a simulated world with known true relevance (interactions between
 features). Clicks follow a position-based model with η = 1, from today's fusion order. NDCG@10 against

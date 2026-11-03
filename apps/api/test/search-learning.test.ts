@@ -142,9 +142,9 @@ describe('the offline gate', () => {
   it(
     'passes a model that orders better than what was logged, as a candidate with its evidence',
     { timeout: 60_000 },
-    () => {
+    async () => {
       const searches = logged(40_000, 1);
-      const result = trainSearchRankerAndEvaluate({ searches, serving: null, options: { trees: 40 } });
+      const result = await trainSearchRankerAndEvaluate({ searches, serving: null, options: { trees: 40 } });
       // Trained only on people it isn't judged on.
       expect(result.dataset.trainingSearches).toBe(searches.filter(s => !isHeldOutPerson(s.user)).length);
       expect(result.decision.promote).toBe(true);
@@ -156,12 +156,35 @@ describe('the offline gate', () => {
     },
   );
 
-  it('keeps no weights when it doesn’t pass, and says why', () => {
-    const r = trainSearchRankerAndEvaluate({ searches: logged(300, 2), serving: null });
+  it('keeps no weights when it doesn’t pass, and says why', async () => {
+    const r = await trainSearchRankerAndEvaluate({ searches: logged(300, 2), serving: null });
     expect(r.decision.promote).toBe(false);
     expect(r.artifact).toBeNull();
     expect(r.decision.reason).toMatch(/position bias|held-out/);
   });
+
+  it(
+    'tunes its settings on the training people’s later searches, then still has to pass the gate',
+    { timeout: 120_000 },
+    async () => {
+      const searches = logged(40_000, 1);
+      const result = await trainSearchRankerAndEvaluate({
+        searches,
+        serving: null,
+        options: { trees: 27 },
+        tune: true,
+      });
+      const tuned = result.params.tuned as { learningRate: number; maxDepth: number; l2: number; score: number };
+      expect(tuned.learningRate).toBeGreaterThanOrEqual(0.03);
+      expect(tuned.learningRate).toBeLessThanOrEqual(0.3);
+      expect([2, 3, 4, 5, 6]).toContain(tuned.maxDepth);
+      expect(tuned.score).toBeGreaterThan(0);
+      // The final model uses what tuning chose, and the gate still decides.
+      expect(result.params.learningRate).toBe(tuned.learningRate);
+      expect(result.params.maxDepth).toBe(tuned.maxDepth);
+      expect(result.decision.promote).toBe(true);
+    },
+  );
 
   it('needs both a large enough gain and an interval clear of zero', () => {
     expect(passesGate({ mean: MIN_GAIN, low: 0.001 })).toBe(true);

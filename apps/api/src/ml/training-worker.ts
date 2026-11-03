@@ -18,7 +18,7 @@ try {
       : job.job === 'routing'
         ? trainRoutingAndEvaluate(job.input)
         : job.job === 'search-ranker'
-          ? trainSearchRankerAndEvaluate(job.input)
+          ? await trainSearchRankerAndEvaluate(job.input)
           : trainAndEvaluate(job.input);
   port.postMessage({ ok: true, result }, result.artifact ? [result.artifact.buffer as ArrayBuffer] : []);
 } catch (err) {
