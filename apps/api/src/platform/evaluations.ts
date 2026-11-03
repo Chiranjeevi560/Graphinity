@@ -11,6 +11,7 @@ import {
   type ClickLog,
   type LoggedDecision,
 } from '../ml/counterfactual.ts';
+import { doubleMl } from '../ml/double-ml.ts';
 import { fitDelayedFeedback, predictConversion, type DelayedExample } from '../ml/delayed-feedback.ts';
 import { searchTpe, walkForwardFolds } from '../ml/tuning.ts';
 import { effect, fitXLearner, qini, type UpliftRow } from '../ml/uplift.ts';
@@ -105,6 +106,19 @@ export function evaluateUplift(rows: readonly UpliftRow[]): Record<string, numbe
     units: rows.length,
     ...qini(held.map(r => ({ score: effect(model, r.x), treated: r.treated, y: r.y }))),
   };
+}
+
+/**
+ * What exploring costs or gains in answers: the effect of a routing slot going to an explored person rather than the
+ * model's pick, on whether they answered within 7 days. Exploration goes to people the model rates lower, so comparing
+ * averages would blame exploration for the model's own doubt; double ML (ml/double-ml.ts) takes the model's prediction
+ * out first.
+ */
+export function evaluateExplorationEffect(log: readonly LoggedDecision[]): Record<string, number> | null {
+  const explored = log.filter(d => d.target === 0).length;
+  if (log.length < MIN_DECISIONS || explored < MIN_PER_ARM || log.length - explored < MIN_PER_ARM) return null;
+  const effect = doubleMl(log.map(d => ({ x: [d.predicted], treatment: d.target === 0 ? 1 : 0, y: d.reward })));
+  return effect && { ...effect };
 }
 
 /**
@@ -245,6 +259,7 @@ export async function runModelEvaluations(db: Pick<Database, 'asSystem'>, now: n
     ['ad-cvr-delayed', evaluateDelayedCvr(data.delayed)],
     ['search-position-bias', evaluatePositionBias(data.opens)],
     ['routing-policy-value', evaluateRoutingPolicy(data.decisions)],
+    ['routing-exploration-effect', evaluateExplorationEffect(data.decisions)],
     ['commercial-intent', evaluateCommercialIntent(data.questions)],
     ['ad-price-elasticity', evaluatePriceElasticity(data.prices)],
     ...[...byExperiment].map(([id, rows]): [string, object | null] => [`uplift:${id}`, evaluateUplift(rows)]),
