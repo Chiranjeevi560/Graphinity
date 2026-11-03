@@ -116,7 +116,7 @@ export default function Privacy() {
 
       <h2 className="text-title3">Questions</h2>
       <p className="text-body">To ask about your data, correct it, or complain about how we handled it, write to:</p>
-      <address className="text-body legal-contact">
+      <p className="text-body legal-contact">
         <strong>Grievance Officer and data protection contact</strong>
         <br />
         Chiranjeevi
@@ -124,7 +124,7 @@ export default function Privacy() {
         <a href="mailto:securitygraphinity@gmail.com">securitygraphinity@gmail.com</a>
         <br />
         Kakinada, Andhra Pradesh 533003, India
-      </address>
+      </p>
       <p className="text-body">
         You can also <Link to="/legal/complaint">make a complaint</Link> on the site. See also the{' '}
         <Link to="/terms">terms</Link>.

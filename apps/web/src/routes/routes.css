@@ -557,20 +557,21 @@
   flex-direction: column;
   gap: var(--space-2);
 }
-.legal-contact {
-  font-style: normal;
-}
 .site-footer {
   display: flex;
   gap: var(--space-4);
   margin-top: var(--space-10);
   padding-bottom: var(--space-6);
 }
-.site-footer a {
+/* Links on their own line, not in running text: full tap targets. */
+.site-footer a,
+.legal-contact a {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
   min-height: var(--tap);
+}
+.site-footer a {
+  justify-content: center;
   min-width: var(--tap);
   color: var(--label-secondary);
 }
