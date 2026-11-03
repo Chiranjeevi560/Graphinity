@@ -292,7 +292,8 @@ does it for you (a later phase), you run it from your computer when a release ne
    `INSERT INTO app.platform_owners (profile_id) VALUES ('your-id');`
 2. Open `/owner` on the site. Nobody else can see it, moderators included.
 
-## Part K: A security contact (optional)
+## Part K: A security contact (done)
 
-In Cloudflare Pages, add the variable `SECURITY_CONTACT` with a real address, such as `mailto:you@example.com`. Until
-then no `security.txt` is published, because a made-up contact would be worse than none.
+`security.txt` names `mailto:securitygraphinity@gmail.com`, the Grievance Officer's address on the Terms and Privacy
+pages (`apps/web/src/lib/legal.ts`). To publish a different one, add the variable `SECURITY_CONTACT` in Cloudflare
+Pages. Check that inbox: security reports and complaints arrive there.
