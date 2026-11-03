@@ -183,6 +183,18 @@ VALUES ('IN', 'ads_personalization', 'opt_in', true, 'Approved by <lawyer>, <dat
 UPDATE app.feature_flags SET enabled = true, updated_at = now() WHERE name IN ('ads', 'ads_behavioral');
 ```
 
+### Enterprise analytics (ADR 0033): off until an agreement and the privacy page
+
+Organizations read noised topic demand with a key. Before turning it on: a written agreement with each organization,
+a line on the privacy page saying noised topic totals are shared, and a lawyer's view (ADR 0033). Then:
+
+```sql
+UPDATE app.feature_flags SET enabled = true, note = 'owner, <date>', updated_at = now() WHERE name = 'enterprise_analytics';
+```
+
+Add an organization and its key with `POST /owner/enterprise/orgs` and `POST /owner/enterprise/orgs/:id/keys`; the key
+is shown once. Revoke with `DELETE /owner/enterprise/keys/:prefix`.
+
 The ad click model (`name = 'ad-ctr'` in `app.ml_models`) trains in the daily run once `ads` is on and
 there are 20,000 impressions and 200 clicks in 30 days; each version's reason says how it compared.
 

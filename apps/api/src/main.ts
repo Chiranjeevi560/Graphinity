@@ -176,6 +176,7 @@ const app = await buildServer({
   metrics,
   adServer,
   adsEnabled: () => flags.enabled('ads'),
+  enterpriseEnabled: () => flags.enabled('enterprise_analytics'),
   config,
   db,
   clock: systemClock,

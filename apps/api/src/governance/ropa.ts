@@ -67,6 +67,13 @@ export const PROCESSING: Record<string, Processing> = {
   exp_unit_metrics: row('Experiment outcomes per person', 'legitimate_interest', account),
   expertise_edge_weights: row('Expertise per field', 'contract', account),
   feature_flags: system('Feature switches'),
+  enterprise_keys: row(
+    'Organizations’ read keys, as hashes',
+    'contract',
+    'Until revoked, then while the organization exists',
+  ),
+  enterprise_orgs: row('Organizations that read noised topic demand', 'contract', 'While the agreement lasts'),
+  enterprise_reads: system('Reads per organization per day, for its quota'),
   feature_store_history: row('Aggregate model features over time', 'none_no_personal_data', 'Kept for training'),
   feature_store_online: row('Aggregate model features', 'none_no_personal_data', 'Replaced as they change'),
   fields: system('Topics'),

@@ -31,6 +31,7 @@ import { registerAdMeasurementRoutes } from './routes/ad-measurement.ts';
 import { registerAdAudienceRoutes } from './routes/ad-audiences.ts';
 import { registerAdReportRoutes } from './routes/ad-reports.ts';
 import { registerPlatformRoutes } from './routes/platform.ts';
+import { registerEnterpriseRoutes } from './routes/enterprise.ts';
 import type { MetricsRecorder } from './ops/metrics.ts';
 
 declare module 'fastify' {
@@ -122,6 +123,8 @@ export interface Deps {
   metrics?: MetricsRecorder;
   /** The advertising platform's master switch (ADR 0022). Off by default. */
   adsEnabled?: () => boolean;
+  /** Organizations' topic-demand reads (ADR 0033). */
+  enterpriseEnabled?: () => boolean;
   /** Chooses ads (ADR 0022 part 4); built from the database when not given. */
   adServer?: AdServer;
 }
@@ -388,6 +391,7 @@ export async function buildServer(deps: Deps) {
   registerAdAudienceRoutes(app, { db, enabled: deps.adsEnabled ?? (() => false) });
   registerAdReportRoutes(app, { db, enabled: deps.adsEnabled ?? (() => false), clock });
   registerPlatformRoutes(app, { db, clock, limit: limits.ads, keySecret: config.ipHashKey });
+  registerEnterpriseRoutes(app, { db, enabled: deps.enterpriseEnabled ?? (() => false), clock, limit: limits.ads });
 
   return app;
 }
