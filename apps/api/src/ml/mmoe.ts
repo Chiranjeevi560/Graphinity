@@ -1,6 +1,9 @@
 // Multi-gate mixture of experts (Ma et al., KDD 2018): several tasks share a few small networks, each with its own say
 // in how much of each to use, so tasks that disagree don't fight over one shared layer. Written by hand in typed
 // arrays. Compared with plain shared-bottom and independent models by benchmark-multitask (ADR 0032).
+// With `taskExperts`, each task also has experts of its own, and its gate chooses only among the shared ones and its
+// own: one extraction layer of PLE, called CGC (Tang et al., RecSys 2020). Tasks that disagree then keep what is theirs
+// out of each other's way, which plain MMoE can't promise.
 import { at } from './num.ts';
 import { seededRandom } from './linalg.ts';
 
@@ -14,6 +17,8 @@ export interface MmoeOptions {
   seed?: number;
   /** One gate shared by every task: the shared-bottom baseline. */
   sharedGate?: boolean;
+  /** Experts of each task's own, besides the shared ones (PLE's CGC layer). 0, the default, is plain MMoE. */
+  taskExperts?: number;
 }
 
 export interface Mmoe {
@@ -22,6 +27,9 @@ export interface Mmoe {
   experts: number;
   hidden: number;
   sharedGate: boolean;
+  /** The first `shared` experts serve every task; then each task's own, `taskExperts` each. */
+  shared: number;
+  taskExperts: number;
   /** experts × hidden × inputs */
   expertWeights: Float64Array;
   /** gates × experts × inputs */
@@ -37,6 +45,10 @@ interface Pass {
   mixed: Float64Array;
 }
 
+/** Shared experts serve every task; a task's own serve only it. */
+const visible = (m: Mmoe, e: number, task: number) =>
+  e < m.shared || Math.floor((e - m.shared) / m.taskExperts) === task;
+
 function forward(m: Mmoe, x: ArrayLike<number>, task: number, pass: Pass): number {
   const { experts, hidden, inputs } = m;
   for (let e = 0; e < experts; e++)
@@ -48,6 +60,7 @@ function forward(m: Mmoe, x: ArrayLike<number>, task: number, pass: Pass): numbe
   const gate = m.sharedGate ? 0 : task;
   let top = -Infinity;
   for (let e = 0; e < experts; e++) {
+    if (!visible(m, e, task)) continue;
     let s = 0;
     for (let i = 0; i < inputs; i++) s += at(m.gateWeights, (gate * experts + e) * inputs + i) * at(x, i);
     pass.gates[e] = s;
@@ -55,6 +68,11 @@ function forward(m: Mmoe, x: ArrayLike<number>, task: number, pass: Pass): numbe
   }
   let total = 0;
   for (let e = 0; e < experts; e++) {
+    // An expert this task can't see gets no weight, so it neither serves nor learns from this task.
+    if (!visible(m, e, task)) {
+      pass.gates[e] = 0;
+      continue;
+    }
     const p = Math.exp(at(pass.gates, e) - top);
     pass.gates[e] = p;
     total += p;
@@ -81,8 +99,11 @@ export function trainMmoe(
   rows: ReadonlyArray<{ x: ArrayLike<number>; y: ReadonlyArray<number | null> }>,
   options: MmoeOptions,
 ): Mmoe {
-  const { inputs, tasks, experts = 4, hidden = 8, epochs = 20, rate = 0.03 } = options;
+  const { inputs, tasks, hidden = 8, epochs = 20, rate = 0.03 } = options;
   const sharedGate = options.sharedGate ?? false;
+  const taskExperts = sharedGate ? 0 : (options.taskExperts ?? 0);
+  const shared = options.experts ?? 4;
+  const experts = shared + tasks * taskExperts;
   const random = seededRandom(options.seed ?? 1);
   const init = (n: number, scale: number) => new Float64Array(n).map(() => (random() - 0.5) * scale);
   const m: Mmoe = {
@@ -91,6 +112,8 @@ export function trainMmoe(
     experts,
     hidden,
     sharedGate,
+    shared,
+    taskExperts,
     expertWeights: init(experts * hidden * inputs, 0.5),
     gateWeights: init((sharedGate ? 1 : tasks) * experts * inputs, 0.1),
     towerWeights: init(tasks * hidden, 0.5),

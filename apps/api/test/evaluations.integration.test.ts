@@ -200,6 +200,8 @@ describe('what each one says', () => {
     expect(must(result.mmoeAnswered)).toBeGreaterThan(0.7);
     expect(must(result.mmoePicked)).toBeGreaterThan(0.65);
     expect(must(result.sharedAnswered)).toBeGreaterThan(0.7);
+    expect(must(result.pleAnswered)).toBeGreaterThan(0.7);
+    expect(must(result.plePicked)).toBeGreaterThan(0.65);
     // Too few answers to learn picks from: nothing.
     expect(
       evaluateMultiTask(routed.map((r, i) => ({ ...r, answered: i < MIN_ANSWERED - 1, picked: false }))),

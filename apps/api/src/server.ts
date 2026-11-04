@@ -2,7 +2,7 @@ import Fastify, { LogController, type FastifyError } from 'fastify';
 import cors from '@fastify/cors';
 import { AuthError, AuthUnavailableError, subjectHash, type SignedInUser, type TokenVerifier } from './auth.ts';
 import type { AuthAdmin } from './auth-admin.ts';
-import type { Config } from './config.ts';
+import type { Config, RazorpayKeys } from './config.ts';
 import type { Database } from './db.ts';
 import { TokenBuckets, visitorAddress, visitorKey, type BucketOptions, type Clock } from './rate-limit.ts';
 import { registerProfileRoutes } from './routes/profile.ts';
@@ -32,6 +32,12 @@ import { registerAdAudienceRoutes } from './routes/ad-audiences.ts';
 import { registerAdReportRoutes } from './routes/ad-reports.ts';
 import { registerPlatformRoutes } from './routes/platform.ts';
 import { registerEnterpriseRoutes } from './routes/enterprise.ts';
+import { registerPaymentRoutes } from './routes/payments.ts';
+import { registerCompletionRoutes } from './routes/completion.ts';
+import { registerAffiliateRoutes } from './routes/affiliates.ts';
+import type { Completer } from './search/completion.ts';
+import type { ShadowRecorder } from './search/shadow.ts';
+import type { PaymentFetcher } from './payments/razorpay.ts';
 import type { MetricsRecorder } from './ops/metrics.ts';
 
 declare module 'fastify' {
@@ -116,6 +122,8 @@ export interface Deps {
   searchRandom?: () => number;
   /** The learned search rankings in service (ADR 0015 part 6). Defaults to none: fusion orders results. */
   searchRankers?: () => Rankers;
+  /** Silent scoring of a waiting search challenger (search/shadow.ts). */
+  searchShadow?: ShadowRecorder | null;
   limits?: Limits;
   /** Where logs go. Defaults to stdout. */
   logStream?: { write(line: string): void };
@@ -125,6 +133,15 @@ export interface Deps {
   adsEnabled?: () => boolean;
   /** Organizations' topic-demand reads (ADR 0033). */
   enterpriseEnabled?: () => boolean;
+  /** The `payments` switch (ADR 0034). Off by default. */
+  paymentsEnabled?: () => boolean;
+  /** Search suggestions (ADR 0035): the switch and the model. Off without both. */
+  completionEnabled?: () => boolean;
+  /** Affiliate links (ADR 0036). Off by default. */
+  affiliatesEnabled?: () => boolean;
+  completer?: Completer | null;
+  /** Razorpay keys and how to call it; payments are unavailable without them. */
+  razorpay?: { keys: RazorpayKeys; fetcher: PaymentFetcher } | null;
   /** Chooses ads (ADR 0022 part 4); built from the database when not given. */
   adServer?: AdServer;
 }
@@ -364,6 +381,7 @@ export async function buildServer(deps: Deps) {
     keySecret: config.ipHashKey,
     ...(deps.searchRandom ? { random: deps.searchRandom } : {}),
     ...(deps.searchRankers ? { rankers: deps.searchRankers } : {}),
+    shadow: deps.searchShadow ?? null,
   });
   registerLiveRoutes(app, { events, clock });
   registerModerationRoutes(app, { db });
@@ -392,6 +410,17 @@ export async function buildServer(deps: Deps) {
   registerAdReportRoutes(app, { db, enabled: deps.adsEnabled ?? (() => false), clock });
   registerPlatformRoutes(app, { db, clock, limit: limits.ads, keySecret: config.ipHashKey });
   registerEnterpriseRoutes(app, { db, enabled: deps.enterpriseEnabled ?? (() => false), clock, limit: limits.ads });
+  registerAffiliateRoutes(app, { db, enabled: deps.affiliatesEnabled ?? (() => false), keySecret: config.ipHashKey });
+  registerCompletionRoutes(app, {
+    enabled: deps.completionEnabled ?? (() => false),
+    completer: deps.completer ?? null,
+  });
+  await registerPaymentRoutes(app, {
+    db,
+    enabled: deps.paymentsEnabled ?? (() => false),
+    razorpay: deps.razorpay ?? null,
+    now: () => clock.now(),
+  });
 
   return app;
 }

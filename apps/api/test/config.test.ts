@@ -37,6 +37,32 @@ describe('loadConfig', () => {
     });
   });
 
+  it('takes Razorpay keys all together or not at all, and live keys only in production', () => {
+    const test = {
+      RAZORPAY_KEY_ID: 'rzp_test_ABCDEFGH1234',
+      RAZORPAY_KEY_SECRET: 's'.repeat(24),
+      RAZORPAY_WEBHOOK_SECRET: 'w'.repeat(24),
+    };
+    expect(loadConfig(prod).razorpay).toBeNull();
+    expect(loadConfig({ ...prod, ...test }).razorpay).toEqual({
+      keyId: test.RAZORPAY_KEY_ID,
+      keySecret: test.RAZORPAY_KEY_SECRET,
+      webhookSecret: test.RAZORPAY_WEBHOOK_SECRET,
+    });
+    expect(() => loadConfig({ ...prod, RAZORPAY_KEY_ID: test.RAZORPAY_KEY_ID })).toThrow(/set together/);
+    expect(() => loadConfig({ ...prod, ...test, RAZORPAY_KEY_ID: 'pk_live_123' })).toThrow(/Razorpay key id/);
+    expect(() => loadConfig({ ...prod, ...test, RAZORPAY_WEBHOOK_SECRET: 'short' })).toThrow(/16 characters/);
+    const live = { ...test, RAZORPAY_KEY_ID: 'rzp_live_ABCDEFGH1234' };
+    expect(loadConfig({ ...prod, ...live }).razorpay?.keyId).toBe(live.RAZORPAY_KEY_ID);
+    expect(() => loadConfig({ ...prod, APP_ENV: 'staging', ...live })).toThrow(/live keys only/);
+    // A refusal never echoes a secret.
+    try {
+      loadConfig({ ...prod, ...test, RAZORPAY_KEY_ID: 'rzp_test_x', RAZORPAY_KEY_SECRET: 'supersecretvalue-9' });
+    } catch (err) {
+      expect(String(err)).not.toContain('supersecretvalue-9');
+    }
+  });
+
   it('knows which environment it is: a deployed server must say staging or production', () => {
     expect(loadConfig(prod).environment).toBe('production');
     expect(loadConfig({ ...prod, APP_ENV: 'staging' }).environment).toBe('staging');

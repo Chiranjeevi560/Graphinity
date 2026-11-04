@@ -196,6 +196,31 @@ The rest (`ads_behavioral`, `ads_measurement`, `ads_cross_device`, `ads_audience
 off until chosen. Anything that uses a person's data still needs an approved rule for their country above and the
 person's own yes.
 
+### Affiliate links (ADR 0036): off until an agreement and the privacy page
+
+Turn on with `UPDATE app.feature_flags SET enabled = true WHERE name = 'affiliates';` after an agreement with the shop
+or network and a line on the privacy page and terms. Add a program, give the network its `postbackKey` (shown once),
+then add links to questions. Click tokens are deleted after 90 days by a daily job.
+
+### Search suggestions (ADR 0035): off
+
+`query_completion` turns on `GET /search/complete`, which finishes queries with Graphinity's own trigram model from
+public titles. The model is rebuilt hourly while the switch is on, so suggestions start within the hour.
+
+### Payments (ADR 0034): off until the owner chooses to take money
+
+Built on Razorpay payment links; off. To turn on: a Razorpay account (SETUP-ACCOUNTS.md, Part L), the privacy page and
+terms updated (ADR 0034), then on Render set `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, and:
+
+```sql
+UPDATE app.feature_flags SET enabled = true, note = 'owner, <date>', updated_at = now() WHERE name = 'payments';
+-- What has been asked for and paid:
+SELECT purpose, status, amount_paise, amount_paid_paise, created_at, paid_at FROM app.payments ORDER BY id DESC LIMIT 50;
+```
+
+Switching it off stops new links at once; links already sent can still be paid, and the webhook still records them.
+To stop taking money entirely, also remove the keys (then webhooks are refused) and cancel open links in Razorpay.
+
 The ad click model (`name = 'ad-ctr'` in `app.ml_models`) trains in the daily run once `ads` is on and
 there are 20,000 impressions and 200 clicks in 30 days; each version's reason says how it compared.
 

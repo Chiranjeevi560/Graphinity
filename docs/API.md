@@ -492,7 +492,7 @@ Available while `ads` and `ads_audiences` are on (otherwise 404 `ads_off`, or 40
   401 `bad_key` for a malformed key; 404 `not_counted` for any other refusal, all alike.
 - **Changed (review of 2026-11-01):** the report below now returns only `{ days, belowMinimum, throughDay, spentMicros, credited }`, over complete days, with `credited` noised and charged 1.0 to the day's budget. Exact impressions, clicks and joined paths are gone; `POST /ads/reports/private` has noisy ones. A private report now costs its ε per new day. Lift is never `significant`, and carries `joinableSalesOnly`.
 - **`GET /me/data-export` also returns** `adActivity` (ads shown, held back, partner events, reported sales), `memory`, `complaints` and `statementsOfReasons`. With `Sec-GPC: 1`, reading a question or searching adds nothing to advertising interests.
-- **`GET /owner/dashboard/summary` also returns** `evaluations`: `{ name, metrics, at }` from the daily measuring job (`ad-cvr-delayed`, `search-position-bias`, `routing-policy-value`, `uplift:<experiment>`, `routing-exploration-effect`, `routing-linucb-replay`, `two-tower-retrieval`, `routing-multi-task`, `commercial-intent`, `ad-price-elasticity`). They change nothing anyone sees. `routing-exploration-effect` is double ML's estimate, with its 95% interval, of what giving a routing slot to an explored person instead of the model's pick does to answering within 7 days, with the model's own prediction taken out (200 decisions, 100 in each arm). `two-tower-retrieval` holds back each person's latest question opened from search and compares recall@10 of two-tower retrieval (log-Q) with most-opened (`recallTwoTower`, `recallPopular`; 100 people with two different opens). Nothing serves two-tower. `routing-multi-task` is held-out AUC, from the nine routing factors, of answering within 7 days and of being picked (among those who answered), for MMoE and for one shared bottom (`mmoeAnswered`, `mmoePicked`, `sharedAnswered`, `sharedPicked`; 200 routed people, 50 who answered). Nothing serves MMoE. `routing-linucb-replay` replays a LinUCB choice between the model's pick and exploring over the logged decisions, oldest first: `linUcbIps` (inverse-propensity value of what it would have done), `logged` (what happened), `matched` (decisions where it agreed with the log). Thompson sampling still routes. `commercial-intent` is the share of the last 90 days' visible questions with each of 14 intents (two matching signals in their public words; 50 questions or more). `ad-price-elasticity` is, per field, the slope of daily ads sold on that day's clearing price with its 95% interval (`<field>.slope`, `.low`, `.high`, `.days`): observational, for reserve prices, and only with 8 days and real price spread.
+- **`GET /owner/dashboard/summary` also returns** `evaluations`: `{ name, metrics, at }` from the daily measuring job (`ad-cvr-delayed`, `search-position-bias`, `routing-policy-value`, `uplift:<experiment>`, `search-shadow`, `routing-exploration-effect`, `routing-linucb-replay`, `two-tower-retrieval`, `routing-multi-task`, `commercial-intent`, `ad-price-elasticity`). They change nothing anyone sees. `search-shadow` is written hourly while a search challenger waits: on the searches it isn't interleaved in, how much of its top ten matches what was shown (`overlapAt10`), its scoring time (`p95Ms`), `searches` (50 or more) and its `version`. `routing-exploration-effect` is double ML's estimate, with its 95% interval, of what giving a routing slot to an explored person instead of the model's pick does to answering within 7 days, with the model's own prediction taken out (200 decisions, 100 in each arm). `two-tower-retrieval` holds back each person's latest question opened from search and compares recall@10 of two-tower retrieval (log-Q) with most-opened (`recallTwoTower`, `recallPopular`; 100 people with two different opens). Nothing serves two-tower. `routing-multi-task` is held-out AUC, from the nine routing factors, of answering within 7 days and of being picked (among those who answered), for MMoE, PLE and one shared bottom (`mmoeAnswered`, `mmoePicked`, `pleAnswered`, `plePicked`, `sharedAnswered`, `sharedPicked`; 200 routed people, 50 who answered). Nothing serves MMoE. `routing-linucb-replay` replays a LinUCB choice between the model's pick and exploring over the logged decisions, oldest first: `linUcbIps` (inverse-propensity value of what it would have done), `logged` (what happened), `matched` (decisions where it agreed with the log). Thompson sampling still routes. `commercial-intent` is the share of the last 90 days' visible questions with each of 14 intents (two matching signals in their public words; 50 questions or more). `ad-price-elasticity` is, per field, the slope of daily ads sold on that day's clearing price with its 95% interval (`<field>.slope`, `.low`, `.high`, `.days`): observational, for reserve prices, and only with 8 days and real price spread.
 - **Second review, 2026-11-01:** report reads each cost ε with fresh noise (`POST /ads/reports/private` 1.0 per cell per person, `GET /ads/campaigns/:id/report` 1.0), against 2.0 a UTC day and 12.0 in any 30 days. `suppressed` is gone, `epsilonRemainingToday` is now `epsilonRemaining`, attribution no longer returns `data_driven`, and a day's noise grows with the report's length. Data export adds `adMemberships`.
 - **`GET /ops/grievances`** takes `?page=` (100 a page) and returns `open`, the count of everything unresolved. It and `/ops/appeals` need a recent sign-in, as do advertiser, campaign, creative, targeting, pixel and key changes, once `step_up_auth` is on.
 - **`POST /knowledge-graph/transitions`** now keeps a step only from a signed-in person who agreed to `anonymous_analytics` and sent no `Sec-GPC`; every other request answers the same 204. **`GET /knowledge-graph/next`** items are `{ field, name, because }` (`journeys` or `related`, the latter from GraphSAGE embeddings when journeys are thin), in order, without probabilities. One person's step on a pair counts once a day.
@@ -615,6 +615,40 @@ untracked and unshared, whatever the person chose.
   `readsToday`, `keys: [{ prefix, revoked }]`); `POST /owner/enterprise/orgs { name, dailyReads? }` → 201
   `{ org }`; `POST /owner/enterprise/orgs/:id/keys` → 201 `{ key, prefix }`, the only time the key is shown;
   `DELETE /owner/enterprise/keys/:prefix` → 204. Writes need a recent sign-in once `step_up_auth` is on.
+
+## Affiliate links (ADR 0036), off by default
+
+- **Owner only:** `POST /owner/affiliates/programs { name, host, tagParam, tagValue, clickParam? }` → 201
+  `{ program: { id, postbackKey } }` (the key shown once); `POST /owner/affiliates/links { program, question, label,
+  destination }` → 201 `{ link: { token } }`, 400 `wrong_host` if the destination isn't on the program's host;
+  `DELETE /owner/affiliates/links/:token` → 204. 404 `affiliates_off` while the switch is off.
+- **`GET /questions/:id/affiliate-links`**: `{ links: [{ token, label }], disclosure }`, empty while off.
+- **`POST /affiliates/go/:token`** (signed in or not): `{ url, disclosure }`, the shop's address with the tag, and a
+  click token only with the reader's `affiliate_optimization` yes and no `Sec-GPC`. Counts the click with no person.
+- **`POST /affiliates/postback { program, orderRef, commissionPaise, clickToken?, signature }`**: a network's server;
+  `signature` is the hex HMAC-SHA256, with the program's key, of `program|orderRef|commissionPaise|clickToken`. 401
+  `bad_signature`; `{ counted }`, false when that order was already counted.
+
+## Search suggestions (ADR 0035), off by default
+
+- **`GET /search/complete?q=`** (1 to 150 characters, signed in or not): `{ suggestions: [string] }`, up to five ways to
+  finish what was typed, from wording three or more visible questions share. 404 `completion_off` while the switch is
+  off. `cache-control: public, max-age=300`. Nothing typed is stored or logged.
+
+## Payments (ADR 0034), off by default
+
+- **`POST /ads/advertisers/:id/payments { amountPaise }`** (an advertiser's owner; 10,000 to 10,000,000 paise) and
+  **`POST /owner/enterprise/orgs/:id/payments { amountPaise }`** (the platform's owner): 201
+  `{ payment: { id, status: 'created', amountPaise, url } }`, where `url` is Razorpay's page; the link lasts 7 days.
+  Refusals: 404 `payments_off` (the switch is off or there are no keys), 404 `not_found` (no such advertiser or
+  organization you can see), 403 `forbidden`, 502 `provider_failed` (the payment is left `failed`). Both need a
+  recent sign-in once `step_up_auth` is on.
+- **`GET /ads/advertisers/:id/payments`** (members): `{ payments: [{ id, status, amountPaise, paidPaise, at }], paidPaise }`.
+- **`POST /payments/razorpay/webhook`**: Razorpay only. 401 `bad_signature` unless `X-Razorpay-Signature` is the
+  HMAC of the raw body; 400 `bad_event` without `x-razorpay-event-id`; otherwise 200, also for events it ignores.
+  Acts on `payment_link.paid`, `partially_paid`, `expired` and `cancelled`, once per event id; a wrong amount or
+  currency is audited, not applied. Works whenever keys are set, so a link paid after the switch goes off is recorded.
+- **`GET /me/data-export`** adds `payments` the person asked for.
 
 ## Platform (ADR 0024)
 

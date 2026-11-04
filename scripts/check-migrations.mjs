@@ -89,7 +89,9 @@ async function prepare(name) {
 }
 
 const dump = name => {
-  const out = execFileSync('sh', ['-c', `${process.env.PG_DUMP ?? 'pg_dump'} --schema-only "$0"`, urlFor(name)], {
+  // Words, not a shell line (as db-backup.mjs does): nothing in PG_DUMP is ever read by a shell.
+  const [command = 'pg_dump', ...words] = (process.env.PG_DUMP ?? 'pg_dump').split(' ').filter(Boolean);
+  const out = execFileSync(command, [...words, '--schema-only', urlFor(name)], {
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,
   });

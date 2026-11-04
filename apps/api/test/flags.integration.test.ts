@@ -28,6 +28,8 @@ describe('feature flags', () => {
       { name: 'ads_partner_push', enabled: false },
       { name: 'ads_partner_sites', enabled: false },
       { name: 'ads_rtb', enabled: false },
+      // Off until the owner has an affiliate agreement and the disclosure is on the page (ADR 0036).
+      { name: 'affiliates', enabled: false },
       { name: 'embeddings', enabled: true },
       // Off until the owner, an agreement and the privacy page say otherwise (ADR 0033).
       { name: 'enterprise_analytics', enabled: false },
@@ -35,7 +37,11 @@ describe('feature flags', () => {
       { name: 'learned_routing', enabled: false },
       { name: 'learned_search_ranking', enabled: false },
       { name: 'model_training', enabled: true },
+      // Off until the owner has a Razorpay account and chooses to take money (ADR 0034).
+      { name: 'payments', enabled: false },
       { name: 'push', enabled: true },
+      // Off until the owner chooses suggestions in search (ADR 0035).
+      { name: 'query_completion', enabled: false },
       { name: 'recommendations', enabled: true },
       { name: 'routing_exploration', enabled: false },
       { name: 'search', enabled: true },

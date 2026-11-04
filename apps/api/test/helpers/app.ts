@@ -14,6 +14,10 @@ import { fakeAuthAdmin, TEST_ISSUER, testIssuer } from './tokens.ts';
 
 import type { MetricsRecorder } from '../../src/ops/metrics.ts';
 import type { AdServer } from '../../src/ads/serve.ts';
+import type { RazorpayKeys } from '../../src/config.ts';
+import type { PaymentFetcher } from '../../src/payments/razorpay.ts';
+import type { Completer } from '../../src/search/completion.ts';
+import type { ShadowRecorder } from '../../src/search/shadow.ts';
 
 export const IP_HASH_KEY = Buffer.alloc(32, 9);
 
@@ -33,6 +37,12 @@ export async function startApp(
     metrics?: MetricsRecorder;
     adsEnabled?: () => boolean;
     enterpriseEnabled?: () => boolean;
+    paymentsEnabled?: () => boolean;
+    completionEnabled?: () => boolean;
+    affiliatesEnabled?: () => boolean;
+    completer?: Completer | null;
+    searchShadow?: ShadowRecorder | null;
+    razorpay?: { keys: RazorpayKeys; fetcher: PaymentFetcher } | null;
     adServer?: AdServer;
     stepUpEnabled?: () => boolean;
   } = {},
@@ -62,6 +72,12 @@ export async function startApp(
     ...(opts.metrics ? { metrics: opts.metrics } : {}),
     ...(opts.adsEnabled ? { adsEnabled: opts.adsEnabled } : {}),
     ...(opts.enterpriseEnabled ? { enterpriseEnabled: opts.enterpriseEnabled } : {}),
+    ...(opts.paymentsEnabled ? { paymentsEnabled: opts.paymentsEnabled } : {}),
+    ...(opts.completionEnabled ? { completionEnabled: opts.completionEnabled } : {}),
+    ...(opts.affiliatesEnabled ? { affiliatesEnabled: opts.affiliatesEnabled } : {}),
+    ...(opts.completer ? { completer: opts.completer } : {}),
+    ...(opts.searchShadow ? { searchShadow: opts.searchShadow } : {}),
+    ...(opts.razorpay ? { razorpay: opts.razorpay } : {}),
     ...(opts.adServer ? { adServer: opts.adServer } : {}),
     ...(opts.stepUpEnabled ? { stepUpEnabled: opts.stepUpEnabled } : {}),
     ...(opts.recommendationsEnabled ? { recommendationsEnabled: opts.recommendationsEnabled } : {}),
