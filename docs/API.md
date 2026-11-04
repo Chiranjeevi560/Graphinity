@@ -616,6 +616,21 @@ untracked and unshared, whatever the person chose.
   `{ org }`; `POST /owner/enterprise/orgs/:id/keys` → 201 `{ key, prefix }`, the only time the key is shown;
   `DELETE /owner/enterprise/keys/:prefix` → 204. Writes need a recent sign-in once `step_up_auth` is on.
 
+## Payments (ADR 0034), off by default
+
+- **`POST /ads/advertisers/:id/payments { amountPaise }`** (an advertiser's owner; 10,000 to 10,000,000 paise) and
+  **`POST /owner/enterprise/orgs/:id/payments { amountPaise }`** (the platform's owner): 201
+  `{ payment: { id, status: 'created', amountPaise, url } }`, where `url` is Razorpay's page; the link lasts 7 days.
+  Refusals: 404 `payments_off` (the switch is off or there are no keys), 404 `not_found` (no such advertiser or
+  organization you can see), 403 `forbidden`, 502 `provider_failed` (the payment is left `failed`). Both need a
+  recent sign-in once `step_up_auth` is on.
+- **`GET /ads/advertisers/:id/payments`** (members): `{ payments: [{ id, status, amountPaise, paidPaise, at }], paidPaise }`.
+- **`POST /payments/razorpay/webhook`**: Razorpay only. 401 `bad_signature` unless `X-Razorpay-Signature` is the
+  HMAC of the raw body; 400 `bad_event` without `x-razorpay-event-id`; otherwise 200, also for events it ignores.
+  Acts on `payment_link.paid`, `partially_paid`, `expired` and `cancelled`, once per event id; a wrong amount or
+  currency is audited, not applied. Works whenever keys are set, so a link paid after the switch goes off is recorded.
+- **`GET /me/data-export`** adds `payments` the person asked for.
+
 ## Platform (ADR 0024)
 
 Owner only (`app.platform_owners`): `GET /owner/dashboard/summary`, `POST /knowledge-graph/bitemporal/query`,

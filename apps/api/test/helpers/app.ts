@@ -14,6 +14,8 @@ import { fakeAuthAdmin, TEST_ISSUER, testIssuer } from './tokens.ts';
 
 import type { MetricsRecorder } from '../../src/ops/metrics.ts';
 import type { AdServer } from '../../src/ads/serve.ts';
+import type { RazorpayKeys } from '../../src/config.ts';
+import type { PaymentFetcher } from '../../src/payments/razorpay.ts';
 
 export const IP_HASH_KEY = Buffer.alloc(32, 9);
 
@@ -33,6 +35,8 @@ export async function startApp(
     metrics?: MetricsRecorder;
     adsEnabled?: () => boolean;
     enterpriseEnabled?: () => boolean;
+    paymentsEnabled?: () => boolean;
+    razorpay?: { keys: RazorpayKeys; fetcher: PaymentFetcher } | null;
     adServer?: AdServer;
     stepUpEnabled?: () => boolean;
   } = {},
@@ -62,6 +66,8 @@ export async function startApp(
     ...(opts.metrics ? { metrics: opts.metrics } : {}),
     ...(opts.adsEnabled ? { adsEnabled: opts.adsEnabled } : {}),
     ...(opts.enterpriseEnabled ? { enterpriseEnabled: opts.enterpriseEnabled } : {}),
+    ...(opts.paymentsEnabled ? { paymentsEnabled: opts.paymentsEnabled } : {}),
+    ...(opts.razorpay ? { razorpay: opts.razorpay } : {}),
     ...(opts.adServer ? { adServer: opts.adServer } : {}),
     ...(opts.stepUpEnabled ? { stepUpEnabled: opts.stepUpEnabled } : {}),
     ...(opts.recommendationsEnabled ? { recommendationsEnabled: opts.recommendationsEnabled } : {}),
