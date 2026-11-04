@@ -128,8 +128,9 @@ describe('pacing', () => {
       "INSERT INTO app.ad_impressions (campaign_id, creative_id, placement, price_micros, charged_micros, clicked_at, charged_at) VALUES ($1, $2, 'search', 49000000, 49000000, now(), now())",
       [id, creative],
     );
-    // An hour into the day with 98% of the budget gone: far ahead of the curve.
-    const earlyToday = new Date().setUTCHours(1, 0, 0, 0);
+    // 98% of the budget gone by the start of this hour, when the curve (every impression in these tests is shown now)
+    // expected none of it: far ahead. A fixed 01:00 failed every day between 00:00 and 01:00 UTC, when it isn't early.
+    const earlyToday = new Date().setUTCMinutes(0, 0, 0);
     await stepPacers(h.t.database, earlyToday);
     await stepPacers(h.t.database, earlyToday);
     const row = must(
