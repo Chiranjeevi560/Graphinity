@@ -196,6 +196,11 @@ The rest (`ads_behavioral`, `ads_measurement`, `ads_cross_device`, `ads_audience
 off until chosen. Anything that uses a person's data still needs an approved rule for their country above and the
 person's own yes.
 
+### Search suggestions (ADR 0035): off
+
+`query_completion` turns on `GET /search/complete`, which finishes queries with Graphinity's own trigram model from
+public titles. The model is rebuilt hourly while the switch is on, so suggestions start within the hour.
+
 ### Payments (ADR 0034): off until the owner chooses to take money
 
 Built on Razorpay payment links; off. To turn on: a Razorpay account (SETUP-ACCOUNTS.md, Part L), the privacy page and
