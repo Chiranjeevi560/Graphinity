@@ -11,6 +11,7 @@ import { serverTiming, type Found, type SearchEngine } from '../search/engine.ts
 import { recordOwnSearch } from '../search/history.ts';
 import { improvementSince, recordOpen, recordSearch } from '../search/log.ts';
 import { applySwap, chooseSwap } from '../search/interventions.ts';
+import { overlapAtTop, type ShadowRecorder } from '../search/shadow.ts';
 import { INTERLEAVE_SHARE, NO_RANKERS, ordered, teamDraft, type Rankers } from '../search/rankers.ts';
 import { enrol } from '../experiments/enrol.ts';
 import { diversify, preRank, PRE_RANK_KEEP } from '../search/cascade.ts';
@@ -73,6 +74,7 @@ export function registerSearchRoutes(
     keySecret,
     random = Math.random,
     rankers = () => NO_RANKERS,
+    shadow = null,
   }: {
     db: Pick<Database, 'withUser' | 'asSystem'>;
     engine: SearchEngine;
@@ -84,6 +86,8 @@ export function registerSearchRoutes(
     /** Opens and reading times per person: two per result read, so apart from searches. */
     eventLimit: BucketOptions;
     keySecret: Buffer;
+    /** Scores a waiting challenger silently on searches it isn't interleaved in (search/shadow.ts). */
+    shadow?: ShadowRecorder | null;
     /** Chance for position-bias swaps and interleaving coins; tests pass their own. */
     random?: () => number;
     /** The learned rankings, when the owner has `learned_search_ranking` on (ADR 0015 part 6). */
@@ -279,6 +283,23 @@ export function registerSearchRoutes(
           team,
         }));
       } else {
+        // Shadow: the challenger orders the same results, timed, and only its agreement with what is shown is kept.
+        if (shadow && served.challenger) {
+          const started = performance.now();
+          const byChallenger = ordered(
+            served.challenger,
+            eligible.map(e => e.f),
+            at,
+          );
+          shadow.record(
+            served.challenger.id,
+            overlapAtTop(
+              byProduction.map(f => f.id),
+              byChallenger.map(f => f.id),
+            ),
+            performance.now() - started,
+          );
+        }
         // Only people who chose to help improve search can be in the comparison at all.
         diversity = recorded && userId ? await diversityArm(userId) : null;
         const vectors =

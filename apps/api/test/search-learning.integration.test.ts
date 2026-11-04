@@ -10,6 +10,7 @@ import { rankingFeatures } from '../src/search/features.ts';
 import { MAX_DAYS, MIN_DECIDED, loadInterleaved, runSearchJudge } from '../src/search/judge.ts';
 import { LONG_READ_MS, loadSearchTraining } from '../src/search/ranker-data.ts';
 import { BASELINE_RANKER, SEARCH_RANKER, type Rankers } from '../src/search/rankers.ts';
+import { createShadow, MIN_SHADOW_SEARCHES, overlapAtTop } from '../src/search/shadow.ts';
 import { startApp, type TestApp } from './helpers/app.ts';
 import { underReview } from './helpers/collusion.ts';
 import { must } from './helpers/must.ts';
@@ -18,9 +19,14 @@ let h: TestApp;
 let names = 0;
 let rankers: Rankers = { production: { id: BASELINE_RANKER, model: null }, challenger: null };
 let coin = 0.999;
+const shadow = createShadow();
 
 beforeAll(async () => {
-  h = await startApp(() => Date.now(), { searchRandom: () => coin, searchRankers: () => rankers });
+  h = await startApp(() => Date.now(), {
+    searchRandom: () => coin,
+    searchRankers: () => rankers,
+    searchShadow: shadow,
+  });
   return h.close;
 });
 
@@ -307,5 +313,44 @@ describe('serving', () => {
     expect((await ids()).results.map(r => r.id)).toEqual(visitor.results.map(r => r.id));
     rankers = { production: { id: BASELINE_RANKER, model: null }, challenger: null };
     coin = 0.999;
+  });
+
+  it('scores a waiting challenger in the shadow of every other search, changing nothing anyone sees', async () => {
+    const query = { query: 'customs duty pune phone' };
+    const ids = async () =>
+      (await h.call('POST', '/search', undefined, query))
+        .json<{ results: Array<{ id: string }> }>()
+        .results.map(r => r.id);
+    // No challenger: nothing to shadow, and an hour with nothing writes nothing.
+    rankers = { production: { id: 'lambdamart:v7', model: model(false) }, challenger: null };
+    const served = await ids();
+    expect(await shadow.flush(h.t.database)).toBe(0);
+    rankers = {
+      production: { id: 'lambdamart:v7', model: model(false) },
+      challenger: { id: 'lambdamart:v8', model: model(true) },
+    };
+    for (let i = 0; i < MIN_SHADOW_SEARCHES; i++) expect(await ids()).toEqual(served);
+    expect(await shadow.flush(h.t.database)).toBe(MIN_SHADOW_SEARCHES);
+    const { rows } = await h.t.owner.query<{
+      metrics: { searches: number; overlapAt10: number; p95Ms: number; version: number };
+    }>("SELECT metrics FROM app.model_evaluations WHERE name = 'search-shadow'");
+    const m = must(rows[0]).metrics;
+    expect(m).toMatchObject({ searches: MIN_SHADOW_SEARCHES, version: 8 });
+    // Both rankers order the same two results, so their top ten fully overlap.
+    expect(m.overlapAt10).toBe(1);
+    expect(m.p95Ms).toBeGreaterThanOrEqual(0);
+    rankers = { production: { id: BASELINE_RANKER, model: null }, challenger: null };
+  });
+});
+
+describe('shadow agreement', () => {
+  it('is the share of the top ten the two orders have in common', () => {
+    expect(overlapAtTop(['a', 'b', 'c'], ['c', 'b', 'a'])).toBe(1);
+    expect(overlapAtTop(['a', 'b'], ['c', 'd'])).toBe(0);
+    expect(overlapAtTop(['a', 'b', 'c', 'd'], ['a', 'x'])).toBe(0.5);
+    // Only the top ten count.
+    const shown = Array.from({ length: 20 }, (_, i) => `q${String(i)}`);
+    expect(overlapAtTop(shown, [...shown].reverse())).toBe(0);
+    expect(overlapAtTop([], [])).toBe(1);
   });
 });
