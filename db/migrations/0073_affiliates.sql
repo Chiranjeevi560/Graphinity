@@ -26,7 +26,10 @@ CREATE TABLE IF NOT EXISTS app.affiliate_links (
   program_id  bigint NOT NULL REFERENCES app.affiliate_programs (id) ON DELETE CASCADE,
   question_id bigint NOT NULL REFERENCES app.questions (id) ON DELETE CASCADE,
   label       text NOT NULL CHECK (char_length(label) BETWEEN 2 AND 80 AND label = btrim(label) AND label !~ '[[:cntrl:]]'),
-  destination text NOT NULL CHECK (char_length(destination) <= 500 AND destination ~ '^https://[^/?#\s]+(/[^\s]*)?$'),
+  -- The host part is letters, digits, dots and hyphens only: no user@, port, backslash or %-escape that a browser
+  -- would read as a different host than this check does.
+  destination text NOT NULL CHECK (char_length(destination) <= 500
+                AND destination ~ '^https://[a-z0-9.-]+([/?#][^\s\\]*)?$'),
   created_at  timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS affiliate_links_question ON app.affiliate_links (question_id);
@@ -43,9 +46,10 @@ CREATE TABLE IF NOT EXISTS app.affiliate_clicks (
 CREATE TABLE IF NOT EXISTS app.affiliate_click_tokens (
   token      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   link_id    bigint NOT NULL REFERENCES app.affiliate_links (id) ON DELETE CASCADE,
-  created_at timestamptz NOT NULL DEFAULT now()
+  -- The day only: an exact time could be matched to a person's other timestamped rows.
+  created_on date NOT NULL DEFAULT current_date
 );
-CREATE INDEX IF NOT EXISTS affiliate_click_tokens_age ON app.affiliate_click_tokens (created_at);
+CREATE INDEX IF NOT EXISTS affiliate_click_tokens_age ON app.affiliate_click_tokens (created_on);
 
 -- A sale the network reports for a click token, once per network order id.
 CREATE TABLE IF NOT EXISTS app.affiliate_conversions (
@@ -86,7 +90,8 @@ CREATE POLICY affiliate_programs_owner ON app.affiliate_programs FOR ALL TO app_
   USING (app.is_system() OR app.is_owner() OR active)
   WITH CHECK (app.flag_on('affiliates') AND app.is_owner());
 DROP POLICY IF EXISTS affiliate_links_read ON app.affiliate_links;
-CREATE POLICY affiliate_links_read ON app.affiliate_links FOR SELECT TO app_api USING (true);
+CREATE POLICY affiliate_links_read ON app.affiliate_links FOR SELECT TO app_api
+  USING (app.is_system() OR app.is_owner() OR NOT app.is_question_hidden(question_id));
 DROP POLICY IF EXISTS affiliate_links_make ON app.affiliate_links;
 CREATE POLICY affiliate_links_make ON app.affiliate_links FOR INSERT TO app_api
   WITH CHECK (app.flag_on('affiliates') AND app.is_owner());
@@ -112,8 +117,9 @@ DECLARE
   dest_host text;
 BEGIN
   SELECT host INTO allowed FROM app.affiliate_programs WHERE id = NEW.program_id;
-  dest_host := lower(substring(NEW.destination FROM '^https://([^/?#:@\s]+)'));
-  IF dest_host IS NULL OR NOT (dest_host = allowed OR dest_host LIKE '%.' || allowed) THEN
+  dest_host := substring(NEW.destination FROM '^https://([a-z0-9.-]+)([/?#]|$)');
+  -- Fails closed: a program it can't see, or a host it can't read, is refused.
+  IF allowed IS NULL OR dest_host IS NULL OR NOT (dest_host = allowed OR dest_host LIKE '%.' || allowed) THEN
     RAISE EXCEPTION 'an affiliate link goes only to its program''s host' USING ERRCODE = 'check_violation';
   END IF;
   RETURN NEW;

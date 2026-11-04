@@ -343,8 +343,12 @@ Reviewed by an independent reader; findings fixed in migration 0045, tests in `s
 
 ## Affiliate referrals (ADR 0036)
 
-- **No open redirect:** a destination must be on the program's host or a subdomain, checked by a database trigger on
-  every insert (look-alike hosts and `user@host` refused, tested).
+- **No open redirect:** a destination's host is lowercase letters, digits, dots and hyphens only, and must be the
+  program's host or a subdomain: the API schema, a fail-closed database trigger, and the redirect re-reading the address
+  as a browser does. `user@`, ports, backslashes and `%2F` refused (an independent review broke the first version three
+  ways; each is now a test). Links on hidden questions are hidden in the database too.
+- **Postback keys** are derived for that purpose alone (`purposeKey`); rotating `IP_HASH_KEY` changes them all, so the
+  owner re-issues them to networks after a rotation. Click tokens keep the day only.
 - **No person in what is kept:** clicks are counts per link per day; a click token names a link and a time, is made
   only with the reader's yes and no `Sec-GPC`, and is deleted after 90 days.
 - **Sales are signed:** per-program HMAC keys derived from the server key, never stored; constant-time compare; one
