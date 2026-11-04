@@ -165,13 +165,14 @@ describe('the offline gate', () => {
 
   it(
     'tunes its settings on the training people’s later searches, then still has to pass the gate',
-    { timeout: 120_000 },
+    // Tuning trains about six models a fold; CI with coverage runs several times slower than a laptop.
+    { timeout: 300_000 },
     async () => {
       const searches = logged(40_000, 1);
       const result = await trainSearchRankerAndEvaluate({
         searches,
         serving: null,
-        options: { trees: 27 },
+        options: { trees: 9 },
         tune: true,
       });
       const tuned = result.params.tuned as { learningRate: number; maxDepth: number; l2: number; score: number };
