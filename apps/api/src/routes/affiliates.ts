@@ -5,14 +5,18 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Database, Queryable } from '../db.ts';
 import { auditWithin } from '../platform/jobs.ts';
+import { purposeKey } from '../rate-limit.ts';
 import { fail, pgCode, signedIn } from './common.ts';
 
 export const DISCLOSURE =
   'Affiliate link: Graphinity may earn a commission if you buy. It never changes which answers you see.';
 
-/** The key a network signs its sale reports with, different for each program; given once, never stored. */
+/**
+ * The key a network signs its sale reports with, different for each program; given once, never stored. Derived for
+ * this purpose alone (rate-limit.ts purposeKey); rotating IP_HASH_KEY changes every program's key (RUNBOOK).
+ */
 export const postbackKey = (secret: Buffer, program: string) =>
-  createHmac('sha256', secret).update(`affiliate:${program}`).digest('hex');
+  createHmac('sha256', purposeKey(secret, 'affiliate-postback')).update(program).digest('hex');
 
 const postbackPayload = (b: { program: string; orderRef: string; commissionPaise: number; clickToken?: string }) =>
   `${b.program}|${b.orderRef}|${String(b.commissionPaise)}|${b.clickToken ?? ''}`;
@@ -93,7 +97,7 @@ export function registerAffiliateRoutes(
             program: uuid,
             question: { type: 'string', pattern: '^[1-9][0-9]{0,15}$' },
             label: { type: 'string', minLength: 2, maxLength: 80, pattern: '^\\S(.*\\S)?$' },
-            destination: { type: 'string', maxLength: 500, pattern: '^https://[^/?#\\s]+(/[^\\s]*)?$' },
+            destination: { type: 'string', maxLength: 500, pattern: '^https://[a-z0-9.-]+([/?#][^\\s\\\\]*)?$' },
           },
         },
       },
@@ -210,14 +214,33 @@ export function registerAffiliateRoutes(
         ));
       const found = await db.asSystem(async q => {
         const link = (
-          await q.query<{ id: string; destination: string; param: string; value: string; click: string | null }>(
-            `SELECT l.id::text, l.destination, p.tag_param AS param, p.tag_value AS value, p.click_param AS click
+          await q.query<{
+            id: string;
+            destination: string;
+            host: string;
+            param: string;
+            value: string;
+            click: string | null;
+          }>(
+            `SELECT l.id::text, l.destination, p.host, p.tag_param AS param, p.tag_value AS value, p.click_param AS click
              FROM app.affiliate_links l JOIN app.affiliate_programs p ON p.id = l.program_id
              WHERE l.token = $1 AND p.active AND NOT app.is_question_hidden(l.question_id)`,
             [token],
           )
         ).rows[0];
         if (!link) return null;
+        // Read the address as a browser will, and send no one anywhere but the program's own site.
+        let parsed: URL;
+        try {
+          parsed = new URL(link.destination);
+        } catch {
+          return null;
+        }
+        if (
+          parsed.protocol !== 'https:' ||
+          !(parsed.hostname === link.host || parsed.hostname.endsWith(`.${link.host}`))
+        )
+          return null;
         await q.query(
           `INSERT INTO app.affiliate_clicks AS c (link_id, day, clicks) VALUES ($1, (now() AT TIME ZONE 'UTC')::date, 1)
            ON CONFLICT (link_id, day) DO UPDATE SET clicks = c.clicks + 1`,

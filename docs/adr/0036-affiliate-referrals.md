@@ -14,8 +14,11 @@ answers are people's experience (ADR 0003: no paid influence on knowledge).
   parameter and value that earn commission, and optionally the parameter it echoes back with a sale. A link is a label
   and a destination on that host, attached to a question. Only the owner, only while `affiliates` is on, in the API
   and the database; every change audited.
-- **No open redirect:** a database trigger refuses a destination whose host isn't the program's or a subdomain of it
-  (tested with look-alike hosts and `user@host` tricks).
+- **No open redirect:** a destination's host may hold only lowercase letters, digits, dots and hyphens (no `user@`,
+  port, backslash or `%`-escape that a browser would read differently), and must be the program's host or a subdomain,
+  in the API schema and a database trigger that fails closed; the redirect also re-reads the address as a browser does
+  and refuses anything off the site. The first version's check was bypassable three ways (found by the independent
+  review, with a working attack); each is now a test.
 - **Shown apart and labelled:** `GET /questions/:id/affiliate-links` returns at most five, with a disclosure that
   Graphinity may earn a commission and that it never changes which answers are shown. Links never enter any ranking.
 - **Following a link** (`POST /affiliates/go/:token`): counted per link per day, with no person, address or time of

@@ -14,8 +14,11 @@ someone types into search, from wording people already used in public questions.
   `apps/api/src/ml/query-lm.ts`. No neural network, no downloaded weights, nothing to host.
 - **Trained on public titles only:** the titles of questions anyone can see, at most 50,000, rebuilt hourly while the
   switch is on. Searches are never read, so nothing one person typed reaches another.
-- **A floor:** a word sequence is suggested only once three or more questions use it, so one person's unusual wording
-  (a name, a place) is never echoed.
+- **A floor:** a suggestion is shown only when its whole phrase, what was typed and what is added, appears in three or
+  more questions; a longer one is shortened until it does. So one person's unusual wording (a name, a place) is never
+  echoed, and no phrase nobody asked is made up from pieces of others (found by the independent review).
+- **Off means gone:** while the switch is off the model is dropped, so turning it back on never serves wording from
+  questions hidden in the meantime.
 - **It completes, never writes:** the last word typed and up to three after it. No answers, no summaries.
 - **Served:** `GET /search/complete?q=` behind the switch `query_completion` (off); the reply can be cached for five
   minutes by anyone, since it never depends on who asks.

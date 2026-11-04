@@ -8,6 +8,8 @@ const MAX_TITLES = 50_000;
 
 export interface Completer {
   refresh(): Promise<number>;
+  /** Drops the model: while suggestions are off, nothing stale (from questions hidden since) waits to be served. */
+  clear(): void;
   complete(typed: string): string[];
 }
 
@@ -22,6 +24,9 @@ export function createCompleter(db: Pick<Database, 'asSystem'>): Completer {
       );
       model = trainQueryLm(rows.map(r => r.title));
       return rows.length;
+    },
+    clear() {
+      model = null;
     },
     complete: typed => (model ? complete(model, typed) : []),
   };
