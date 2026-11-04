@@ -38,6 +38,8 @@ describe('feature flags', () => {
       // Off until the owner has a Razorpay account and chooses to take money (ADR 0034).
       { name: 'payments', enabled: false },
       { name: 'push', enabled: true },
+      // Off until the owner chooses suggestions in search (ADR 0035).
+      { name: 'query_completion', enabled: false },
       { name: 'recommendations', enabled: true },
       { name: 'routing_exploration', enabled: false },
       { name: 'search', enabled: true },

@@ -50,6 +50,8 @@ export const FLAG_DEFAULTS = {
   enterprise_analytics: false,
   /** Razorpay payment links for ad credit and enterprise plans (ADR 0034). */
   payments: false,
+  /** Finishing search queries with Graphinity's own trigram model, from public titles (ADR 0035). */
+  query_completion: false,
   /** Dangerous actions need a sign-in from the last 5 minutes (ADR 0026). */
   step_up_auth: false,
 } as const;

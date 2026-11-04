@@ -33,6 +33,8 @@ import { registerAdReportRoutes } from './routes/ad-reports.ts';
 import { registerPlatformRoutes } from './routes/platform.ts';
 import { registerEnterpriseRoutes } from './routes/enterprise.ts';
 import { registerPaymentRoutes } from './routes/payments.ts';
+import { registerCompletionRoutes } from './routes/completion.ts';
+import type { Completer } from './search/completion.ts';
 import type { PaymentFetcher } from './payments/razorpay.ts';
 import type { MetricsRecorder } from './ops/metrics.ts';
 
@@ -129,6 +131,9 @@ export interface Deps {
   enterpriseEnabled?: () => boolean;
   /** The `payments` switch (ADR 0034). Off by default. */
   paymentsEnabled?: () => boolean;
+  /** Search suggestions (ADR 0035): the switch and the model. Off without both. */
+  completionEnabled?: () => boolean;
+  completer?: Completer | null;
   /** Razorpay keys and how to call it; payments are unavailable without them. */
   razorpay?: { keys: RazorpayKeys; fetcher: PaymentFetcher } | null;
   /** Chooses ads (ADR 0022 part 4); built from the database when not given. */
@@ -398,6 +403,10 @@ export async function buildServer(deps: Deps) {
   registerAdReportRoutes(app, { db, enabled: deps.adsEnabled ?? (() => false), clock });
   registerPlatformRoutes(app, { db, clock, limit: limits.ads, keySecret: config.ipHashKey });
   registerEnterpriseRoutes(app, { db, enabled: deps.enterpriseEnabled ?? (() => false), clock, limit: limits.ads });
+  registerCompletionRoutes(app, {
+    enabled: deps.completionEnabled ?? (() => false),
+    completer: deps.completer ?? null,
+  });
   await registerPaymentRoutes(app, {
     db,
     enabled: deps.paymentsEnabled ?? (() => false),

@@ -616,6 +616,12 @@ untracked and unshared, whatever the person chose.
   `{ org }`; `POST /owner/enterprise/orgs/:id/keys` → 201 `{ key, prefix }`, the only time the key is shown;
   `DELETE /owner/enterprise/keys/:prefix` → 204. Writes need a recent sign-in once `step_up_auth` is on.
 
+## Search suggestions (ADR 0035), off by default
+
+- **`GET /search/complete?q=`** (1 to 150 characters, signed in or not): `{ suggestions: [string] }`, up to five ways to
+  finish what was typed, from wording three or more visible questions share. 404 `completion_off` while the switch is
+  off. `cache-control: public, max-age=300`. Nothing typed is stored or logged.
+
 ## Payments (ADR 0034), off by default
 
 - **`POST /ads/advertisers/:id/payments { amountPaise }`** (an advertiser's owner; 10,000 to 10,000,000 paise) and
