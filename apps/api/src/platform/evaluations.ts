@@ -166,7 +166,7 @@ export function evaluateTwoTower(opens: ReadonlyArray<{ user: string; item: stri
 }
 
 /**
- * Whether learning "answers" and "gets picked" together (MMoE, ml/mmoe.ts, ADR 0032) predicts them better than one shared
+ * Whether learning "answers" and "gets picked" together (MMoE, and PLE's task-own experts; ml/mmoe.ts, ADR 0032) predicts them better than one shared
  * bottom does, from the nine routing factors. Every other routed person is held out; AUC on them, per task, for both.
  * Picks are only known for people who answered, so that task learns and is scored on them alone. Measuring only.
  */
@@ -179,8 +179,13 @@ export function evaluateMultiTask(
   const fit = rows.filter((_, i) => i % 2 === 0);
   const held = rows.filter((_, i) => i % 2 === 1);
   const inputs = rows[0]?.x.length ?? 0;
-  const score = (shared: boolean, task: number) => {
-    const m = trainMmoe(fit, { inputs, tasks: 2, sharedGate: shared });
+  const score = (kind: 'mmoe' | 'shared' | 'ple', task: number) => {
+    const m = trainMmoe(fit, {
+      inputs,
+      tasks: 2,
+      sharedGate: kind === 'shared',
+      ...(kind === 'ple' ? { experts: 2, taskExperts: 2 } : {}),
+    });
     const scored = held.filter(r => r.y[task] != null);
     return auc(
       scored.map(r => predictMmoe(m, r.x, task)),
@@ -190,10 +195,12 @@ export function evaluateMultiTask(
   const out = {
     routed: routed.length,
     answered,
-    mmoeAnswered: score(false, 0),
-    mmoePicked: score(false, 1),
-    sharedAnswered: score(true, 0),
-    sharedPicked: score(true, 1),
+    mmoeAnswered: score('mmoe', 0),
+    mmoePicked: score('mmoe', 1),
+    sharedAnswered: score('shared', 0),
+    sharedPicked: score('shared', 1),
+    pleAnswered: score('ple', 0),
+    plePicked: score('ple', 1),
   };
   return Object.fromEntries(Object.entries(out).filter((e): e is [string, number] => e[1] !== null));
 }
