@@ -1,7 +1,7 @@
 // Graphinity's own query language model (ADR 0035): how well it predicts titles it never saw, that it suggests only
 // phrasing three questions share, and the route: off by default, public titles only, hidden questions never.
 import { beforeAll, describe, expect, it } from 'vitest';
-import { complete, MIN_QUESTIONS, perplexity, tokens, trainQueryLm } from '../src/ml/query-lm.ts';
+import { complete, MIN_QUESTIONS, perplexity, phraseCount, tokens, trainQueryLm } from '../src/ml/query-lm.ts';
 import { createCompleter } from '../src/search/completion.ts';
 import { startApp, type TestApp } from './helpers/app.ts';
 import { must } from './helpers/must.ts';
@@ -38,6 +38,32 @@ describe('the model', () => {
     expect(complete(lm, '   ')).toEqual([]);
   });
 
+  it('holds the floor for the whole phrase, not only for each three words of it', () => {
+    // "alpha beta gamma" is in three titles and "beta gamma delta" in three others, but no title says
+    // "alpha beta gamma delta": suggesting it would make up a phrase nobody asked.
+    const lm = trainQueryLm([
+      'alpha beta gamma one',
+      'alpha beta gamma two',
+      'alpha beta gamma three',
+      'zeta beta gamma delta',
+      'eta beta gamma delta',
+      'theta beta gamma delta',
+    ]);
+    const got = complete(lm, 'alpha be');
+    expect(got[0]).toBe('alpha beta gamma');
+    expect(got.join(' ')).not.toContain('delta');
+    expect(phraseCount(lm, ['alpha', 'beta', 'gamma', 'delta'])).toBe(0);
+    expect(phraseCount(lm, ['beta', 'gamma', 'delta'])).toBe(3);
+    expect(phraseCount(lm, [])).toBe(0);
+  });
+
+  it('forgets its model when switched off, so nothing stale is served later', async () => {
+    const c = createCompleter(h.t.database);
+    await c.refresh();
+    c.clear();
+    expect(c.complete('which')).toEqual([]);
+  });
+
   it('reads words the way people type them, and copes with what it never saw', () => {
     expect(tokens('Customs DUTY, on a “drone”?! ')).toEqual(['customs', 'duty', 'on', 'a', 'drone']);
     const lm = trainQueryLm(titles);
@@ -69,7 +95,13 @@ const completer = { current: null as ReturnType<typeof createCompleter> | null }
 beforeAll(async () => {
   h = await startApp(() => Date.now(), {
     completionEnabled: () => on,
-    completer: { refresh: () => must(completer.current).refresh(), complete: q => must(completer.current).complete(q) },
+    completer: {
+      refresh: () => must(completer.current).refresh(),
+      clear: () => {
+        must(completer.current).clear();
+      },
+      complete: q => must(completer.current).complete(q),
+    },
   });
   completer.current = createCompleter(h.t.database);
   return h.close;

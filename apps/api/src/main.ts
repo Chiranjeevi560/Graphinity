@@ -655,7 +655,16 @@ const runRollups = serial(async () => {
     ['affiliate-tokens', 86_400, () => sweepAffiliateTokens(db)],
     ['search-shadow', 3600, () => searchShadow.flush(db)],
     // Only while suggestions are on: no point training a model nothing serves.
-    ['query-lm', 3600, () => (flags.enabled('query_completion') ? completer.refresh() : Promise.resolve(0))],
+    [
+      'query-lm',
+      3600,
+      () => {
+        // Off: drop the model, so nothing stale is served the moment it's switched back on.
+        if (flags.enabled('query_completion')) return completer.refresh();
+        completer.clear();
+        return Promise.resolve(0);
+      },
+    ],
     ['experiments', 3600, () => evaluateExperiments(db)],
     ['model-evaluations', 3600, () => runModelEvaluations(db, Date.now())],
     ['memory-sweep', 3600, () => sweepMemory(db, Date.now())],

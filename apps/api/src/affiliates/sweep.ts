@@ -6,10 +6,7 @@ export const TOKEN_DAYS = 90;
 export async function sweepAffiliateTokens(db: Pick<Database, 'asSystem'>): Promise<number> {
   return db.asSystem(
     async q =>
-      (
-        await q.query(
-          `DELETE FROM app.affiliate_click_tokens WHERE created_at < now() - make_interval(days => ${String(TOKEN_DAYS)})`,
-        )
-      ).rowCount ?? 0,
+      (await q.query(`DELETE FROM app.affiliate_click_tokens WHERE created_on < current_date - ${String(TOKEN_DAYS)}`))
+        .rowCount ?? 0,
   );
 }

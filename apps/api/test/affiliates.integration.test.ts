@@ -115,11 +115,18 @@ describe('affiliate links', () => {
       const o = await owner();
       const q = await question(o);
       const { program } = await programAndLink(o, q);
+      // Each found by the independent review or a known trick: none may leave the program's site.
       for (const destination of [
         'https://evil.example/cases',
         'https://shop.example.in.evil.example/x',
         'https://evil.example@shop.example.in/x',
         'https://notshop.example.in/x',
+        'https://shop.example.in@evil.example/x',
+        'https://shop.example.in:443@evil.example/x',
+        'https://evil.example\\.shop.example.in/x',
+        'https://evil.example%2F.shop.example.in/x',
+        'https://shop.example.in:8443/x',
+        'https://SHOP.example.in/x',
       ]) {
         const res = await h.call('POST', '/owner/affiliates/links', o.token, {
           program: program.id,
@@ -129,6 +136,41 @@ describe('affiliate links', () => {
         });
         expect(res.statusCode, destination).toBe(400);
       }
+      // The database refuses them too, whatever writes the row.
+      const pid = must(
+        (
+          await h.t.owner.query<{ id: string }>('SELECT id::text FROM app.affiliate_programs WHERE public_id = $1', [
+            program.id,
+          ])
+        ).rows[0],
+      ).id;
+      for (const destination of [
+        'https://shop.example.in@evil.example/x',
+        'https://shop.example.in:443@evil.example/x',
+        'https://evil.example\\.shop.example.in/x',
+        'https://evil.example%2F.shop.example.in/x',
+        'https://evil.example/x',
+      ])
+        await expect(
+          h.t.owner.query(
+            "INSERT INTO app.affiliate_links (program_id, question_id, label, destination) VALUES ($1, $2, 'Case', $3)",
+            [pid, q, destination],
+          ),
+          destination,
+        ).rejects.toThrow();
+      // And a row that got past it anyway (trigger off, as a restore might) still sends no one off the site.
+      await h.t.owner.query('ALTER TABLE app.affiliate_links DISABLE TRIGGER affiliate_link_host');
+      const bad = must(
+        (
+          await h.t.owner.query<{ token: string }>(
+            "INSERT INTO app.affiliate_links (program_id, question_id, label, destination) VALUES ($1, $2, 'Case', 'https://evil.example/x') RETURNING token::text",
+            [pid, q],
+          )
+        ).rows[0],
+      ).token;
+      await h.t.owner.query('ALTER TABLE app.affiliate_links ENABLE TRIGGER affiliate_link_host');
+      expect((await h.call('POST', `/affiliates/go/${bad}`)).statusCode).toBe(404);
+      await h.t.owner.query('DELETE FROM app.affiliate_links WHERE token = $1', [bad]);
       // Straight to the database as someone else: refused.
       await h.t.database.withUser(someone.id, async q2 => {
         await expect(
@@ -194,7 +236,7 @@ describe('affiliate links', () => {
       const columns = await h.t.owner.query<{ c: string }>(
         "SELECT column_name AS c FROM information_schema.columns WHERE table_schema = 'app' AND table_name = 'affiliate_click_tokens' ORDER BY 1",
       );
-      expect(columns.rows.map(r => r.c)).toEqual(['created_at', 'link_id', 'token']);
+      expect(columns.rows.map(r => r.c)).toEqual(['created_on', 'link_id', 'token']);
     } finally {
       await setOn(false);
     }
@@ -322,12 +364,29 @@ describe('affiliate links', () => {
     expect((await h.call('POST', '/owner/affiliates/links', undefined, {})).statusCode).toBe(401);
   });
 
+  it('keep links on a hidden question out of reach, in the database too', async () => {
+    await setOn(true);
+    try {
+      const o = await owner();
+      const q = await question(o);
+      await programAndLink(o, q);
+      await h.t.owner.query("INSERT INTO app.decisions (question_id, decision) VALUES ($1, 'remove')", [q]);
+      const someone = await member();
+      await h.t.database.withUser(someone.id, async q2 => {
+        expect((await q2.query('SELECT 1 FROM app.affiliate_links WHERE question_id = $1', [q])).rowCount).toBe(0);
+      });
+      expect((await h.call('GET', `/questions/${q}/affiliate-links`)).json<{ links: unknown[] }>().links).toEqual([]);
+    } finally {
+      await setOn(false);
+    }
+  });
+
   it('forget click tokens after 90 days', async () => {
     const link = must(
       (await h.t.owner.query<{ id: string }>('SELECT id::text FROM app.affiliate_links LIMIT 1')).rows[0],
     ).id;
     await h.t.owner.query(
-      `INSERT INTO app.affiliate_click_tokens (link_id, created_at) VALUES ($1, now() - make_interval(days => $2)), ($1, now())`,
+      `INSERT INTO app.affiliate_click_tokens (link_id, created_on) VALUES ($1, current_date - $2::int), ($1, current_date)`,
       [link, TOKEN_DAYS + 1],
     );
     const before = Number(
