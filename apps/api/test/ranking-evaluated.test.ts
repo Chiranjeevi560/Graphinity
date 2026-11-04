@@ -121,6 +121,27 @@ describe('multi-task', () => {
     expect(m.towerBias[0]).toBeGreaterThan(0);
   });
 
+  it('PLE: a task’s own experts learn only from that task, and both tasks still learn', () => {
+    const random = seededRandom(9);
+    const rows = Array.from({ length: 1500 }, () => {
+      const x = [random() * 2 - 1, random() * 2 - 1];
+      return { x, y: [(x[0] ?? 0) > 0 ? 1 : 0, (x[1] ?? 0) > 0 ? 1 : 0] };
+    });
+    const m = trainMmoe(rows, { inputs: 2, tasks: 2, experts: 2, taskExperts: 2, epochs: 15 });
+    expect(m.shared).toBe(2);
+    expect(predictMmoe(m, [0.9, 0], 0)).toBeGreaterThan(0.7);
+    expect(predictMmoe(m, [0, -0.9], 1)).toBeLessThan(0.3);
+    // Only task 0 labelled: task 1's own experts (the last two) keep their starting weights exactly.
+    const only0 = rows.map(r => ({ x: r.x, y: [r.y[0] ?? 0, null] }));
+    const opts = { inputs: 2, tasks: 2, experts: 2, taskExperts: 2, epochs: 3, seed: 4 };
+    const before = trainMmoe(only0, { ...opts, epochs: 0 });
+    const after = trainMmoe(only0, opts);
+    const block = (w: Float64Array, e: number) => Array.from(w.slice(e * 8 * 2, (e + 1) * 8 * 2));
+    for (const e of [4, 5]) expect(block(after.expertWeights, e)).toEqual(block(before.expertWeights, e));
+    // Task 0's own experts did learn.
+    expect(block(after.expertWeights, 2)).not.toEqual(block(before.expertWeights, 2));
+  });
+
   it('blends by the weights given', () => {
     expect(utility([0.5, 0.5], [2, -1])).toBeCloseTo(0.5);
   });

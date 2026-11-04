@@ -205,10 +205,12 @@ function multitask() {
   );
   const [shared, sharedMs] = time(() => trainMmoe(train, { ...options, sharedGate: true }));
   const [gated, gatedMs] = time(() => trainMmoe(train, options));
+  const [ple, pleMs] = time(() => trainMmoe(train, { ...options, experts: 2, taskExperts: 2 }));
   return {
     separateModels: [auc(separate[0], 0), auc(separate[1], 1, 0)],
     sharedBottom: { auc: [auc(shared, 0), auc(shared, 1)], trainSeconds: round(sharedMs / 1000, 1) },
     mmoe: { auc: [auc(gated, 0), auc(gated, 1)], trainSeconds: round(gatedMs / 1000, 1) },
+    ple: { auc: [auc(ple, 0), auc(ple, 1)], trainSeconds: round(pleMs / 1000, 1) },
   };
 }
 
