@@ -48,6 +48,7 @@ import { answeringRollup, basketRollup, retentionRollup } from './olap/rollups.t
 import { sweepMemory } from './intelligence/memory-job.ts';
 import { runModelEvaluations } from './platform/evaluations.ts';
 import { sweepStalePayments } from './payments/sweep.ts';
+import { createCompleter } from './search/completion.ts';
 import { purposeKey, systemClock } from './rate-limit.ts';
 import { buildServer } from './server.ts';
 import {
@@ -173,12 +174,15 @@ const adServer = createAdServer(db, {
   site: new URL(config.webOrigin).hostname,
   currency: 'INR',
 });
+const completer = createCompleter(db);
 const app = await buildServer({
   metrics,
   adServer,
   adsEnabled: () => flags.enabled('ads'),
   enterpriseEnabled: () => flags.enabled('enterprise_analytics'),
   paymentsEnabled: () => flags.enabled('payments'),
+  completionEnabled: () => flags.enabled('query_completion'),
+  completer,
   razorpay: config.razorpay ? { keys: config.razorpay, fetcher: (url, init) => fetch(url, init) } : null,
   config,
   db,
@@ -643,6 +647,8 @@ const runRollups = serial(async () => {
     ['knowledge-graph', 3600, () => refreshKnowledgeGraph(db, Date.now())],
     ['feature-store', 3600, () => materializeFeatures(db, Date.now())],
     ['payments-sweep', 3600, () => sweepStalePayments(db)],
+    // Only while suggestions are on: no point training a model nothing serves.
+    ['query-lm', 3600, () => (flags.enabled('query_completion') ? completer.refresh() : Promise.resolve(0))],
     ['experiments', 3600, () => evaluateExperiments(db)],
     ['model-evaluations', 3600, () => runModelEvaluations(db, Date.now())],
     ['memory-sweep', 3600, () => sweepMemory(db, Date.now())],
