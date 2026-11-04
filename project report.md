@@ -570,3 +570,66 @@ three things on purpose left as they are, with reasons in that commit.
 Every commit passed the full gate (1,134 API and 222 website tests on real Postgres as the restricted role, coverage,
 lint, types, build, size, secrets). Dependencies: no known vulnerability in production packages; 12 moderate in lint
 tools only (exception E2). **Not verified:** any of it on real data (too little exists), on Render, or by a lawyer.
+
+## Fifth pass: algorithm audit and the rest of the build (2026-11-04, Claude)
+
+Audited against the code, not only this report's earlier tables (which were partly out of date: the 31 personal-graph
+signals, ExplanationTrace and category purge exist; DPP serves behind an experiment). One label each.
+**Measuring** means the daily job records it for the owner page and changes nothing anyone sees.
+
+| Algorithm or subsystem | State |
+|---|---|
+| Learned search ranking (LambdaMART, IPS, tuning, gate, interleaving, shadow) | Built and connected; serving switch off (`learned_search_ranking`) |
+| Learned routing | Built and connected; switch off (`learned_routing`) |
+| Routing exploration (Thompson) | Built and connected; switch off (`routing_exploration`) |
+| Delayed-feedback CVR | Built and connected (measuring) |
+| Session graph | Built and connected (consent-gated screen) |
+| GraphSAGE | Built and connected (Related topics); weights untrained |
+| Trust max-flow, Fraudar, collusion | Built and connected as moderator evidence; **partial**: not used to weigh points or reports |
+| Personal graph: 31 signals, ExplanationTrace, category purge, export | Built and connected |
+| Feature store | Built and connected: two groups |
+| Tuning | Built and connected (search ranker) |
+| Bandits: LinUCB | Built and connected (measuring, replay) |
+| Uplift, counterfactual, Double ML | Built and connected (measuring) |
+| Experiments | **Partial**: search reads an arm; recommendations don't (needs its own consent) |
+| Model registry shadow / canary | Shadow built and connected; **canary not built** (changes what people see) |
+| Commerce: entities, cube, forecast, basket, intent, elasticity | Built and connected (intent, elasticity measuring) |
+| OLAP sketches, owner dashboard (HLL, CMS, t-digest, heatmap, LTV, CAC, burn) | Built and connected |
+| Offline LLM / RAG (claims, tool DAG, faithfulness) | Built and connected; template registry has no caller, by the no-LLM decision |
+| Self-trained language model (Kneser-Ney trigrams, search suggestions) | Built but off (`query_completion`) |
+| Memory (procedural, episodic, semantic) | Built and connected |
+| Multimodal: hashes, EXIF, receipt text, joint text-image embedding | Engines built; **uploads not built** (owner's decision, ADR 0037) |
+| Two-tower log-Q | Built and connected (measuring); serves nothing |
+| SQ8 / PQ | Built; SQ8 not used, PQ rejected by benchmark (ADR 0032) |
+| MMoE / PLE | Built and connected (measuring); serve nothing |
+| DPP diversity | Built and connected behind a search experiment |
+| S2S partner push | Built but off (`ads_partner_push` on, no partner) |
+| Ads, RTB, partner events, measurement, audiences, holdout, pacing | Built; four switches on, the rest off; no partner or campaign yet |
+| Fraud / collusion / invalid clicks | Built and connected |
+| Enterprise analytics | Built but off (`enterprise_analytics`) |
+| Payments (Razorpay) | Built but off (`payments`, no keys) |
+| Affiliate engine | Built but off (`affiliates`) |
+| Merchant platform | **Partial**: merchant pixel and conversion API built; no merchant accounts or catalogue |
+
+### Built in this pass (branch `change/20261104-algorithms`)
+
+PLE (task-own experts, measured with MMoE), Graphinity's own query language model (off), shadow scoring of a search
+challenger, the affiliate engine (off), the joint text-image embedding engine (no caller). Each commit's message has
+its evidence and mutations; ADRs 0035 to 0037.
+
+### Independent review of this pass
+
+A fresh reviewer found one high problem, with a working attack: the affiliate host check could be bypassed three
+ways (`user@host`, `host:port@other`, a backslash), sending readers to another site. Fixed in the API, the database
+and the redirect itself, each bypass now a test. Five low findings (a fail-open trigger, links on hidden questions
+readable in the database, postback keys tied to the IP-hashing key, exact click times, a suggestion floor per three
+words instead of per phrase) are fixed in the same commit.
+
+### Still not built, and why
+
+- **Canary** for models: serves a challenger to a slice of people; needs the owner's decision.
+- **Experiments on recommendations:** need their own consent purpose (the search one doesn't cover them).
+- **Trust max-flow weighting points or reports:** changes who earns what; the owner's decision.
+- **Image uploads:** legal duties (abuse-material screening) and storage first (ADR 0037).
+- **Merchant accounts and catalogue:** a product of its own; needs the owner's scope.
+- **A generative LLM:** not built, by the owner's decision.
