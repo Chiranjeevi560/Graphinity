@@ -520,3 +520,53 @@ GPC header and notice, 90-day forecasts, claim ports, a purity lint rule, stage 
 **Equal-weight mean: about 65/100. This isn't production ready.** Scores are judgment.
 
 Browser suite on `a1c427c`: 44 passed, Chromium and WebKit. Lighthouse on `/`: /  performance 97  accessibility 100  best-practices 100  seo 100  LCP 2279ms  CLS 0.000. Not independently reviewed: the fifth review's fixes. CI's browser and Firefox result on this code wasn't awaited when this was written.
+
+## Fourth pass: closing the gaps code can close (2026-11-04, Claude)
+
+Each item is one commit on `change/20261104-close-gaps` (PR #19) with its evidence and mutations in the message.
+**Measuring** means the daily job records it for the owner page and changes nothing anyone sees.
+
+| Was | Now |
+|---|---|
+| Commercial intent: built, no caller | Measuring: share of visible questions with each of 14 intents |
+| Price elasticity: built, no caller | Measuring: per topic, slope of ads sold on clearing price, with an interval |
+| Double ML: "available for measuring", unused | Measuring: what routing exploration costs in answers, the model's doubt taken out |
+| Tuning: not in real training | **Used**: the learned search ranking's settings are tuned walk-forward each day; the gate still judges on held-out people |
+| Two-tower: built, not served | Measuring: recall@10 against most-opened on real searches. Still serves nothing |
+| MMoE: built, not served | Measuring: answering and being picked, against one shared bottom. Still serves nothing |
+| LinUCB: no caller | Measuring: replayed over logged routing decisions. Thompson still routes |
+| Feature store: one group | Two: topic activity and topic outcomes, point-in-time correct |
+| Enterprise analytics, API licensing: not built | **Built, off**: organizations read noised topic counts (not forecasts) with a key, a UTC-daily quota, owner-managed (ADR 0033) |
+
+### Still not built, and why
+
+- **Payments** (subscriptions, marketplace fees, collecting ad or enterprise money): every way to take money costs a
+  processor's fee, against the zero-cost rule. The owner's decision.
+- **Affiliate referrals:** consent wording exists; links, partner tags and the disclosure aren't built. Needs an
+  affiliate network account and screen space (the script budget is full).
+- **Images (multimodal upload, OCR):** Graphinity takes no images; storing them is a new privacy surface and storage
+  cost. The owner's decision.
+- **A generative LLM:** not built, by the owner's decision (2026-10-26). Retrieval, claims and the faithfulness check
+  are; the template registry stays without a caller for that reason.
+- **Shadow and canary traffic for models,** and **experiment arms outside search:** not done in this pass.
+
+### Independent review
+
+A fresh reviewer, given only the diff and the contract, found nothing critical or high: the keys, the quota under
+concurrent requests, the switch and the table permissions held. It found one medium problem (enterprise reads returned
+forecasts fitted to un-noised counts, which day-to-day comparison could invert) and three low ones (the quota's day,
+one query reading people under collusion review, a missing index). All four are fixed in 0a6bd94. It also confirmed
+three things on purpose left as they are, with reasons in that commit.
+
+### Found along the way
+
+- An ad pacing test failed every day between 00:00 and 01:00 UTC (fixed in ef0ace9).
+- `ship.sh` didn't check formatting, so a commit could pass it and fail CI (fixed in 9bad5f3).
+- Another session worked in the same folder and stashed this work mid-commit; it moved to its own worktree, nothing
+  was lost.
+
+### Verified
+
+Every commit passed the full gate (1,134 API and 222 website tests on real Postgres as the restricted role, coverage,
+lint, types, build, size, secrets). Dependencies: no known vulnerability in production packages; 12 moderate in lint
+tools only (exception E2). **Not verified:** any of it on real data (too little exists), on Render, or by a lawyer.
