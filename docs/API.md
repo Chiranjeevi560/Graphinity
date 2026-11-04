@@ -616,6 +616,19 @@ untracked and unshared, whatever the person chose.
   `{ org }`; `POST /owner/enterprise/orgs/:id/keys` → 201 `{ key, prefix }`, the only time the key is shown;
   `DELETE /owner/enterprise/keys/:prefix` → 204. Writes need a recent sign-in once `step_up_auth` is on.
 
+## Affiliate links (ADR 0036), off by default
+
+- **Owner only:** `POST /owner/affiliates/programs { name, host, tagParam, tagValue, clickParam? }` → 201
+  `{ program: { id, postbackKey } }` (the key shown once); `POST /owner/affiliates/links { program, question, label,
+  destination }` → 201 `{ link: { token } }`, 400 `wrong_host` if the destination isn't on the program's host;
+  `DELETE /owner/affiliates/links/:token` → 204. 404 `affiliates_off` while the switch is off.
+- **`GET /questions/:id/affiliate-links`**: `{ links: [{ token, label }], disclosure }`, empty while off.
+- **`POST /affiliates/go/:token`** (signed in or not): `{ url, disclosure }`, the shop's address with the tag, and a
+  click token only with the reader's `affiliate_optimization` yes and no `Sec-GPC`. Counts the click with no person.
+- **`POST /affiliates/postback { program, orderRef, commissionPaise, clickToken?, signature }`**: a network's server;
+  `signature` is the hex HMAC-SHA256, with the program's key, of `program|orderRef|commissionPaise|clickToken`. 401
+  `bad_signature`; `{ counted }`, false when that order was already counted.
+
 ## Search suggestions (ADR 0035), off by default
 
 - **`GET /search/complete?q=`** (1 to 150 characters, signed in or not): `{ suggestions: [string] }`, up to five ways to

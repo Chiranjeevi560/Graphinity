@@ -38,6 +38,20 @@ describe('the model', () => {
     expect(complete(lm, '   ')).toEqual([]);
   });
 
+  it('reads words the way people type them, and copes with what it never saw', () => {
+    expect(tokens('Customs DUTY, on a “drone”?! ')).toEqual(['customs', 'duty', 'on', 'a', 'drone']);
+    const lm = trainQueryLm(titles);
+    // A trailing space means the word is finished: suggest what comes next.
+    expect(complete(lm, 'customs duty ')[0]).toMatch(/^customs duty on /);
+    expect(complete(lm, 'zzz qqq')).toEqual([]);
+    expect(perplexity(lm, [])).toBe(Infinity);
+    // Unseen words still get a small, positive probability.
+    expect(perplexity(lm, ['Totally unseen words here'])).toBeGreaterThan(1);
+    // A model trained on nothing has nothing to prefer: every word is certain, and nothing is suggested.
+    expect(perplexity(trainQueryLm([]), ['anything'])).toBe(1);
+    expect(complete(trainQueryLm([]), 'any')).toEqual([]);
+  });
+
   it('never suggests wording fewer than three questions used', () => {
     const rare = ['Is my neighbour Ravi Kumar allowed to park here?', 'Is my neighbour Ravi Kumar a dentist?'];
     const lm = trainQueryLm([...titles, ...rare]);

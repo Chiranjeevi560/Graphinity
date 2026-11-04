@@ -28,6 +28,8 @@ describe('feature flags', () => {
       { name: 'ads_partner_push', enabled: false },
       { name: 'ads_partner_sites', enabled: false },
       { name: 'ads_rtb', enabled: false },
+      // Off until the owner has an affiliate agreement and the disclosure is on the page (ADR 0036).
+      { name: 'affiliates', enabled: false },
       { name: 'embeddings', enabled: true },
       // Off until the owner, an agreement and the privacy page say otherwise (ADR 0033).
       { name: 'enterprise_analytics', enabled: false },
