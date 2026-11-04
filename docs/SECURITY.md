@@ -341,6 +341,26 @@ Reviewed by an independent reader; findings fixed in migration 0045, tests in `s
   alone under forced RLS. Each is broken on purpose in `enterprise.integration.test.ts`'s commit.
 - **Gap:** whether noised totals with a 25-person floor are anonymous under DPDP and GDPR is for a lawyer.
 
+## Payments (ADR 0034)
+
+- **What Graphinity holds:** amounts, dates, statuses and Razorpay's link and payment ids. Never a card, UPI id, bank
+  detail, name, email or phone: the payer types those on Razorpay's page, and Graphinity sends Razorpay none of them.
+- **Trust:** only a webhook whose `X-Razorpay-Signature` is the HMAC-SHA256 of the exact raw body (constant-time
+  compare) changes a payment; the amount and currency must match what was asked, and "paid" must be the whole amount
+  (also a database constraint). Each event id is acted on once: that stops Razorpay's honest repeats, not replays (the
+  id is a header the signature doesn't cover), which is harmless only because every effect moves forward and repeating
+  it changes nothing. A payment whose link we never recorded (a timeout after Razorpay made it) takes the link from the
+  signed event, so money paid is never lost; an hourly job marks payments stuck asking Razorpay as failed.
+- **Forward only, in the database:** a trigger refuses un-paying, shrinking what was received, or changing a payment's
+  link or payment id; only the server's own system context may update a payment; only an advertiser's owner (or the
+  platform's owner, for plans) may ask, and only while the switch is on in the database too.
+- **Keys:** live keys refused outside production; the secrets live in Render's environment only. Razorpay's error
+  text never reaches a response or a log.
+- **Each rule broken on purpose in the commit** (switch, signature, paid-stays-paid, de-duplication, amount check,
+  late expiry): every break fails a test.
+- **Gaps:** the webhook secret can't be rotated without a short window of refused retries (Razorpay retries); refunds
+  and GST invoices aren't built; whether Graphinity must register for GST is the owner's (an accountant's) question.
+
 ## Incident, 2026-11-01: production database touched during local repair
 
 While repairing a local checksum, a script chose its connection by pattern from `.local/migrate.env` and reached
