@@ -262,6 +262,10 @@ the algorithm LightGBM and XGBoost run as `lambdarank`.
 - **Features** (`search/features.ts`) are the logged point-in-time ones (word and meaning reciprocal
   ranks, similarity, found-by flags, every-word, log answers, answer freshness), computed by one
   function for training and serving.
+- **Shadow scoring (2026-11-04):** while a challenger waits, every search that isn't interleaved is also ordered by
+  it, silently; only its top-ten agreement with what was shown and its time are kept, in memory, and written hourly
+  as `search-shadow`. The registry's SHADOW rung now has evidence behind it. Canary (serving a challenger to a slice
+  of people) is still not done: it changes what people see, and needs its own decision.
 - **Settings, tuned (2026-11-04):** the daily run first chooses learning rate, depth and L2 with
   `ml/tuning.ts`: nine Latin-hypercube settings, successive halving on the number of trees, each
   scored by IPS-NDCG@10 walk-forward on the training people's later searches. Held-out people are

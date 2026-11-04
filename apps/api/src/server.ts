@@ -35,6 +35,7 @@ import { registerEnterpriseRoutes } from './routes/enterprise.ts';
 import { registerPaymentRoutes } from './routes/payments.ts';
 import { registerCompletionRoutes } from './routes/completion.ts';
 import type { Completer } from './search/completion.ts';
+import type { ShadowRecorder } from './search/shadow.ts';
 import type { PaymentFetcher } from './payments/razorpay.ts';
 import type { MetricsRecorder } from './ops/metrics.ts';
 
@@ -120,6 +121,8 @@ export interface Deps {
   searchRandom?: () => number;
   /** The learned search rankings in service (ADR 0015 part 6). Defaults to none: fusion orders results. */
   searchRankers?: () => Rankers;
+  /** Silent scoring of a waiting search challenger (search/shadow.ts). */
+  searchShadow?: ShadowRecorder | null;
   limits?: Limits;
   /** Where logs go. Defaults to stdout. */
   logStream?: { write(line: string): void };
@@ -375,6 +378,7 @@ export async function buildServer(deps: Deps) {
     keySecret: config.ipHashKey,
     ...(deps.searchRandom ? { random: deps.searchRandom } : {}),
     ...(deps.searchRankers ? { rankers: deps.searchRankers } : {}),
+    shadow: deps.searchShadow ?? null,
   });
   registerLiveRoutes(app, { events, clock });
   registerModerationRoutes(app, { db });
