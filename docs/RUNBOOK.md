@@ -196,6 +196,12 @@ The rest (`ads_behavioral`, `ads_measurement`, `ads_cross_device`, `ads_audience
 off until chosen. Anything that uses a person's data still needs an approved rule for their country above and the
 person's own yes.
 
+The ad click model (`name = 'ad-ctr'` in `app.ml_models`) trains in the daily run once `ads` is on and
+there are 20,000 impressions and 200 clicks in 30 days; each version's reason says how it compared.
+
+While `ads` is off, nobody is asked about ad purposes; turning it on shows them in "Your data choices",
+off until each person turns them on.
+
 ### Enterprise analytics (ADR 0033): off until an agreement and the privacy page
 
 Organizations read noised topic demand with a key. Before turning it on: a written agreement with each organization,
@@ -207,12 +213,6 @@ UPDATE app.feature_flags SET enabled = true, note = 'owner, <date>', updated_at 
 
 Add an organization and its key with `POST /owner/enterprise/orgs` and `POST /owner/enterprise/orgs/:id/keys`; the key
 is shown once. Revoke with `DELETE /owner/enterprise/keys/:prefix`.
-
-The ad click model (`name = 'ad-ctr'` in `app.ml_models`) trains in the daily run once `ads` is on and
-there are 20,000 impressions and 200 clicks in 30 days; each version's reason says how it compared.
-
-While `ads` is off, nobody is asked about ad purposes; turning it on shows them in "Your data choices",
-off until each person turns them on.
 
 ### Operations: request metrics, SLOs and job health
 
