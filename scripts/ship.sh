@@ -3,7 +3,7 @@
 #
 #   sh scripts/ship.sh <message-file> <paths...>
 #
-# Typecheck, lint, tests with the coverage ratchet, build and size budgets
+# Typecheck, lint, formatting, tests with the coverage ratchet, build and size budgets
 # run first; nothing is committed unless all pass. Never commits to main:
 # from main it starts a branch named after the message's first line, and on
 # a branch it adds the commit there (one pull request, one or more
@@ -47,6 +47,8 @@ step() { # name, command...
 }
 step typecheck npm run typecheck
 step lint npm run lint
+# CI checks formatting too: a test file once passed here and failed there on it alone.
+step format npm run format:check
 # CI runs this too: a migration that broke its lint once passed here and failed there.
 step migrations node scripts/check-migrations.mjs
 step test npm run test:coverage
