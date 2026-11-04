@@ -20,6 +20,8 @@ export function registerEnterpriseRoutes(
   const off = (reply: FastifyReply) =>
     fail(reply, 404, 'enterprise_off', 'Enterprise analytics on Graphinity isn’t available yet.');
 
+  // Work returns what to send; it's sent after the transaction commits, so a caller acting on the reply at once
+  // (asking for a key for the organization just added) always finds what it was told exists.
   async function asOwner<T>(userId: string, reply: FastifyReply, work: (q: Queryable) => Promise<T>) {
     const result = await db.withUser(userId, async q =>
       (await q.query<{ ok: boolean }>('SELECT app.is_owner() AS ok')).rows[0]?.ok === true
@@ -113,7 +115,7 @@ export function registerEnterpriseRoutes(
     },
     async (req, reply) => {
       const { name, dailyReads } = req.body as { name: string; dailyReads?: number };
-      return asOwner(signedIn(req).id, reply, async q => {
+      const made = await asOwner(signedIn(req).id, reply, async q => {
         const org = (
           await q.query<{ id: string }>(
             'INSERT INTO app.enterprise_orgs (name, daily_reads) VALUES ($1, $2) RETURNING public_id::text AS id',
@@ -121,8 +123,9 @@ export function registerEnterpriseRoutes(
           )
         ).rows[0];
         await auditWithin(q, { action: 'enterprise.org_added', actor: 'owner', subject: org?.id ?? '', detail: {} });
-        return reply.code(201).send({ org: { id: org?.id, name, dailyReads: dailyReads ?? 1000 } });
+        return { org: { id: org?.id, name, dailyReads: dailyReads ?? 1000 } };
       });
+      return reply.sent ? undefined : reply.code(201).send(made);
     },
   );
 
@@ -144,19 +147,21 @@ export function registerEnterpriseRoutes(
       const { id } = req.params as { id: string };
       const key = `gre_${randomBytes(32).toString('base64url')}`;
       const prefix = key.slice(0, 10);
-      return asOwner(signedIn(req).id, reply, async q => {
+      const made = await asOwner(signedIn(req).id, reply, async q => {
         const org = (
           await q.query<{ id: string }>('SELECT id::text FROM app.enterprise_orgs WHERE public_id = $1', [id])
         ).rows[0];
-        if (!org) return fail(reply, 404, 'not_found', 'There’s no such organization.');
+        if (!org) return null;
         await q.query('INSERT INTO app.enterprise_keys (org_id, key_hash, prefix) VALUES ($1, $2, $3)', [
           org.id,
           hashKey(key),
           prefix,
         ]);
         await auditWithin(q, { action: 'enterprise.key_made', actor: 'owner', subject: prefix, detail: {} });
-        return reply.code(201).send({ key, prefix });
+        return { key, prefix };
       });
+      if (reply.sent) return;
+      return made ? reply.code(201).send(made) : fail(reply, 404, 'not_found', 'There’s no such organization.');
     },
   );
 
@@ -175,15 +180,17 @@ export function registerEnterpriseRoutes(
     },
     async (req, reply) => {
       const { prefix } = req.params as { prefix: string };
-      return asOwner(signedIn(req).id, reply, async q => {
+      const revoked = await asOwner(signedIn(req).id, reply, async q => {
         const { rowCount } = await q.query(
           'UPDATE app.enterprise_keys SET revoked_at = now() WHERE prefix = $1 AND revoked_at IS NULL',
           [prefix],
         );
-        if (!rowCount) return fail(reply, 404, 'not_found', 'There’s no live key with that start.');
+        if (!rowCount) return false;
         await auditWithin(q, { action: 'enterprise.key_revoked', actor: 'owner', subject: prefix, detail: {} });
-        return reply.code(204).send();
+        return true;
       });
+      if (reply.sent) return;
+      return revoked ? reply.code(204).send() : fail(reply, 404, 'not_found', 'There’s no live key with that start.');
     },
   );
 }
