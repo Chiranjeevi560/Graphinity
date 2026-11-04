@@ -19,6 +19,7 @@ Every setting, where it lives, and the free-tier limits it runs under.
 | `SUPABASE_SECRET_KEY` | yes | `sb_secret_…` | **Most powerful secret.** Used only to delete a person's sign-in. Never in git, chat, logs or the website |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | no (push is off without them) | 87 / 43 base64url chars | Web push keys, both or neither; the server refuses a mismatched pair. Make them with `node scripts/vapid-keys.mjs <env file>`, which writes them into the file and prints only the public key. The private key is a secret. Replacing them makes every device subscribe again |
 | `VAPID_SUBJECT` | no | `https://graphinity.pages.dev` | Who push services can contact about our pushes. Defaults to `WEB_ORIGIN` (no email needed) |
+| `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` / `RAZORPAY_WEBHOOK_SECRET` | no (payments are unavailable without them) | `rzp_test_…` / 16+ chars / 16+ chars | All three or none (ADR 0034). `rzp_live_` keys are refused anywhere but `APP_ENV=production`. The key secret and webhook secret are secrets: Render's environment only, never git, chat or logs. Payments also need the `payments` switch on |
 
 ## Migrations (`apps/api/src/migrate-main.ts`)
 

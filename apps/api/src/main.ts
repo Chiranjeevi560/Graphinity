@@ -47,6 +47,7 @@ import { announceRouting, routeDueQuestions, type Explorer, type Ranker } from '
 import { answeringRollup, basketRollup, retentionRollup } from './olap/rollups.ts';
 import { sweepMemory } from './intelligence/memory-job.ts';
 import { runModelEvaluations } from './platform/evaluations.ts';
+import { sweepStalePayments } from './payments/sweep.ts';
 import { purposeKey, systemClock } from './rate-limit.ts';
 import { buildServer } from './server.ts';
 import {
@@ -177,6 +178,8 @@ const app = await buildServer({
   adServer,
   adsEnabled: () => flags.enabled('ads'),
   enterpriseEnabled: () => flags.enabled('enterprise_analytics'),
+  paymentsEnabled: () => flags.enabled('payments'),
+  razorpay: config.razorpay ? { keys: config.razorpay, fetcher: (url, init) => fetch(url, init) } : null,
   config,
   db,
   clock: systemClock,
@@ -639,6 +642,7 @@ const runRollups = serial(async () => {
     ['answering-rollup', 3600, () => answeringRollup(db)],
     ['knowledge-graph', 3600, () => refreshKnowledgeGraph(db, Date.now())],
     ['feature-store', 3600, () => materializeFeatures(db, Date.now())],
+    ['payments-sweep', 3600, () => sweepStalePayments(db)],
     ['experiments', 3600, () => evaluateExperiments(db)],
     ['model-evaluations', 3600, () => runModelEvaluations(db, Date.now())],
     ['memory-sweep', 3600, () => sweepMemory(db, Date.now())],

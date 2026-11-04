@@ -38,6 +38,14 @@ export interface Config {
   supabaseSecretKey: string;
   /** Web push keys; push is off without them. */
   vapid: VapidKeys | null;
+  /** Razorpay keys (ADR 0034); payments are unavailable without them, whatever the `payments` switch says. */
+  razorpay: RazorpayKeys | null;
+}
+
+export interface RazorpayKeys {
+  keyId: string;
+  keySecret: string;
+  webhookSecret: string;
 }
 
 export class ConfigError extends Error {
@@ -117,6 +125,23 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     else vapid = { publicKey: vapidPublic, privateKey: vapidPrivate, subject: env.VAPID_SUBJECT ?? webOrigin };
   }
 
+  // Payments (ADR 0034): all three or none. Live keys only on a deployed production server.
+  let razorpay: RazorpayKeys | null = null;
+  const keyId = env.RAZORPAY_KEY_ID ?? '';
+  const keySecret = env.RAZORPAY_KEY_SECRET ?? '';
+  const webhookSecret = env.RAZORPAY_WEBHOOK_SECRET ?? '';
+  if (keyId || keySecret || webhookSecret) {
+    if (!keyId || !keySecret || !webhookSecret)
+      problems.push('RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET and RAZORPAY_WEBHOOK_SECRET must be set together, or none');
+    else if (!/^rzp_(test|live)_[A-Za-z0-9]{8,40}$/.test(keyId))
+      problems.push('RAZORPAY_KEY_ID must be a Razorpay key id (rzp_test_… or rzp_live_…)');
+    else if (keyId.startsWith('rzp_live_') && environment !== 'production')
+      problems.push('RAZORPAY_KEY_ID: live keys only on the production server; use a rzp_test_ key here');
+    else if (keySecret.length < 16 || webhookSecret.length < 16)
+      problems.push('RAZORPAY_KEY_SECRET and RAZORPAY_WEBHOOK_SECRET must each be at least 16 characters');
+    else razorpay = { keyId, keySecret, webhookSecret };
+  }
+
   // Values are never echoed: they may be secrets.
   if (problems.length) throw new ConfigError(`Configuration problems:\n  - ${problems.join('\n  - ')}`);
 
@@ -134,6 +159,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     supabaseUrl,
     supabaseSecretKey,
     vapid,
+    razorpay,
   };
 }
 

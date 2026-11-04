@@ -48,6 +48,8 @@ export const FLAG_DEFAULTS = {
   ads_pacing: false,
   /** Organizations read noised topic demand with their own key (ADR 0033). */
   enterprise_analytics: false,
+  /** Razorpay payment links for ad credit and enterprise plans (ADR 0034). */
+  payments: false,
   /** Dangerous actions need a sign-in from the last 5 minutes (ADR 0026). */
   step_up_auth: false,
 } as const;

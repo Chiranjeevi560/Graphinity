@@ -297,3 +297,22 @@ does it for you (a later phase), you run it from your computer when a release ne
 `security.txt` names `mailto:securitygraphinity@gmail.com`, the Grievance Officer's address on the Terms and Privacy
 pages (`apps/web/src/lib/legal.ts`). To publish a different one, add the variable `SECURITY_CONTACT` in Cloudflare
 Pages. Check that inbox: security reports and complaints arrive there.
+
+## Part L: Payments with Razorpay (only when you decide to take money)
+
+Graphinity's payments are built and off (ADR 0034). Razorpay keeps 2% of each payment plus 18% GST on that fee; there
+is no setup or yearly fee. Do this only when you've decided to take money.
+
+1. Go to **razorpay.com**, choose **Sign up**, and sign up with your own email. Complete **KYC** (PAN, bank account)
+   when it asks. Until then only test mode works, which is free.
+2. In the Dashboard, switch to **Test mode** (top bar). Open **Account & Settings → API Keys → Generate Key**. Copy the
+   **Key Id** (starts `rzp_test_`) and **Key Secret**. Don't paste them into chat.
+3. Open **Account & Settings → Webhooks → Add New Webhook**. URL: your API's address followed by
+   `/payments/razorpay/webhook`. Make up a long **Secret** (20+ characters) and keep it. Tick **payment_link.paid**,
+   **payment_link.partially_paid**, **payment_link.expired** and **payment_link.cancelled**. Save.
+4. On your computer, run `open -e .local/api.env` and add three lines, with your values:
+   `RAZORPAY_KEY_ID=…`, `RAZORPAY_KEY_SECRET=…`, `RAZORPAY_WEBHOOK_SECRET=…`. Save. (For the live site, add the same
+   three in **Render → your service → Environment** instead.)
+5. Ask Claude to try a test payment end to end. Live keys (`rzp_live_`) work only on the production server, and only
+   after the privacy page and terms are updated (ADR 0034, "Before turning it on").
+

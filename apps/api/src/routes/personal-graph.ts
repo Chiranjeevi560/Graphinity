@@ -353,6 +353,12 @@ export function registerPersonalGraphRoutes(app: FastifyInstance, deps: Personal
          WHERE user_id = $1 ORDER BY seen_at`,
         [user.id],
       );
+      const payments = await q.query(
+        `SELECT public_id AS id, purpose, amount_paise AS "amountPaise", amount_paid_paise AS "paidPaise", status,
+                created_at AS "createdAt", paid_at AS "paidAt"
+         FROM app.payments WHERE created_by = $1 ORDER BY id`,
+        [user.id],
+      );
       const complaints = await q.query(
         `SELECT public_id AS id, kind, body, question_id AS "questionId", received_at AS "receivedAt",
                 acknowledged_at AS "acknowledgedAt", resolved_at AS "resolvedAt", outcome
@@ -430,6 +436,7 @@ export function registerPersonalGraphRoutes(app: FastifyInstance, deps: Personal
         adMemberships: adActivity.rows[0]?.memberships ?? null,
         memory: memory.rows,
         complaints: complaints.rows,
+        payments: payments.rows,
         statementsOfReasons: statements.rows,
         personalKnowledgeGraph: {
           nodes: nodes.rows,

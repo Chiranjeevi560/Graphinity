@@ -35,6 +35,8 @@ describe('feature flags', () => {
       { name: 'learned_routing', enabled: false },
       { name: 'learned_search_ranking', enabled: false },
       { name: 'model_training', enabled: true },
+      // Off until the owner has a Razorpay account and chooses to take money (ADR 0034).
+      { name: 'payments', enabled: false },
       { name: 'push', enabled: true },
       { name: 'recommendations', enabled: true },
       { name: 'routing_exploration', enabled: false },

@@ -67,6 +67,12 @@ export const PROCESSING: Record<string, Processing> = {
   exp_unit_metrics: row('Experiment outcomes per person', 'legitimate_interest', account),
   expertise_edge_weights: row('Expertise per field', 'contract', account),
   feature_flags: system('Feature switches'),
+  payment_events: system('Which Razorpay events were already acted on'),
+  payments: row(
+    'Payments asked for and received, without card or bank details',
+    'legal_obligation',
+    'Kept for tax law; unlinked from a deleted account',
+  ),
   enterprise_keys: row(
     'Organizations’ read keys, as hashes',
     'contract',
