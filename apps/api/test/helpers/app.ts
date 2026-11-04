@@ -39,6 +39,7 @@ export async function startApp(
     enterpriseEnabled?: () => boolean;
     paymentsEnabled?: () => boolean;
     completionEnabled?: () => boolean;
+    affiliatesEnabled?: () => boolean;
     completer?: Completer | null;
     searchShadow?: ShadowRecorder | null;
     razorpay?: { keys: RazorpayKeys; fetcher: PaymentFetcher } | null;
@@ -73,6 +74,7 @@ export async function startApp(
     ...(opts.enterpriseEnabled ? { enterpriseEnabled: opts.enterpriseEnabled } : {}),
     ...(opts.paymentsEnabled ? { paymentsEnabled: opts.paymentsEnabled } : {}),
     ...(opts.completionEnabled ? { completionEnabled: opts.completionEnabled } : {}),
+    ...(opts.affiliatesEnabled ? { affiliatesEnabled: opts.affiliatesEnabled } : {}),
     ...(opts.completer ? { completer: opts.completer } : {}),
     ...(opts.searchShadow ? { searchShadow: opts.searchShadow } : {}),
     ...(opts.razorpay ? { razorpay: opts.razorpay } : {}),
