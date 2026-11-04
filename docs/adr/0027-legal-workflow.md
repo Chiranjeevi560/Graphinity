@@ -21,5 +21,5 @@ that satisfies a real legal demand is for a lawyer.
 ## Limits
 
 The automatic hide after 3 reports writes no statement until a moderator decides; a lawyer should say if that's
-enough under DSA Art. 17. The grievance officer's name, which IT Rules 2021 require on the site, is the owner's to
-supply. Statements cover questions and answers only.
+enough under DSA Art. 17. The Grievance Officer, whom IT Rules 2021 require on the site, is named on the Terms and Privacy
+pages (owner, 2026-11-04). Statements cover questions and answers only.

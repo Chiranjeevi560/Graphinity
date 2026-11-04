@@ -2,16 +2,25 @@
 // (docs/adr/0002-environments.md). The build holds no environment at all;
 // this copies it untouched and writes only the files that name an
 // environment: index.html (its settings and its own address), _headers
-// (which servers the page may call), robots.txt and sitemap.xml. Every
+// (which servers the page may call), robots.txt, sitemap.xml, llms.txt and
+// security.txt. Every
 // hashed script and style is the same bytes in staging and production.
-import { cpSync, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { pagesHeadersFile } from './headers.ts';
 import { llmsTxt, robotsTxt, securityTxt, sitemapXml } from './seo.ts';
+import { LEGAL_EMAIL } from './src/lib/legal.ts';
 import type { SiteSettings } from './src/lib/settings.ts';
 
 /** The files a stamp writes; everything else is the build, byte for byte. */
-export const STAMPED_FILES = ['index.html', '_headers', 'robots.txt', 'sitemap.xml', 'llms.txt'] as const;
+export const STAMPED_FILES = [
+  'index.html',
+  '_headers',
+  'robots.txt',
+  'sitemap.xml',
+  'llms.txt',
+  '.well-known/security.txt',
+] as const;
 
 /** Addresses that would mean an environment slipped into the build itself. */
 const ENVIRONMENT_TRACES =
@@ -73,11 +82,14 @@ export function stampDist(
   writeFileSync(join(out, 'robots.txt'), robotsTxt(settings.siteOrigin));
   writeFileSync(join(out, 'sitemap.xml'), sitemapXml(settings.siteOrigin));
   writeFileSync(join(out, 'llms.txt'), llmsTxt(settings.siteOrigin));
-  // RFC 9116 needs a real way to reach someone: no address set, no file, rather than a made-up one.
-  const contact = process.env.SECURITY_CONTACT;
-  if (contact)
-    writeFileSync(
-      join(out, '.well-known', 'security.txt'),
-      securityTxt(contact, settings.siteOrigin, new Date(Date.now() + 365 * 86_400_000)),
-    );
+  // RFC 9116: a real way to reach someone, the same address the legal pages give (LegalContact.tsx).
+  mkdirSync(join(out, '.well-known'), { recursive: true });
+  writeFileSync(
+    join(out, '.well-known', 'security.txt'),
+    securityTxt(
+      process.env.SECURITY_CONTACT || `mailto:${LEGAL_EMAIL}`,
+      settings.siteOrigin,
+      new Date(Date.now() + 365 * 86_400_000),
+    ),
+  );
 }

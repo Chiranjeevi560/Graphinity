@@ -5,11 +5,8 @@ import { Link } from '../lib/router.ts';
 export default function Privacy() {
   return (
     <main className="page legal">
-      <p className="draft-note text-subhead" role="note">
-        Draft: this page is being reviewed before Graphinity opens to everyone.
-      </p>
       <h1 className="text-title1">Privacy</h1>
-      <p className="text-body secondary">Last updated 19 October 2026</p>
+      <p className="text-body secondary">Last updated 4 November 2026</p>
 
       <h2 className="text-title3">The short version</h2>
       <ul className="text-body">
@@ -118,8 +115,19 @@ export default function Privacy() {
       <p className="text-body">Graphinity is for people 18 and older.</p>
 
       <h2 className="text-title3">Questions</h2>
+      <p className="text-body">To ask about your data, correct it, or complain about how we handled it, write to:</p>
+      <p className="text-body legal-contact">
+        <strong>Grievance Officer and data protection contact</strong>
+        <br />
+        Chiranjeevi
+        <br />
+        <a href="mailto:securitygraphinity@gmail.com">securitygraphinity@gmail.com</a>
+        <br />
+        Kakinada, Andhra Pradesh 533003, India
+      </p>
       <p className="text-body">
-        Contact details will be added here before launch. See also the <Link to="/terms">terms</Link>.
+        You can also <Link to="/legal/complaint">make a complaint</Link> on the site. See also the{' '}
+        <Link to="/terms">terms</Link>.
       </p>
     </main>
   );

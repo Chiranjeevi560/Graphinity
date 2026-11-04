@@ -3,11 +3,8 @@ import { Link } from '../lib/router.ts';
 export default function Terms() {
   return (
     <main className="page legal">
-      <p className="draft-note text-subhead" role="note">
-        Draft: these terms are being reviewed before Graphinity opens to everyone.
-      </p>
       <h1 className="text-title1">Terms</h1>
-      <p className="text-body secondary">Last updated 18 October 2026</p>
+      <p className="text-body secondary">Last updated 4 November 2026</p>
 
       <p className="text-body">
         To complain about a post or how we handled your data, <Link to="/legal/complaint">make a complaint</Link>.
@@ -45,8 +42,10 @@ export default function Terms() {
         free of mistakes. We may change these terms; if we make a change that matters, we’ll say so on the site first.
       </p>
 
+      <h2 className="text-title3">Contact</h2>
       <p className="text-body">
-        See also the <Link to="/privacy">privacy page</Link>.
+        Graphinity is a student’s personal project in India. Indian law applies, and the courts at Kakinada, Andhra
+        Pradesh, decide disputes. The Grievance Officer is named on the <Link to="/privacy">privacy page</Link>.
       </p>
     </main>
   );

@@ -183,6 +183,19 @@ VALUES ('IN', 'ads_personalization', 'opt_in', true, 'Approved by <lawyer>, <dat
 UPDATE app.feature_flags SET enabled = true, updated_at = now() WHERE name IN ('ads', 'ads_behavioral');
 ```
 
+**Owner's decision, 2026-11-04:** from now on these stay on in production: Sponsored slots (`ads`), real-time
+bidding (`ads_rtb`), the partner tag and conversion API that records partner events (`ads_partner_sites`), and the
+server-to-server cohort push (`ads_partner_push`). Turned on with:
+
+```sql
+UPDATE app.feature_flags SET enabled = true, note = 'owner, 2026-11-04', updated_at = now()
+WHERE name IN ('ads', 'ads_rtb', 'ads_partner_sites', 'ads_partner_push');
+```
+
+The rest (`ads_behavioral`, `ads_measurement`, `ads_cross_device`, `ads_audiences`, `ads_holdout`, `ads_pacing`) stay
+off until chosen. Anything that uses a person's data still needs an approved rule for their country above and the
+person's own yes.
+
 ### Enterprise analytics (ADR 0033): off until an agreement and the privacy page
 
 Organizations read noised topic demand with a key. Before turning it on: a written agreement with each organization,
