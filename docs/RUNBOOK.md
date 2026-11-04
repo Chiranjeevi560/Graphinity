@@ -196,6 +196,12 @@ The rest (`ads_behavioral`, `ads_measurement`, `ads_cross_device`, `ads_audience
 off until chosen. Anything that uses a person's data still needs an approved rule for their country above and the
 person's own yes.
 
+### Affiliate links (ADR 0036): off until an agreement and the privacy page
+
+Turn on with `UPDATE app.feature_flags SET enabled = true WHERE name = 'affiliates';` after an agreement with the shop
+or network and a line on the privacy page and terms. Add a program, give the network its `postbackKey` (shown once),
+then add links to questions. Click tokens are deleted after 90 days by a daily job.
+
 ### Search suggestions (ADR 0035): off
 
 `query_completion` turns on `GET /search/complete`, which finishes queries with Graphinity's own trigram model from

@@ -48,6 +48,7 @@ import { answeringRollup, basketRollup, retentionRollup } from './olap/rollups.t
 import { sweepMemory } from './intelligence/memory-job.ts';
 import { runModelEvaluations } from './platform/evaluations.ts';
 import { sweepStalePayments } from './payments/sweep.ts';
+import { sweepAffiliateTokens } from './affiliates/sweep.ts';
 import { createCompleter } from './search/completion.ts';
 import { createShadow } from './search/shadow.ts';
 import { purposeKey, systemClock } from './rate-limit.ts';
@@ -184,6 +185,7 @@ const app = await buildServer({
   enterpriseEnabled: () => flags.enabled('enterprise_analytics'),
   paymentsEnabled: () => flags.enabled('payments'),
   completionEnabled: () => flags.enabled('query_completion'),
+  affiliatesEnabled: () => flags.enabled('affiliates'),
   completer,
   searchShadow,
   razorpay: config.razorpay ? { keys: config.razorpay, fetcher: (url, init) => fetch(url, init) } : null,
@@ -650,6 +652,7 @@ const runRollups = serial(async () => {
     ['knowledge-graph', 3600, () => refreshKnowledgeGraph(db, Date.now())],
     ['feature-store', 3600, () => materializeFeatures(db, Date.now())],
     ['payments-sweep', 3600, () => sweepStalePayments(db)],
+    ['affiliate-tokens', 86_400, () => sweepAffiliateTokens(db)],
     ['search-shadow', 3600, () => searchShadow.flush(db)],
     // Only while suggestions are on: no point training a model nothing serves.
     ['query-lm', 3600, () => (flags.enabled('query_completion') ? completer.refresh() : Promise.resolve(0))],

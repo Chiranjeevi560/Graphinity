@@ -34,6 +34,7 @@ import { registerPlatformRoutes } from './routes/platform.ts';
 import { registerEnterpriseRoutes } from './routes/enterprise.ts';
 import { registerPaymentRoutes } from './routes/payments.ts';
 import { registerCompletionRoutes } from './routes/completion.ts';
+import { registerAffiliateRoutes } from './routes/affiliates.ts';
 import type { Completer } from './search/completion.ts';
 import type { ShadowRecorder } from './search/shadow.ts';
 import type { PaymentFetcher } from './payments/razorpay.ts';
@@ -136,6 +137,8 @@ export interface Deps {
   paymentsEnabled?: () => boolean;
   /** Search suggestions (ADR 0035): the switch and the model. Off without both. */
   completionEnabled?: () => boolean;
+  /** Affiliate links (ADR 0036). Off by default. */
+  affiliatesEnabled?: () => boolean;
   completer?: Completer | null;
   /** Razorpay keys and how to call it; payments are unavailable without them. */
   razorpay?: { keys: RazorpayKeys; fetcher: PaymentFetcher } | null;
@@ -407,6 +410,7 @@ export async function buildServer(deps: Deps) {
   registerAdReportRoutes(app, { db, enabled: deps.adsEnabled ?? (() => false), clock });
   registerPlatformRoutes(app, { db, clock, limit: limits.ads, keySecret: config.ipHashKey });
   registerEnterpriseRoutes(app, { db, enabled: deps.enterpriseEnabled ?? (() => false), clock, limit: limits.ads });
+  registerAffiliateRoutes(app, { db, enabled: deps.affiliatesEnabled ?? (() => false), keySecret: config.ipHashKey });
   registerCompletionRoutes(app, {
     enabled: deps.completionEnabled ?? (() => false),
     completer: deps.completer ?? null,

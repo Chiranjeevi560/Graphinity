@@ -341,6 +341,16 @@ Reviewed by an independent reader; findings fixed in migration 0045, tests in `s
   alone under forced RLS. Each is broken on purpose in `enterprise.integration.test.ts`'s commit.
 - **Gap:** whether noised totals with a 25-person floor are anonymous under DPDP and GDPR is for a lawyer.
 
+## Affiliate referrals (ADR 0036)
+
+- **No open redirect:** a destination must be on the program's host or a subdomain, checked by a database trigger on
+  every insert (look-alike hosts and `user@host` refused, tested).
+- **No person in what is kept:** clicks are counts per link per day; a click token names a link and a time, is made
+  only with the reader's yes and no `Sec-GPC`, and is deleted after 90 days.
+- **Sales are signed:** per-program HMAC keys derived from the server key, never stored; constant-time compare; one
+  count per order. Programs and links are the owner's alone, only while the switch is on, in the API and database.
+- **Never in knowledge ranking:** links are returned separately with a disclosure and enter no ranking.
+
 ## Payments (ADR 0034)
 
 - **What Graphinity holds:** amounts, dates, statuses and Razorpay's link and payment ids. Never a card, UPI id, bank
